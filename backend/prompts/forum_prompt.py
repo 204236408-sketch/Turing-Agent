@@ -1,0 +1,2 @@
+"""Forum AI assistant prompt."""
+

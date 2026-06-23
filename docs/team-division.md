@@ -12,23 +12,23 @@
 - 重点完成 `conversation`、`conversation_message`、`user_memory`。
 - 补充用户、知识点、题目、答题、错题、OCR、报告和论坛表。
 
-## 第 3 人：模型与检索
+## 第 3 人：RAG 与向量库
 
-- 封装外部大模型和 Embedding API。
-- 建立 `knowledge_chunks`、`conversation_summaries`、`user_memories`、`mistake_summaries` Collection。
-- 接入 PaddleOCR，输出文字、坐标和置信度。
+- 初始化 ChromaDB 和 408 知识库。
+- 建立 `knowledge_base_408`、`conversation_summary`、`user_memory_vector`、`mastery_summary`、`mistake_summary` 等 Collection。
+- 实现检索、向量写入、PaddleOCR 与视频资源匹配。
 
-## 第 4 人：Prompt 与 Agent
+## 第 4 人：大模型、Prompt 与 Agent
 
+- 配置外部大模型 API 和 `llm_service`。
 - 设计问答、出题、批改、错题分析、记忆更新 Prompt。
 - 增加学习报告与论坛 AI 助手 Agent。
 - 输出稳定 JSON Schema，并建立测试样例和版本记录。
 
-## 第 5 人：前端
+## 第 5 人：原生前端
 
-- 将 `prototype/` 重构为 Vue3 + Vite。
+- 维护 `frontend/version-b.html`、`styles.css`、`app.js`。
 - 完成登录注册、首页、知识图谱、问答、出题、错题/OCR、报告、论坛和账号页面。
-- 统一加载、失败、空数据、Token 失效和流式生成状态。
+- 使用 Fetch/Axios 接入接口，保留 Mock 降级，不引入 Vue/React。
 
 完整细则参见项目外部已形成的《重生之我是图灵-五人开发详细分工方案》。
-

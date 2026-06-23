@@ -26,12 +26,18 @@ coverage/
 Thumbs.db
 
 # Runtime data
-logs/*
-uploads/*
-chroma_data/*
-!.gitkeep
+backend/uploads/ocr_images/*
+backend/uploads/temp/*
+backend/outputs/reports/*
+backend/outputs/logs/*
+backend/vector_store/chroma/*
+database/backup/*
+!**/.gitkeep
 
 # Database
 *.db
 *.sqlite
+*.sqlite3
 
+# Local frontend overrides
+frontend/config.local.js

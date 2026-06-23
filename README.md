@@ -1,53 +1,35 @@
-# 重生之我是图灵（Turing 408 Agent）
+# 重生之我是图灵：面向考研 408 的 Web 智能辅导 Agent 系统
 
-面向计算机考研 408 的 AI 学习系统。项目依据现有前端 Demo 开发，包含知识问答、智能出题、错题本、PaddleOCR、知识图谱、学习报告、长期记忆和学习论坛。
+本仓库严格按照《Rebirth of Turing - Web AI Agent System for 408 Exam》技术方案组织。
 
-## 仓库结构
+## 技术栈
+
+- 前端：原生 HTML、CSS、JavaScript、Fetch/Axios
+- 后端：FastAPI、SQLAlchemy、Pydantic、JWT
+- 数据：MySQL + ChromaDB
+- AI：LangChain + LangGraph + 外部大模型 API
+- OCR：PaddleOCR + OpenCV/Pillow
+- 部署：Nginx + Uvicorn/Gunicorn
+
+> 技术方案明确要求沿用 `version-b`，当前阶段不使用 Vue/React 重写。
+
+## 目录
 
 ```text
-apps/
-  web/                 Vue 3 前端（第 5 人）
-  api/                 FastAPI 接口与 JWT（第 1 人）
-services/
-  ai/                  大模型、ChromaDB、OCR（第 3 人）
-  agent/               Prompt 与 Agent 流程（第 4 人）
-database/
-  migrations/          MySQL/Alembic 迁移（第 2 人）
-  seeds/               初始化数据（第 2 人）
-  schemas/             ER 图和字段字典（第 2 人）
-docs/                  接口、分工和协作文档
-prototype/             最终前端 Demo，仅作为设计基准
-tests/                 集成与端到端测试
+frontend/       version-b 原生前端
+backend/        FastAPI、业务服务、Agent、Prompt、向量库
+database/       MySQL 建表、初始化数据与 SQL 迁移
+deploy/         Nginx、进程服务与容器部署
+docs/           技术、数据库、接口、部署和答辩文档
+tests/          核心模块测试
 ```
 
-## 五人模块
+## 快速开始
 
-| 人员 | 主责目录 | 工作内容 |
-|---|---|---|
-| 第 1 人 | `apps/api/` | FastAPI、JWT、登录注册、业务 API |
-| 第 2 人 | `database/` | MySQL、ORM 协作、迁移、索引、Seed |
-| 第 3 人 | `services/ai/` | 大模型 API、ChromaDB、PaddleOCR |
-| 第 4 人 | `services/agent/` | 问答、出题、批改、记忆 Prompt/Agent |
-| 第 5 人 | `apps/web/` | Vue3、登录注册及全部业务页面 |
+1. 复制 `backend/.env.example` 为 `backend/.env`。
+2. 创建 MySQL 数据库并执行 `database/schema.sql`。
+3. 在 `backend/` 安装 `requirements.txt`。
+4. 运行 `uvicorn main:app --reload`。
+5. 使用静态服务器打开 `frontend/version-b.html`。
 
-## 开发分支
-
-- `develop`
-- `feature/backend-api`
-- `feature/database`
-- `feature/llm-rag-ocr`
-- `feature/agent-prompts`
-- `feature/vue-frontend`
-
-详细任务见 [团队分工](docs/team-division.md)。
-
-## 当前状态
-
-- [x] 建立五人协作仓库
-- [x] 导入最终前端原型
-- [ ] 初始化 Vue3 项目
-- [ ] 初始化 FastAPI 项目
-- [ ] 建立 MySQL 迁移
-- [ ] 接入模型、ChromaDB 与 PaddleOCR
-- [ ] 完成 Agent 工作流
-
+完整结构与责任边界见 [仓库结构说明](docs/仓库结构说明.md) 和 [团队分工](docs/team-division.md)。
