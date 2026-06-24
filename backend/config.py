@@ -43,13 +43,27 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _database_url(name: str, default: str) -> str:
+    value = _get(name, default)
+    prefix = "sqlite:///"
+    if not value.startswith(prefix) or value == "sqlite:///:memory:":
+        return value
+
+    db_path = value[len(prefix) :]
+    if db_path.startswith(("/", "\\")) or (len(db_path) >= 2 and db_path[1] == ":"):
+        return value
+
+    resolved = (BASE_DIR / db_path).resolve().as_posix()
+    return f"{prefix}{resolved}"
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Turing 408 Agent"
     app_env: str = _get("APP_ENV", "dev")
     debug: bool = _bool("DEBUG", True)
 
-    database_url: str = _get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'turing408.db'}")
+    database_url: str = _database_url("DATABASE_URL", f"sqlite:///{BASE_DIR / 'turing408.db'}")
     mysql_url: str = _get("MYSQL_URL", "")
 
     secret_key: str = _get("SECRET_KEY", "change-this-secret-in-production")

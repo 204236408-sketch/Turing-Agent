@@ -166,7 +166,6 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
     scored_weak = [
         (m, s) for m, s in scored
         if m.final_status in {"薄弱点", "不会", "不熟"}
-        and (m.subject, m.knowledge_point) not in recent
     ]
     if scored_weak:
         m, _ = scored_weak[0]

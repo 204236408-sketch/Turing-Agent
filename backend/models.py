@@ -1,11 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, Float, Enum, Date, ForeignKey, Index, UniqueConstraint, DateTime, Boolean
-from sqlalchemy.orm import declarative_base, relationship
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, Index, UniqueConstraint, DateTime, Boolean
+from sqlalchemy.orm import relationship
 from sqlalchemy.types import JSON
-
-# 数据库连接配置
-DB_URL = "mysql+pymysql://root:root@127.0.0.1:3306/yantu408?charset=utf8mb4"
-engine = create_engine(DB_URL, pool_recycle=3600)
-Base = declarative_base()
+from database import Base
 
 # -------------------------- 1. 用户表 User --------------------------
 class User(Base):
@@ -16,12 +13,12 @@ class User(Base):
     nickname = Column(String(64), nullable=False, default="408 同学")
     password_hash = Column(String(255), nullable=False)
     avatar_url = Column(String(255), default="")
-    status = Column(Enum("active", "frozen", "banned"), default="active")
+    status = Column(String(32), default="active")
     is_deleted = Column(Boolean, default=False)
     delete_time = Column(DateTime, nullable=True)
     create_ip = Column(String(64), default="")
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关联关系
     profile = relationship("UserProfile", back_populates="user", cascade="all, delete")
@@ -38,9 +35,9 @@ class UserProfile(Base):
     target_exam = Column(String(64), default="考研 408")
     target_date = Column(String(32), default="2026-12-19")
     daily_minutes = Column(Integer, default=90)
-    learning_stage = Column(Enum("基础", "强化", "冲刺", "复试"), default="强化")
+    learning_stage = Column(String(32), default="强化")
     long_profile = Column(Text, default="")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="profile")
     __table_args__ = (
@@ -55,8 +52,8 @@ class Subject(Base):
     description = Column(Text, default="")
     sort_order = Column(Integer, default=0)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     kp_list = relationship("KnowledgePoint", back_populates="subject_ref")
     __table_args__ = (
@@ -79,8 +76,8 @@ class KnowledgePoint(Base):
     keywords = Column(Text)
     is_high_frequency = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     subject_ref = relationship("Subject", back_populates="kp_list")
     parent = relationship("KnowledgePoint", remote_side=[id], back_populates="children")
@@ -98,16 +95,16 @@ class QuestionGenerationSession(Base):
     __tablename__ = "question_generation_session"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
-    generation_mode = Column(Enum("manual", "auto", "weak_point"), default="manual")
+    generation_mode = Column(String(32), default="manual")
     recommend_mode = Column(String(64), default="")
     subject = Column(String(64))
     knowledge_point = Column(String(128))
-    difficulty = Column(Enum("简单", "中等", "困难"), default="中等")
-    question_type = Column(Enum("选择题", "综合题", "简答题"), default="选择题")
+    difficulty = Column(String(32), default="中等")
+    question_type = Column(String(32), default="选择题")
     question_count = Column(Integer, default=3)
     reason = Column(Text)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_session_uid", "user_id"),
@@ -122,9 +119,9 @@ class Question(Base):
     session_id = Column(Integer, ForeignKey("question_generation_session.id", ondelete="SET NULL"), nullable=True)
     subject = Column(String(64))
     knowledge_point = Column(String(128))
-    difficulty = Column(Enum("简单", "中等", "困难"), default="中等")
-    question_type = Column(Enum("选择题", "综合题", "简答题"), default="选择题")
-    variant_type = Column(Enum("choice", "essay"), default="choice")
+    difficulty = Column(String(32), default="中等")
+    question_type = Column(String(32), default="选择题")
+    variant_type = Column(String(32), default="choice")
     question_text = Column(Text, nullable=False)
     options_json = Column(JSON, default=[])
     sub_questions_json = Column(JSON, default=[])
@@ -132,9 +129,9 @@ class Question(Base):
     explanation = Column(Text, default="")
     hints_json = Column(JSON, default=[])
     recommend_reason = Column(Text, default="")
-    source = Column(Enum("seed", "agent_mock"), default="agent_mock")
+    source = Column(String(32), default="agent_mock")
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_q_sub_kp", "subject", "knowledge_point"),
@@ -150,7 +147,7 @@ class FavoriteQuestion(Base):
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     question_id = Column(Integer, ForeignKey("question.id", ondelete="CASCADE"), nullable=False)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "question_id", name="uk_fav_uid_qid"),
@@ -172,8 +169,8 @@ class AnswerRecord(Base):
     feedback = Column(Text, default="")
     mastery_feedback = Column(String(32), default="")
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_ans_uid", "user_id"),
@@ -189,7 +186,7 @@ class KnowledgeMastery(Base):
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     subject = Column(String(64))
     knowledge_point = Column(String(128))
-    final_status = Column(Enum("未学", "生疏", "一般", "熟练"), default="未学")
+    final_status = Column(String(32), default="未学")
     total_answer_count = Column(Integer, default=0)
     correct_count = Column(Integer, default=0)
     wrong_count = Column(Integer, default=0)
@@ -203,7 +200,7 @@ class KnowledgeMastery(Base):
     weak_score = Column(Float, default=0.0)
     continuous_wrong_count = Column(Integer, default=0)
     last_answer_time = Column(DateTime, nullable=True)
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "subject", "knowledge_point", name="uk_mastery_uid_sub_kp"),
@@ -223,12 +220,13 @@ class Mistake(Base):
     error_type = Column(String(128), default="")
     error_reason = Column(Text, default="")
     suggestion = Column(Text, default="")
-    input_type = Column(Enum("系统出题", "手动录入"), default="系统出题")
-    status = Column(Enum("active", "reviewed", "archived"), default="active")
+    mastery_status = Column(String(32), default="")
+    input_type = Column(String(32), default="系统出题")
+    status = Column(String(32), default="active")
     is_reviewed = Column(Boolean, default=False)
     review_time = Column(DateTime, nullable=True)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_mistake_uid", "user_id"),
@@ -242,15 +240,15 @@ class UserMemory(Base):
     __tablename__ = "user_memory"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
-    memory_type = Column(Enum("weak_point", "recite"), default="weak_point")
+    memory_type = Column(String(32), default="weak_point")
     subject = Column(String(64))
     knowledge_point = Column(String(128))
     content = Column(Text, nullable=False)
     evidence = Column(Text, default="")
-    status = Column(Enum("active", "expire"), default="active")
+    status = Column(String(32), default="active")
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_memory_uid", "user_id"),
@@ -265,8 +263,8 @@ class Conversation(Base):
     title = Column(String(128), default="408 问答")
     summary = Column(Text, default="")
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_conv_uid", "user_id"),
@@ -278,9 +276,9 @@ class ConversationMessage(Base):
     __tablename__ = "conversation_message"
     id = Column(Integer, primary_key=True, autoincrement=True)
     conversation_id = Column(Integer, ForeignKey("conversation.id", ondelete="CASCADE"), nullable=False)
-    role = Column(Enum("user", "assistant"), nullable=False)
+    role = Column(String(32), nullable=False)
     content = Column(Text, nullable=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_msg_conv", "conversation_id"),
@@ -313,11 +311,11 @@ class ForumPost(Base):
     collect_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)
     is_top = Column(Boolean, default=False)
-    status = Column(Enum("normal", "locked", "hidden"), default="normal")
+    status = Column(String(32), default="normal")
     is_deleted = Column(Boolean, default=False)
     create_ip = Column(String(64), default="")
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_post_uid", "user_id"),
@@ -336,7 +334,7 @@ class ForumComment(Base):
     parent_id = Column(Integer, ForeignKey("forum_comment.id", ondelete="SET NULL"), nullable=True)
     content = Column(Text, nullable=False)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_comment_post", "post_id"),
@@ -349,9 +347,9 @@ class ForumLike(Base):
     __tablename__ = "forum_like"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
-    target_type = Column(Enum("post", "comment"), nullable=False)
+    target_type = Column(String(32), nullable=False)
     target_id = Column(Integer, nullable=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "target_type", "target_id", name="uk_like_uid_target"),
@@ -365,7 +363,7 @@ class ForumCollect(Base):
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     post_id = Column(Integer, ForeignKey("forum_post.id", ondelete="CASCADE"), nullable=False)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "post_id", name="uk_collect_uid_pid"),
@@ -379,7 +377,7 @@ class ForumCheckin(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     checkin_date = Column(String(10), nullable=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "checkin_date", name="uk_checkin_uid_date"),
@@ -411,8 +409,8 @@ class VideoCrawlLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     url = Column(String(255), nullable=False, unique=True)
     platform = Column(String(64), nullable=False)
-    status = Column(Enum("success", "fail"), nullable=False)
-    crawl_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    status = Column(String(32), nullable=False)
+    crawl_time = Column(DateTime, default=datetime.utcnow)
     error_msg = Column(Text, default="")
 
 # -------------------------- 22. RAG知识库文档 KnowledgeDocument --------------------------
@@ -427,7 +425,7 @@ class KnowledgeDocument(Base):
     file_path = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_doc_sub_name_sec", "subject", "name", "section"),
@@ -444,7 +442,7 @@ class UserDailyActivity(Base):
     answer_count = Column(Integer, default=0)
     forum_count = Column(Integer, default=0)
     video_count = Column(Integer, default=0)
-    update_time = Column(DateTime, default="CURRENT_TIMESTAMP", onupdate="CURRENT_TIMESTAMP")
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "date", name="uk_daily_uid_date"),
@@ -460,7 +458,7 @@ class UserPendingRecommendation(Base):
     knowledge_point_id = Column(Integer, ForeignKey("knowledge_point.id", ondelete="CASCADE"), nullable=False)
     reason = Column(Text, default="")
     is_finish = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_rec_user", "user_id"),
@@ -473,7 +471,7 @@ class Report(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(128), default="学习报告")
-    report_type = Column(Enum("daily", "weekly", "monthly", "stage"), default="stage")
+    report_type = Column(String(32), default="stage")
     start_date = Column(String(10), default="")
     end_date = Column(String(10), default="")
     summary = Column(Text, default="")
@@ -484,7 +482,7 @@ class Report(Base):
     video_suggestion = Column(Text, default="")
     plan_json = Column(JSON, default=[])
     is_deleted = Column(Boolean, default=False)
-    create_time = Column(DateTime, default="CURRENT_TIMESTAMP")
+    create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_report_uid", "user_id"),
@@ -492,7 +490,3 @@ class Report(Base):
         Index("idx_report_del", "is_deleted"),
     )
 
-# 初始化建表入口
-if __name__:
-    Base.metadata.create_all(engine)
-    print("所有数据表创建完成")

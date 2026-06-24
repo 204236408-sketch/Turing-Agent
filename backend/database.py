@@ -1,5 +1,7 @@
 from contextlib import contextmanager
-from sqlalchemy import create_engine, inspect, text
+from datetime import datetime
+from sqlalchemy import DateTime, create_engine, inspect, text
+from sqlalchemy.schema import CreateTable
 from sqlalchemy.orm import declarative_base, sessionmaker
 from config import settings
 
@@ -42,31 +44,51 @@ def init_database() -> None:
 
 
 def _ensure_compatibility_columns() -> None:
-    """Add columns introduced by the PDF-aligned data model to existing SQLite DBs."""
+    """Keep existing SQLite DB files aligned with the SQLAlchemy models."""
     if not settings.active_database_url.startswith("sqlite"):
         return
-    additions = {
-        "question_generation_session": {
-            "recommend_mode": "VARCHAR(64) DEFAULT ''",
-        },
-        "knowledge_mastery": {
-            "mastered_count": "INTEGER DEFAULT 0",
-            "user_mark_status": "VARCHAR(32) DEFAULT ''",
-            "continuous_wrong_count": "INTEGER DEFAULT 0",
-            "last_answer_time": "DATETIME",
-        },
-        "question": {
-            "variant_type": "VARCHAR(32) DEFAULT 'choice'",
-            "sub_questions_json": "TEXT DEFAULT '[]'",
-        },
-        "mistake": {
-            "mastery_status": "VARCHAR(32) DEFAULT ''",
-        },
-    }
     with engine.begin() as connection:
         inspector = inspect(connection)
-        for table_name, columns in additions.items():
+        existing_tables = set(inspector.get_table_names())
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                connection.execute(CreateTable(table))
+
+        inspector = inspect(connection)
+        for table in Base.metadata.sorted_tables:
+            table_name = table.name
             existing = {column["name"] for column in inspector.get_columns(table_name)}
-            for column_name, definition in columns.items():
-                if column_name not in existing:
-                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"))
+            for column in table.columns:
+                if column.primary_key or column.name in existing:
+                    continue
+                connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column.name} {_sqlite_column_definition(column)}"))
+        _normalize_sqlite_datetime_values(connection)
+
+
+def _sqlite_column_definition(column) -> str:
+    definition = column.type.compile(dialect=engine.dialect)
+    if column.default is None or not column.default.is_scalar:
+        return definition
+
+    value = column.default.arg
+    if isinstance(value, bool):
+        rendered = "1" if value else "0"
+    elif isinstance(value, (int, float)):
+        rendered = str(value)
+    elif isinstance(value, (list, dict)):
+        rendered = repr("[]")
+    else:
+        rendered = repr(str(value))
+    return f"{definition} DEFAULT {rendered}"
+
+
+def _normalize_sqlite_datetime_values(connection) -> None:
+    replacement = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+    for table in Base.metadata.sorted_tables:
+        for column in table.columns:
+            if not isinstance(column.type, DateTime):
+                continue
+            connection.execute(
+                text(f"UPDATE {table.name} SET {column.name} = :replacement WHERE {column.name} = 'CURRENT_TIMESTAMP'"),
+                {"replacement": replacement},
+            )
