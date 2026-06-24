@@ -1,2 +1,0 @@
--- report
-SOURCE ../schema.sql;
