@@ -1,2 +1,0 @@
-"""Forum AI assistant Agent."""
-

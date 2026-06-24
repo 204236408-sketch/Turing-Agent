@@ -1,2 +1,0 @@
-"""Answer checking prompt."""
-

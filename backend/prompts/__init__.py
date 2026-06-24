@@ -1,2 +1,0 @@
-"""Versioned prompt templates."""
-

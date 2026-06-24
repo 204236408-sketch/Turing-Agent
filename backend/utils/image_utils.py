@@ -1,2 +1,0 @@
-"""OCR image preprocessing helpers."""
-

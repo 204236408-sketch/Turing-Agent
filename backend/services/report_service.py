@@ -1,2 +1,0 @@
-"""Learning report generation service."""
-

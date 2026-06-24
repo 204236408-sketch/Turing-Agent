@@ -1,2 +1,0 @@
-"""Rebuild all ChromaDB collections."""
-
