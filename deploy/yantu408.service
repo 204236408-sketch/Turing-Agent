@@ -1,0 +1,12 @@
+[Unit]
+Description=Turing 408 Agent FastAPI Service
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/turing/backend
+ExecStart=/usr/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
