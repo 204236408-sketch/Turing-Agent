@@ -8,6 +8,137 @@
 
 ---
 
+## 0. P3 无痛执行区
+
+这一节是 P3 每天开始前先看的执行卡。P3 的任务不是单独写一个“看起来聪明”的函数，而是把 P2 的数据加工成 P1 能封装、P4 能展示、P5 能验收的稳定 AI 能力。
+
+### 0.1 今天开始前先确认
+
+| 要确认的事 | 找谁拿 | 为什么 |
+|---|---|---|
+| 知识点、题库、文档、视频样例 | P2 | Agent/RAG 必须基于真实数据，不要硬编码演示答案 |
+| 接口需要的返回字段 | P1 | 返回 JSON 要能直接被 router 包装 |
+| 页面要展示的结构 | P4 | 例如 `agent_steps`、来源、推荐理由、视频理由是否展示 |
+| 今天要测的降级场景 | P5 | 无 LLM、无 Chroma、爬虫失败时必须有可测结果 |
+
+### 0.2 P3 每天固定执行顺序
+
+1. 上午先定义函数签名和返回 JSON，不先写复杂逻辑。
+2. 用 P2 给的最小样例跑通一条正常路径。
+3. 给 P1 一份输入输出样例，让 P1 能先接接口。
+4. 下午补 Agent/RAG/爬虫内部逻辑和 `agent_steps`。
+5. 手动模拟外部依赖失败，确认 fallback 不会让接口 500。
+6. 晚上交付正常样例、失败样例、fallback 样例。
+
+### 0.3 P3 交付模板
+
+```text
+P3 今日交付
+
+函数/服务：
+- 文件：
+- 函数名：
+- 入参：
+- 返回 JSON：
+
+正常输入样例：
+- {}
+
+正常返回样例：
+- {"agent_steps": [], "llm_used": false, "llm_error": ""}
+
+降级行为：
+- 无 LLM：
+- 无 ChromaDB：
+- 爬虫失败：
+- 数据为空：
+
+交付给：
+- P1：如何接 router
+- P4：哪些字段可展示
+- P5：测试正常/失败/降级的方式
+
+未完成/风险：
+- 依赖：
+- 可能变化字段：
+- 明天补充：
+```
+
+### 0.4 P3 完成标准
+
+| 层级 | 完成标准 |
+|---|---|
+| 函数 | P1 能直接 import 或调用，入参和返回稳定 |
+| 数据 | 使用 P2 数据，不靠固定演示字符串冒充 |
+| Agent | 返回 `agent_steps`，能解释每一步做了什么 |
+| 降级 | 无 LLM、无 Chroma、爬虫失败时返回结构完整 |
+| 文档 | 写清输入输出、依赖配置和失败行为 |
+| 验收 | P5 能用样例复现正常和失败场景 |
+
+不算完成：
+
+- 只在 notebook 或临时脚本里跑通。
+- 只返回一段文本，P4 无法结构化展示。
+- 外部服务失败时抛异常。
+- 今天返回 `answer`，明天改成 `result`，没有同步 P1/P4/P5。
+
+### 0.5 新 P3 接手时怎么做
+
+1. 先看 P2 的数据交付说明，跑导入或读取样例。
+2. 打开 P1 接口文档，确认接口需要哪些字段。
+3. 打开 P5 验收清单，确认失败的是正常路径还是降级路径。
+4. 先写一个稳定返回结构，再补内部智能逻辑。
+5. 每接一个外部依赖，都同时写 fallback。
+
+### 0.6 P3 遇到阻塞怎么处理
+
+P3 最常见阻塞是没有真实数据、LLM/Chroma 不可用、返回结构和 P1/P4 预期不一致。
+
+```text
+阻塞点：
+影响哪个 Agent/RAG/爬虫函数：
+影响哪个接口/页面/测试：
+需要 P2/P1/P4/P5 提供什么：
+当前可用 fallback：
+最晚需要时间：
+```
+
+如果外部依赖 30 分钟内不可恢复，必须先交 fallback 版本，保证 P1 接口和 P5 测试不被卡死。
+
+### 0.7 P3 完成后上传到 Gitee
+
+按 `docs/Gitee提交流程.md` 上传。P3 通常只提交：
+
+```text
+backend/agents/
+backend/services/chroma_service.py
+backend/services/rag_service.py
+backend/services/video_crawler_service.py
+backend/services/vector_embedding_service.py
+backend/scripts/import_knowledge_to_chroma.py
+backend/scripts/crawl_videos.py
+docs/Agent流程说明.md
+docs/RAG知识库说明.md
+```
+
+上传前检查：
+
+```powershell
+git status --short
+```
+
+只添加明确交付文件，例如：
+
+```powershell
+git add backend/agents/qa_graph.py backend/services/rag_service.py docs/Agent流程说明.md docs/RAG知识库说明.md
+git commit -m "P3 Day2: 接入 QA RAG 和降级说明"
+git push -u origin p3-day2-rag
+```
+
+不要上传本地 Chroma 向量库、LLM Key、日志和临时实验脚本。返回 JSON 变化时，必须同步更新 `docs/Agent流程说明.md`。
+
+---
+
 ## 1. P3 整体负责范围
 
 | 负责部分 | 具体内容 | 文件 |

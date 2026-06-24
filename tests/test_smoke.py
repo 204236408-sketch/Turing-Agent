@@ -28,3 +28,10 @@ def test_generate_and_check_question():
     checked = client.post("/api/answers/check", json={"question_id": question_id, "user_answer": "A"}).json()
     assert checked["ok"] is True
     assert "answer_record_id" in checked["data"]
+def test_frontend_static_page():
+    res = client.get("/version-b.html")
+    assert res.status_code == 200
+
+def test_404_unknown_route():
+    res = client.get("/api/nonexist")
+    assert res.json()["detail"] == "Not Found"

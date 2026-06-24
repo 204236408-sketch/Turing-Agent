@@ -1,1 +1,26 @@
-# No files are ignored for this project.
+# Python/cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment
+.env
+backend/.env
+
+# Logs/runtime output
+*.log
+backend/stdout.log
+backend/stderr.log
+backend/error.log
+
+# Local/generated data
+tmp/
+backend/vector_store/
+backend/outputs/
+vector_store/
+outputs/
+uploads/ocr_images/
+backend/uploads/ocr_images/
+
+# Local database files should not be committed unless P2 explicitly asks.
+*.db
