@@ -6,3 +6,18 @@ python-dotenv==1.0.1
 python-multipart==0.0.20
 httpx==0.28.1
 pytest==8.3.4
+
+# Enhanced database support: MySQL
+pymysql==1.1.1
+cryptography==44.0.0
+
+# Enhanced retrieval support: ChromaDB vector store
+chromadb==0.5.23
+
+# Enhanced OCR support: real image text recognition
+paddleocr==2.9.1
+paddlepaddle==2.6.2
+Pillow==11.0.0
+
+# Enhanced background jobs
+apscheduler==3.10.4
