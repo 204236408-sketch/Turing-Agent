@@ -1,0 +1,8 @@
+[
+  {
+    "subject": "操作系统",
+    "knowledge_point": "页面置换算法",
+    "question_text": "采用 LRU 算法时如何统计缺页次数？",
+    "standard_answer": "按访问序列逐步更新最近使用顺序。"
+  }
+]
