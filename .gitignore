@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+backend/.env
+backend/turing408.db
+backend/uploads/
+backend/outputs/logs/
+backend/vector_store/chroma/*
+!.gitkeep
+.codex_pdf_extract.txt
+.codex_deps/
+.codex_deps_ai/
