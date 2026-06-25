@@ -296,7 +296,7 @@ def build_recommendations(rows: list[KnowledgeMastery], mistakes: list[Mistake],
     return items[:3]
 
 
-def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_answers: list[AnswerRecord], weekly_answers: list[AnswerRecord]) -> dict:
+def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_answers: list[AnswerRecord], weekly_answers: list[AnswerRecord], last_week_answers: list[AnswerRecord] = None) -> dict:
     total_answers = len(weekly_answers)
     weekly_correct = sum(1 for item in weekly_answers if item.is_correct)
     all_total = len(all_answers)
@@ -305,6 +305,22 @@ def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_an
     unique_rows = list(mastery_map(rows).values())
     weak_count = sum(1 for r in unique_rows if normalize_status(r.final_status, r) in {"薄弱点", "不会", "不熟"})
     mastered_count = sum(1 for r in unique_rows if normalize_status(r.final_status, r) == "掌握")
+    last_week_total = len(last_week_answers) if last_week_answers else 0
+    last_week_correct = sum(1 for item in last_week_answers if item.is_correct) if last_week_answers else 0
+    weekly_trend = f"+{round((total_answers - last_week_total) / last_week_total * 100)}%" if last_week_total > 0 and total_answers > last_week_total else (f"-{round((last_week_total - total_answers) / last_week_total * 100)}%" if last_week_total > total_answers else "")
+    accuracy_trend = ""
+    if all_total >= 10:
+        recent_count = min(all_total, 20)
+        recent_correct = sum(1 for item in all_answers[-recent_count:] if item.is_correct)
+        recent_accuracy = round((recent_correct / recent_count) * 100)
+        accuracy_trend = f"+{(recent_accuracy - accuracy)}%" if recent_accuracy > accuracy else (f"-{(accuracy - recent_accuracy)}%" if recent_accuracy < accuracy else "")
+    weak_trend = ""
+    if rows:
+        prev_weak = sum(1 for r in rows if r.final_status in {"薄弱点", "不会", "不熟"} and r.weak_score and r.weak_score > 5)
+        weak_trend = f"-{(prev_weak - weak_count)}" if prev_weak > weak_count else (f"+{(weak_count - prev_weak)}" if weak_count > prev_weak else "")
+    memory_trend = ""
+    if len(memories) > 0:
+        memory_trend = "新增" if any(m for m in memories if (datetime.now(SHANGHAI_TZ) - m.update_time).days <= 1) else ""
     return {
         "weekly_answers": total_answers,
         "weekly_correct": weekly_correct,
@@ -313,10 +329,10 @@ def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_an
         "mastered_points": mastered_count,
         "memory_entries": len(memories),
         "cards": [
-            {"label": "本周答题", "value": total_answers, "delta": f"{weekly_correct} 道正确" if total_answers else "开始答题后自动统计"},
-            {"label": "综合正确率", "value": f"{accuracy}%" if all_total else "待生成", "delta": f"累计 {all_total} 次答题" if all_total else "暂无答题记录"},
-            {"label": "长期薄弱点", "value": weak_count, "delta": "按 weak_score 与错题同步"},
-            {"label": "记忆条目", "value": len(memories), "delta": "问答、错题和反馈会写入这里"},
+            {"label": "本周答题", "value": total_answers, "delta": f"{weekly_correct} 道正确" if total_answers else "开始答题后自动统计", "trend": weekly_trend},
+            {"label": "综合正确率", "value": f"{accuracy}%" if all_total else "待生成", "delta": f"累计 {all_total} 次答题" if all_total else "暂无答题记录", "trend": accuracy_trend},
+            {"label": "长期薄弱点", "value": weak_count, "delta": "按 weak_score 与错题同步", "trend": weak_trend},
+            {"label": "记忆条目", "value": len(memories), "delta": "问答、错题和反馈会写入这里", "trend": memory_trend},
         ],
     }
 
@@ -405,9 +421,16 @@ def home_overview(db: Session = Depends(get_db), user: User = Depends(get_curren
         .all()
     )
     week_start, week_end = current_week_range()
+    last_week_start = week_start - timedelta(days=7)
+    last_week_end = week_start
     weekly_answers = (
         db.query(AnswerRecord)
         .filter(AnswerRecord.user_id == user.id, AnswerRecord.create_time >= week_start, AnswerRecord.create_time < week_end)
+        .all()
+    )
+    last_week_answers = (
+        db.query(AnswerRecord)
+        .filter(AnswerRecord.user_id == user.id, AnswerRecord.create_time >= last_week_start, AnswerRecord.create_time < last_week_end)
         .all()
     )
     all_answers = db.query(AnswerRecord).filter(AnswerRecord.user_id == user.id).all()
@@ -415,7 +438,7 @@ def home_overview(db: Session = Depends(get_db), user: User = Depends(get_curren
     today_plan = choose_recommended_plan(db, user.id)
     raw_recommendations = build_smart_recommendations(db, user.id)
     recommendations = sorted(raw_recommendations, key=lambda item: (not item["available"], raw_recommendations.index(item)))
-    stats = build_stats(mastery_rows, memories, all_answers, weekly_answers)
+    stats = build_stats(mastery_rows, memories, all_answers, weekly_answers, last_week_answers)
     graph = build_graph(points, mastery_rows)
     db.commit()
     return success(
