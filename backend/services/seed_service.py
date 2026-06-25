@@ -1,6 +1,10 @@
 import json
+from pathlib import Path
+
 from sqlalchemy.orm import Session
+
 from auth import register_user
+from config import BASE_DIR
 from models import (
     AnswerRecord,
     ForumCategory,
@@ -44,12 +48,19 @@ def seed_knowledge(db: Session) -> None:
     if db.query(KnowledgePoint).count() > 0:
         print("库中已存在完整知识点，跳过演示知识点生成")
         return
-    if db.query(Subject).count():
-        return
-    demo = db.query(User).filter(User.email == "demo@turing408.ai").first()
     for order, (subject, points) in enumerate(SUBJECTS.items(), 1):
-        db.add(Subject(name=subject, description=f"408 {subject} 考纲知识体系", sort_order=order))
+        sub = db.query(Subject).filter(Subject.name == subject).first()
+        if not sub:
+            sub = Subject(name=subject, description=f"408 {subject} 考纲知识体系", sort_order=order)
+            db.add(sub)
+            db.flush()
         for idx, point in enumerate(points, 1):
+            existing = db.query(KnowledgePoint).filter(
+                KnowledgePoint.subject == subject,
+                KnowledgePoint.name == point
+            ).first()
+            if existing:
+                continue
             db.add(
                 KnowledgePoint(
                     subject=subject,
@@ -193,28 +204,43 @@ def seed_forum(db: Session) -> None:
 
 
 def seed_videos(db: Session) -> None:
-    if db.query(VideoResource).count():
+    json_path = BASE_DIR / "data" / "seed_video_resources.json"
+    if not json_path.exists():
+        print(f"[seed] video seed file not found: {json_path}")
         return
-    db.add_all(
-        [
-            VideoResource(
-                subject="操作系统",
-                knowledge_point="页面置换算法",
-                section="页面置换算法",
-                title="408 操作系统：页面置换算法 LRU/FIFO/OPT",
-                url="https://www.bilibili.com/",
-                reason="适合在错题后快速回看完整模拟过程。",
-            ),
-            VideoResource(
-                subject="计算机网络",
-                knowledge_point="传输层",
-                section="传输层",
-                title="TCP 三次握手与四次挥手高频考点",
-                url="https://www.bilibili.com/",
-                reason="覆盖 TIME_WAIT、ACK 重传和旧报文消失。",
-            ),
-        ]
-    )
+    existing_seed = db.query(VideoResource).filter(VideoResource.crawl_source == "seed").count()
+    if existing_seed > 0:
+        print(f"[seed] {existing_seed} seed videos already exist, skip")
+        return
+    with open(json_path, "r", encoding="utf-8") as f:
+        raw_list: list[dict] = json.load(f)
+    # 清除旧的非 seed 记录（老版本硬编码数据）
+    old = db.query(VideoResource).filter(VideoResource.crawl_source != "seed").all()
+    for r in old:
+        db.delete(r)
+    records = []
+    seen_urls: set[str] = set()
+    for item in raw_list:
+        url = (item.get("url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        records.append(VideoResource(
+            subject=item["subject"],
+            knowledge_point=item["knowledge_point"],
+            title=item["title"],
+            platform=item.get("platform", "Bilibili"),
+            url=url,
+            cover_url=item.get("cover_url", ""),
+            duration=item.get("duration", ""),
+            reason=item.get("reason", ""),
+            quality_score=item.get("quality_score", 0),
+            author=item.get("author", ""),
+            crawl_source="seed",
+        ))
+    if records:
+        db.add_all(records)
+        print(f"[seed] imported {len(records)} video resources")
 
 
 def seed_mistakes(db: Session) -> None:
@@ -246,9 +272,9 @@ def seed_mistakes(db: Session) -> None:
         )
         db.add(m)
         db.flush()
-    db.query(Mistake).filter(Mistake.subject == "页面置换算法", Mistake.user_id == user.id).update(
+    db.query(Mistake).filter(Mistake.knowledge_point == "页面置换算法", Mistake.user_id == user.id).update(
         {"mastery_status": "不熟", "create_time": datetime.utcnow() - timedelta(days=2)})
-    db.query(Mistake).filter(Mistake.subject == "传输层", Mistake.user_id == user.id).update(
+    db.query(Mistake).filter(Mistake.knowledge_point == "传输层", Mistake.user_id == user.id).update(
         {"mastery_status": "不会", "create_time": datetime.utcnow() - timedelta(days=1)})
-    db.query(Mistake).filter(Mistake.subject == "树与二叉树", Mistake.user_id == user.id).update(
+    db.query(Mistake).filter(Mistake.knowledge_point == "树与二叉树", Mistake.user_id == user.id).update(
         {"mastery_status": "不熟", "create_time": datetime.utcnow() - timedelta(hours=6)})

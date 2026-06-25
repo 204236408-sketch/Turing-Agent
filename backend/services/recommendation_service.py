@@ -16,6 +16,7 @@ _ALL_QUESTION_TYPES = ["选择题", "填空题", "简答题", "综合题"]
 
 
 def _to_difficulty(mastery: KnowledgeMastery | None, base: str = "中等") -> str:
+    """weak_score 越高越薄弱，出题就该越简单（降低挫败感）。"""
     if mastery is None:
         return base
     ws = mastery.weak_score or 0
@@ -29,6 +30,7 @@ def _to_difficulty(mastery: KnowledgeMastery | None, base: str = "中等") -> st
 
 
 def _to_question_type(mastery: KnowledgeMastery | None, mode: str) -> str:
+    """根据薄弱特征选择题型：连续错→填空、频繁提问→简答、弱分高→综合，其余选择题。"""
     if mode == "已改善知识点复测":
         return "选择题"
     if mastery is None:
@@ -46,6 +48,7 @@ def _to_question_type(mastery: KnowledgeMastery | None, mode: str) -> str:
 
 
 def _to_count(mastery: KnowledgeMastery | None, mode: str) -> int:
+    """weak_score 越高（越薄弱），题目越多强化练习。"""
     if mode == "已改善知识点复测":
         return 2
     if mode == "四科随机综合":
@@ -86,6 +89,7 @@ def _point_payload(
 
 
 def _baseline_points(db: Session) -> list[KnowledgePoint]:
+    """取高频考点作为基线，无高频标记时退化为全量知识点。"""
     points = (
         db.query(KnowledgePoint)
         .filter(KnowledgePoint.is_high_frequency == True)
@@ -98,6 +102,7 @@ def _baseline_points(db: Session) -> list[KnowledgePoint]:
 
 
 def _urgency_score(mastery: KnowledgeMastery) -> float:
+    """综合弱分+连续错数+提问数+最近练习时间来评估紧迫程度。"""
     ws = mastery.weak_score or 0
     cw = mastery.continuous_wrong_count or 0
     qa = mastery.qa_count or 0
@@ -108,7 +113,8 @@ def _urgency_score(mastery: KnowledgeMastery) -> float:
     return ws * 0.4 + cw * 2.5 + qa * 0.5 + recency * 0.5
 
 
-def _recently_recommended(db: Session, user_id: int, hours: int = 2) -> set[tuple[str, str]]:
+def _recently_recommended(db: Session, user_id: int, hours: int = 4) -> set[tuple[str, str]]:
+    """最近 hours 小时内已推荐过的知识点集合（用于去重）。"""
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     rows = (
         db.query(QuestionGenerationSession)
@@ -128,7 +134,19 @@ def _masteries_with_scores(db: Session, user_id: int) -> list[tuple[KnowledgeMas
     return scored
 
 
+def _pop_used(
+    candidates: list[tuple[KnowledgeMastery, float]],
+    used: set[tuple[str, str]],
+) -> tuple[KnowledgeMastery, float] | None:
+    """从 candidates 中取第一个未在 used 中的项，none-aware。"""
+    for m, s in candidates:
+        if (m.subject, m.knowledge_point) not in used:
+            return m, s
+    return None
+
+
 def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
+    """生成 5 种推荐模式的列表，保证各推荐项尽量指向不同的知识点。"""
     mastery_rows = (
         db.query(KnowledgeMastery)
         .filter(KnowledgeMastery.user_id == user_id)
@@ -158,26 +176,39 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
     recent = _recently_recommended(db, user_id)
     scored = _masteries_with_scores(db, user_id)
 
-    weak_map: dict[str, KnowledgeMastery] = {}
+    weak_map: dict[tuple[str, str], KnowledgeMastery] = {}
     for m in mastery_rows:
         weak_map[(m.subject, m.knowledge_point)] = m
 
-    # ── 薄弱点强化 ──
+    used: set[tuple[str, str]] = set()  # 已使用的知识点，用于跨模式去重
+
+    # ── 1. 薄弱点强化 ──
     scored_weak = [
         (m, s) for m, s in scored
         if m.final_status in {"薄弱点", "不会", "不熟"}
     ]
     if scored_weak:
-        m, _ = scored_weak[0]
-        ws = m.weak_score or 0
-        weak_item = _point_payload(
-            "薄弱点强化", m.subject, m.knowledge_point,
-            f"{m.final_status} · 错 {m.wrong_count} 次 · 连续错 {m.continuous_wrong_count} 次，"
-            f"优先生成 {_to_question_type(m, '薄弱点强化')} 专项题。",
-            _to_difficulty(m),
-            _to_question_type(m, "薄弱点强化"),
-            _to_count(m, "薄弱点强化"),
-        )
+        picked = _pop_used(scored_weak, used | recent)
+        if picked:
+            m, _ = picked
+            used.add((m.subject, m.knowledge_point))
+            weak_item = _point_payload(
+                "薄弱点强化", m.subject, m.knowledge_point,
+                f"{m.final_status} · 错 {m.wrong_count} 次 · 连续错 {m.continuous_wrong_count} 次，"
+                f"优先生成 {_to_question_type(m, '薄弱点强化')} 专项题。",
+                _to_difficulty(m),
+                _to_question_type(m, "薄弱点强化"),
+                _to_count(m, "薄弱点强化"),
+            )
+        else:
+            m, _ = scored_weak[0]
+            weak_item = _point_payload(
+                "薄弱点强化", m.subject, m.knowledge_point,
+                f"{m.final_status} · 错 {m.wrong_count} 次 · 连续错 {m.continuous_wrong_count} 次",
+                _to_difficulty(m),
+                _to_question_type(m, "薄弱点强化"),
+                _to_count(m, "薄弱点强化"),
+            )
     elif memories:
         mem = memories[0]
         m = weak_map.get((mem.subject, mem.knowledge_point))
@@ -196,10 +227,17 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
             available=False, initial=True,
         )
 
-    # ── 最近错题复练 ──
+    # ── 2. 最近错题复练 ──
     if mistakes:
         lm = mistakes[0]
         m = weak_map.get((lm.subject, lm.knowledge_point))
+        if (lm.subject, lm.knowledge_point) in used:
+            for alt in mistakes[1:]:
+                if (alt.subject, alt.knowledge_point) not in used:
+                    lm = alt
+                    m = weak_map.get((lm.subject, lm.knowledge_point))
+                    break
+        used.add((lm.subject, lm.knowledge_point))
         mistake_item = _point_payload(
             "最近错题复练", lm.subject, lm.knowledge_point,
             f"最近错题来自「{lm.knowledge_point}」（{lm.error_type or '未分类'}），"
@@ -216,16 +254,19 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
             available=False, initial=True,
         )
 
-    # ── 高频提问专项 ──
+    # ── 3. 高频提问专项 ──
     qa_sorted = sorted(
         [m for m in mastery_rows if (m.qa_count or 0) > 0],
-        key=lambda r: -(r.qa_count or 0),
+        key=lambda r: r.qa_count or 0,
+        reverse=True,
     )
     if qa_sorted:
         qa_m = qa_sorted[0]
-        not_recent = [m for m in qa_sorted if (m.subject, m.knowledge_point) not in recent]
-        if not_recent:
-            qa_m = not_recent[0]
+        for alt in qa_sorted:
+            if (alt.subject, alt.knowledge_point) not in used:
+                qa_m = alt
+                break
+        used.add((qa_m.subject, qa_m.knowledge_point))
         qa_item = _point_payload(
             "高频提问专项", qa_m.subject, qa_m.knowledge_point,
             f"你已围绕该知识点提问 {qa_m.qa_count} 次，"
@@ -242,14 +283,15 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
             available=False, initial=True,
         )
 
-    # ── 已改善知识点复测 ──
+    # ── 4. 已改善知识点复测 ──
     improved_list = [
         m for m in mastery_rows
         if m.final_status == "掌握"
-        and (m.subject, m.knowledge_point) not in recent
+        and (m.subject, m.knowledge_point) not in used
     ]
     if improved_list:
         imp = improved_list[0]
+        used.add((imp.subject, imp.knowledge_point))
         improved_item = _point_payload(
             "已改善知识点复测", imp.subject, imp.knowledge_point,
             f"当前状态已掌握（答对 {imp.correct_count}/{imp.total_answer_count}），"
@@ -264,11 +306,11 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
             available=False, initial=True,
         )
 
-    # ── 四科随机综合 ──
+    # ── 5. 四科随机综合 ──
     today = datetime.utcnow()
     seed = today.timetuple().tm_yday
-    subject_index = (seed // 7) % 4  # rotate primary subject weekly
-    qtype_index = (seed // 3) % 4     # rotate question type daily-ish
+    subject_index = (seed // 7) % 4
+    qtype_index = (seed // 3) % 4
 
     primary_subject = _ALL_SUBJECTS[subject_index]
     primary_qtype = _ALL_QUESTION_TYPES[qtype_index]
@@ -276,7 +318,8 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
     by_subject: dict[str, list[KnowledgePoint]] = {}
     for p in baseline:
         by_subject.setdefault(p.subject, []).append(p)
-    primary_point = (by_subject.get(primary_subject) or [fallback])[seed % max(len(by_subject.get(primary_subject, [])), 1)]
+    pts = by_subject.get(primary_subject) or [fallback]
+    primary_point = pts[seed % max(len(pts), 1)]
 
     comprehensive_item = _point_payload(
         "四科随机综合",
@@ -294,6 +337,7 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
 
 
 def resolve_smart_recommendation(db: Session, user_id: int, mode: str) -> dict:
+    """按 mode 名取推荐项，如果不可用则回退到四科随机综合。"""
     normalized_mode = mode if mode in SMART_MODES else "薄弱点强化"
     items = build_smart_recommendations(db, user_id)
     chosen = next(item for item in items if item["mode"] == normalized_mode)
@@ -303,6 +347,7 @@ def resolve_smart_recommendation(db: Session, user_id: int, mode: str) -> dict:
 
 
 def choose_today_plan(db: Session, user_id: int) -> dict:
+    """为用户选择"今日计划"——优先取第一个可用的非综合推荐，否则基线诊断。"""
     items = build_smart_recommendations(db, user_id)
     chosen = next((item for item in items if item["available"] and item["mode"] != "四科随机综合"), None)
     if not chosen:

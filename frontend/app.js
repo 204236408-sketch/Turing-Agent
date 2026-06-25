@@ -672,7 +672,9 @@ async function loadMistakeVideo(questionId){
     const data = await apiRequest(`/api/questions/${questionId}/videos`);
     const items = data.items || [];
     if(!items.length) return toast("暂无推荐视频");
-    items.forEach(v => toast("▶ " + v.title));
+    const v = items[0];
+    if(v.url) window.open(v.url, "_blank");
+    toast("▶ " + v.title);
   }catch(error){ toast("视频加载失败", "error"); }
 }
 async function startPracticeForPoint(subject, point){
@@ -1334,7 +1336,7 @@ async function loadVideo(questionId){
  try{
   const data=await apiRequest(`/api/questions/${questionId}/videos`);
   const items=data.items||[];
-  el.innerHTML=items.length?items.map(v=>`<div style="margin:8px 0"><b>${escapeHtml(v.title)}</b><p style="font-size:10px;color:var(--muted)">${escapeHtml(v.reason||"")}</p></div>`).join(""):`<div class="conversation-empty">暂无推荐视频</div>`;
+  el.innerHTML=items.length?items.map(v=>`<div style="margin:8px 0"><a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:block"><b>▶ ${escapeHtml(v.title)}</b><p style="font-size:10px;color:var(--muted);margin:2px 0 0">${escapeHtml(v.reason||"")}</p></a></div>`).join(""):`<div class="conversation-empty">暂无推荐视频</div>`;
  }catch(error){
   el.innerHTML=`<div class="conversation-empty">视频加载失败</div>`;
  }

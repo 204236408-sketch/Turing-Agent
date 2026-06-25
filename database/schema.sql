@@ -372,12 +372,15 @@ CREATE TABLE IF NOT EXISTS `video_resource` (
 -- ====================== 21. 视频爬虫日志 ======================
 CREATE TABLE IF NOT EXISTS `video_crawl_log` (
   `id` INT UNSIGNED PRIMARY KEY AUTO_INCREMENT COMMENT '爬取日志主键',
+  `subject` VARCHAR(64) NOT NULL COMMENT '科目',
+  `knowledge_point` VARCHAR(128) NOT NULL COMMENT '知识点',
   `url` VARCHAR(255) NOT NULL COMMENT '视频链接',
   `platform` VARCHAR(64) NOT NULL COMMENT '爬取平台',
   `status` ENUM('success','fail') NOT NULL COMMENT '爬取状态',
   `crawl_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '爬取时间',
   `error_msg` TEXT DEFAULT '' COMMENT '失败报错信息',
-  UNIQUE KEY `uk_crawl_url` (`url`)
+  UNIQUE KEY `uk_crawl_url` (`url`),
+  INDEX `idx_crawl_sub_kp` (`subject`, `knowledge_point`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='视频爬虫日志';
 
 -- ====================== 22. RAG知识库文档 ======================

@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncGenerator
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,13 +29,21 @@ from routers import (
     report_router,
     video_router,
 )
-from services.chroma_service import chroma_status
+from services.chroma_service import ChromaService
 from services.seed_service import seed_all
 from utils.response import AppError, failure, success
 
 
-app = FastAPI(title=settings.app_name, version="1.0.0")
-init_database()
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    init_database()
+    app.state.chroma = ChromaService(settings.chroma_path)
+    with SessionLocal() as db:
+        seed_all(db)
+    yield
+
+
+app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 
 origins = ["*"] if settings.cors_origins == "*" else [item.strip() for item in settings.cors_origins.split(",")]
 app.add_middleware(
@@ -93,7 +106,7 @@ def health():
                 "base_url": settings.siliconflow_base_url,
                 "model": settings.siliconflow_model,
             },
-            "chroma": chroma_status(),
+            "chroma": chroma.status(),
         }
     )
 

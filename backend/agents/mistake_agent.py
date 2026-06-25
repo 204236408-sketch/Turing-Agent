@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
-from models import AnswerRecord, Mistake, UserMemory
-from config import settings
-from services.llm_service import chat_json, chat_json_with_fallback_models
+
+from agents.mistake_graph import get_mistake_graph, set_db
+from models import Mistake, UserMemory
+from services.llm_service import chat_json_with_fallback_models
 from services.mastery_service import recalculate_mastery
-from utils.response import AppError
+from services.chroma_service import upsert_document
+from config import settings
 
 
 def confirm_cause(
@@ -14,75 +18,54 @@ def confirm_cause(
     user_note: str,
     evidence_source: str,
 ) -> dict:
-    record = db.query(AnswerRecord).filter(AnswerRecord.id == answer_record_id, AnswerRecord.user_id == user_id).first()
-    if not record:
-        raise AppError("ANSWER_RECORD_NOT_FOUND", "答题记录不存在", status_code=404)
-    error_type = "、".join(error_types) if error_types else "未确认"
-    reason = user_note or f"用户确认错因为：{error_type}"
-    fallback = {
-        "error_reason": reason,
-        "suggestion": f"围绕 {record.knowledge_point} 做 3 道同类题，并复述解题规则。",
-        "memory_content": f"{record.knowledge_point} 反复出现 {error_type}，复习时要先列规则再计算。",
-    }
-    llm = chat_json_with_fallback_models(
-        [
-            {"role": "system", "content": "你是考研 408 错题分析与长期记忆 Agent。只输出合法 JSON。"},
-            {
-                "role": "user",
-                "content": f"""
-科目：{record.subject}
-知识点：{record.knowledge_point}
-用户答案：{record.user_answer}
-标准答案：{record.standard_answer}
-批改反馈：{record.feedback}
-用户确认错因：{error_type}
-用户补充说明：{user_note}
+    """确认错因，写入错题本、长期记忆并更新掌握度。
 
-请输出：
-{{
-  "error_reason": "具体错因分析",
-  "suggestion": "可执行复习建议",
-  "memory_content": "适合写入长期学习记忆的一句话"
-}}
-""",
-            },
-        ],
-        fallback,
-        models=[settings.siliconflow_model, "Qwen/Qwen2.5-14B-Instruct"],
-        max_tokens=1800,
-    )
-    data = llm.data or fallback
-    mistake = Mistake(
-        user_id=user_id,
-        answer_record_id=record.id,
-        question_id=record.question_id,
-        subject=record.subject,
-        knowledge_point=record.knowledge_point,
-        error_type=error_type,
-        error_reason=data.get("error_reason") or reason,
-        suggestion=data.get("suggestion") or fallback["suggestion"],
-        input_type=evidence_source,
-    )
-    db.add(mistake)
-    db.flush()
-    db.add(
-        UserMemory(
-            user_id=user_id,
-            memory_type="weak_point",
-            subject=record.subject,
-            knowledge_point=record.knowledge_point,
-            content=data.get("memory_content") or fallback["memory_content"],
-            evidence=f"answer_record:{record.id};mistake:{mistake.id}",
-        )
-    )
-    mastery = recalculate_mastery(db, user_id, record.subject, record.knowledge_point)
+    Args:
+        db: 数据库会话。
+        user_id: 用户 ID。
+        answer_record_id: 答题记录 ID。
+        error_types: 错因类型列表。
+        user_note: 用户备注。
+        evidence_source: 证据来源。
+
+    Returns:
+        dict: 包含 mistake_id, mastery_status, agent_steps, llm_used, llm_error。
+    """
+    set_db(db)
+    initial_state = {
+        "user_id": user_id,
+        "answer_record_id": answer_record_id,
+        "error_types": error_types,
+        "user_note": user_note,
+        "_evidence_source": evidence_source,
+        "mistake_id": None,
+        "memory_id": None,
+        "similar_mistakes": [],
+        "agent_steps": [],
+        "llm_used": False,
+        "llm_error": "",
+    }
+
+    result = get_mistake_graph().invoke(initial_state)
+
+    steps_out = []
+    for s in result.get("agent_steps", []):
+        steps_out.append({
+            "name": s.get("name", ""),
+            "input_summary": s.get("input_summary", ""),
+            "output_summary": s.get("output_summary", ""),
+            "duration_ms": s.get("duration_ms", 0),
+            "status": s.get("status", ""),
+        })
+
     return {
-        "mistake_id": mistake.id,
-        "message": f"已写入错题、长期记忆和 {record.knowledge_point} 的掌握状态。",
-        "mastery_status": mastery.final_status,
-        "weak_score": mastery.weak_score,
-        "llm_used": llm.used_llm,
-        "llm_error": llm.error,
+        "mistake_id": result.get("mistake_id"),
+        "message": f"已写入错题、长期记忆和知识点掌握状态。",
+        "mastery_status": result.get("mastery_status", ""),
+        "weak_score": result.get("weak_score", 0),
+        "llm_used": result.get("llm_used", False),
+        "llm_error": result.get("llm_error", ""),
+        "agent_steps": steps_out,
     }
 
 
@@ -94,6 +77,19 @@ def analyze_ocr_text(
     knowledge_point: str,
     user_answer: str = "",
 ) -> dict:
+    """分析 OCR 识别文本，推断答案、生成错因并写入系统。
+
+    Args:
+        db: 数据库会话。
+        user_id: 用户 ID。
+        text: OCR 识别文本。
+        subject: 科目。
+        knowledge_point: 知识点。
+        user_answer: 用户填写的答案。
+
+    Returns:
+        dict: 包含 mistake_id, memory_id, analysis, llm_used, llm_error。
+    """
     fallback = {
         "subject": subject,
         "knowledge_point": knowledge_point,
@@ -181,6 +177,20 @@ OCR 识别文本：{text}
     )
     db.add(memory)
     db.flush()
+
+    upsert_document(
+        "mistake_summary",
+        f"ocr_mistake_{mistake.id}",
+        f"[{resolved_subject}/{resolved_point}] OCR 错因：{error_type}。分析：{error_reason}。建议：{suggestion}",
+        {
+            "subject": resolved_subject,
+            "knowledge_point": resolved_point,
+            "error_type": error_type,
+            "mistake_id": mistake.id,
+            "source": "ocr",
+        },
+    )
+
     mastery_seed = recalculate_mastery(db, user_id, resolved_subject, resolved_point)
     mastery_seed.user_mark_status = "不会"
     db.flush()

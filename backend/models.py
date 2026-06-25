@@ -396,6 +396,9 @@ class VideoResource(Base):
     cover_url = Column(String(255), default="")
     duration = Column(String(32), default="")
     reason = Column(Text, default="")
+    quality_score = Column(Integer, default=0)
+    author = Column(String(128), default="")
+    crawl_source = Column(String(16), default="seed")
     is_deleted = Column(Boolean, default=False)
 
     __table_args__ = (
@@ -407,11 +410,17 @@ class VideoResource(Base):
 class VideoCrawlLog(Base):
     __tablename__ = "video_crawl_log"
     id = Column(Integer, primary_key=True, autoincrement=True)
+    subject = Column(String(64), nullable=False)
+    knowledge_point = Column(String(128), nullable=False)
     url = Column(String(255), nullable=False, unique=True)
     platform = Column(String(64), nullable=False)
     status = Column(String(32), nullable=False)
     crawl_time = Column(DateTime, default=datetime.utcnow)
     error_msg = Column(Text, default="")
+
+    __table_args__ = (
+        Index("idx_crawl_sub_kp", "subject", "knowledge_point"),
+    )
 
 # -------------------------- 22. RAG知识库文档 KnowledgeDocument --------------------------
 class KnowledgeDocument(Base):
