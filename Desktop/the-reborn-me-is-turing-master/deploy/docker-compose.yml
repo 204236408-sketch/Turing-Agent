@@ -1,0 +1,11 @@
+services:
+  backend:
+    image: python:3.11-slim
+    working_dir: /app/backend
+    volumes:
+      - ..:/app
+    command: sh -c "pip install -r requirements.txt && python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./turing408.db
