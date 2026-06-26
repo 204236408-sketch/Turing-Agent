@@ -74,18 +74,47 @@ def _point_payload(
     *,
     available: bool = True,
     initial: bool = False,
+    mistake_tip: str = "",
 ) -> dict:
+    """组装推荐项；可附 mistake_tip 一句个性化提示（基于用户错题摘要，无需 LLM 调用）。"""
+    enriched_reason = reason
+    if mistake_tip:
+        enriched_reason = f"{reason}\n{_personalize_hint(mistake_tip)}"
     return {
         "mode": mode,
         "subject": subject,
         "knowledge_point": knowledge_point,
-        "reason": reason,
+        "reason": enriched_reason,
         "difficulty": difficulty,
         "question_type": question_type,
         "count": count,
         "available": available,
         "initial": initial,
     }
+
+
+def _personalize_hint(mistake_tip: str) -> str:
+    """把错题摘要转成单句建议（不调 LLM，避免引入新的幻觉）。"""
+    if not mistake_tip:
+        return ""
+    return f"建议关注你最近的错因：{mistake_tip[:60]}{'...' if len(mistake_tip) > 60 else ''}"
+
+
+def _format_mistake_tip(mistakes: list) -> str:
+    """从错题列表里抽取最高频的 error_type + 错因，组成一句 tip。"""
+    if not mistakes:
+        return ""
+    type_counter: dict[str, int] = {}
+    sample_reason = ""
+    for m in mistakes[:10]:
+        et = m.error_type or "未分类"
+        type_counter[et] = type_counter.get(et, 0) + 1
+        if not sample_reason and m.error_reason:
+            sample_reason = m.error_reason
+    top_type = max(type_counter, key=type_counter.get) if type_counter else ""
+    if sample_reason:
+        return f"[{top_type}] {sample_reason}" if top_type else sample_reason
+    return top_type
 
 
 def _baseline_points(db: Session) -> list[KnowledgePoint]:
@@ -125,6 +154,31 @@ def _recently_recommended(db: Session, user_id: int, hours: int = 4) -> set[tupl
         .all()
     )
     return {(r.subject, r.knowledge_point) for r in rows}
+
+
+def _recently_recommended_fingerprints(db: Session, user_id: int, hours: int = 24, limit: int = 30) -> list[str]:
+    """最近 24 小时内生成的题面指纹列表（题干前 32 字 + 中文实词）。
+
+    推荐环节用：让 5 个推荐项尽量不在"最近已经出过类似题"的知识点上重复。
+    """
+    try:
+        from agents.question_graph import _text_signature  # 复用去重节点的指纹函数
+    except Exception:
+        return []
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    rows = (
+        db.query(Question.question_text)
+        .join(QuestionGenerationSession, Question.session_id == QuestionGenerationSession.id)
+        .filter(
+            QuestionGenerationSession.user_id == user_id,
+            QuestionGenerationSession.create_time >= cutoff,
+            Question.is_deleted == False,
+        )
+        .order_by(QuestionGenerationSession.create_time.desc())
+        .limit(limit)
+        .all()
+    )
+    return [_text_signature(r[0]) for r in rows if r and r[0]]
 
 
 def _masteries_with_scores(db: Session, user_id: int) -> list[tuple[KnowledgeMastery, float]]:
@@ -181,6 +235,11 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
         weak_map[(m.subject, m.knowledge_point)] = m
 
     used: set[tuple[str, str]] = set()  # 已使用的知识点，用于跨模式去重
+    # 4 小时内已推荐过的知识点也视为已用，避免短时间内"换模式但换汤不换药"
+    used.update(recent)
+
+    # P2-9: 准备用户错题 tip（无 LLM 调用的个性化），用于"薄弱点强化"和"最近错题复练"两项
+    user_mistake_tip = _format_mistake_tip(mistakes) if mistakes else ""
 
     # ── 1. 薄弱点强化 ──
     scored_weak = [
@@ -199,6 +258,7 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
                 _to_difficulty(m),
                 _to_question_type(m, "薄弱点强化"),
                 _to_count(m, "薄弱点强化"),
+                mistake_tip=user_mistake_tip,
             )
         else:
             m, _ = scored_weak[0]
@@ -208,6 +268,7 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
                 _to_difficulty(m),
                 _to_question_type(m, "薄弱点强化"),
                 _to_count(m, "薄弱点强化"),
+                mistake_tip=user_mistake_tip,
             )
     elif memories:
         mem = memories[0]

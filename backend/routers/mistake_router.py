@@ -88,6 +88,14 @@ def notebook(
         Mistake.mastery_status.in_(status_list),
     )
     total = base_filter.count()
+
+    all_user_mistakes = db.query(Mistake).filter(
+        Mistake.user_id == user.id,
+        Mistake.status == "active",
+    ).all()
+    total_unfamiliar = sum(1 for m in all_user_mistakes if m.mastery_status == "不熟")
+    total_unknown = sum(1 for m in all_user_mistakes if m.mastery_status == "不会")
+    total_all = len(all_user_mistakes)
     mistakes = base_filter.order_by(Mistake.create_time.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     q_ids = [m.question_id for m in mistakes if m.question_id]
@@ -132,9 +140,9 @@ def notebook(
         "page": page,
         "page_size": page_size,
         "stats": {
-            "unfamiliar": sum(1 for r in result if r["mastery_status"] == "不熟"),
-            "unknown": sum(1 for r in result if r["mastery_status"] == "不会"),
-            "total": len(result),
+            "unfamiliar": total_unfamiliar,
+            "unknown": total_unknown,
+            "total": total_all,
         },
     })
 

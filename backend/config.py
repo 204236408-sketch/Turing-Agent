@@ -105,6 +105,17 @@ class Settings:
 
     cors_origins: str = _get("CORS_ORIGINS", "*")
 
+    # 视频推荐可配置项
+    video_recommend_default_limit: int = _int("VIDEO_RECOMMEND_LIMIT", 3)
+    video_recommend_max_limit: int = _int("VIDEO_RECOMMEND_MAX_LIMIT", 8)
+    video_llm_threshold: int = _int("VIDEO_LLM_THRESHOLD", 50)
+    video_crawl_enabled: bool = _bool("VIDEO_CRAWL_ENABLED", True)
+    video_local_enabled: bool = _bool("VIDEO_LOCAL_ENABLED", True)
+    video_parallel_enabled: bool = _bool("VIDEO_PARALLEL_ENABLED", True)
+    video_cache_ttl_seconds: int = _int("VIDEO_CACHE_TTL_SECONDS", 600)
+    video_persist_threshold: float = float(_get("VIDEO_PERSIST_THRESHOLD", "0.5"))
+    video_user_click_weight: float = float(_get("VIDEO_USER_CLICK_WEIGHT", "0.1"))
+
     @property
     def active_database_url(self) -> str:
         return self.mysql_url or self.database_url

@@ -34,4 +34,9 @@ def question_to_dict(question: Question) -> dict:
         "hint": hints[0] if hints else "先定位知识点，再按步骤分析。",
         "reason": question.recommend_reason,
         "recommend_reason": question.recommend_reason,
+        "easy_mistakes": question.easy_mistakes or "",
+        "quality_score": question.quality_score or 0,
+        "quality_flag": question.quality_flag or "normal",
+        "is_verified": bool(question.is_verified),
+        "answer_count": question.answer_count or 0,
     }

@@ -13,7 +13,35 @@ let activeQuestions=[...questionBank];
 let countdownTimer=null;
 const app=document.getElementById("app");
 function applyBrandName(html){return html.replaceAll("重生之我是图灵","重生之我是图灵")}
-app.innerHTML=applyBrandName(loginHTML());
+
+async function initApp(){
+  const token=localStorage.getItem("turing408_token");
+  const userStr=localStorage.getItem("turing408_user");
+  if(token&&userStr){
+    try{
+      // 先验证token是否有效
+      const meData = await apiRequest("/api/auth/me");
+      const user = meData.user || JSON.parse(userStr);
+      app.innerHTML=applyBrandName(shellHTML());
+      repairPagePlacement();
+      bindAll();
+      if(user?.nickname){
+        const nameEl=document.getElementById("topUserName");
+        const avatarEl=document.getElementById("topAvatar");
+        if(nameEl)nameEl.textContent=user.nickname;
+        if(avatarEl)avatarEl.textContent=user.nickname[0];
+      }
+      showPage("home");
+      return;
+    }catch(e){
+      // token无效或过期，清除并显示登录页
+      localStorage.removeItem("turing408_token");
+      localStorage.removeItem("turing408_user");
+    }
+  }
+  app.innerHTML=applyBrandName(loginHTML());
+}
+initApp();
 // 登录页面Mock数据：当前固定演示账号
 function loginHTML(){
   return `<section class="login turing-login">
@@ -66,17 +94,102 @@ function loginHTML(){
           <input type="password" value="123456">
         </div>
         <button class="primary full" onclick="enterApp()">进入图灵学习空间</button>
-        <button class="ghost full" onclick="toast('注册流程：账号信息 → 验证 → 创建用户画像')">创建新账号</button>
+        <button class="ghost full" onclick="registerNewAccount()">创建新账号</button>
         <div class="demo-note">演示账号已自动填充 · 数据仅保存在本地</div>
       </div>
     </div>
   </section>`
 }
-function enterApp(){
-  app.innerHTML=applyBrandName(shellHTML())
-  repairPagePlacement()
-  bindAll()
-  showPage("home")
+async function registerNewAccount(){
+  const inputs = document.querySelectorAll(".login-form input");
+  const account = inputs[0]?.value;
+  const password = inputs[1]?.value;
+  
+  if (!account || !password) {
+    toast("请输入账号和密码", "error");
+    return;
+  }
+  
+  const isEmail = account.includes("@");
+  const username = isEmail ? account.split("@")[0] : account;
+  const nickname = username;
+  
+  const regBtn = document.querySelector(".login-form button.ghost");
+  if (regBtn) { regBtn.disabled = true; regBtn.textContent = "注册中..."; }
+  
+  try {
+    const data = await apiRequest("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: isEmail ? account : username + "@turing408.ai",
+        username: username,
+        password: password,
+        nickname: nickname
+      })
+    });
+    const token = data.access_token;
+    const user = data.user;
+    localStorage.setItem("turing408_token", token);
+    localStorage.setItem("turing408_user", JSON.stringify(user));
+    
+    app.innerHTML = applyBrandName(shellHTML());
+    repairPagePlacement();
+    bindAll();
+    
+    if (user?.nickname) {
+      const nameEl = document.getElementById("topUserName");
+      const avatarEl = document.getElementById("topAvatar");
+      if (nameEl) nameEl.textContent = user.nickname;
+      if (avatarEl) avatarEl.textContent = user.nickname[0];
+    }
+    
+    showPage("home");
+    toast("注册成功，欢迎加入图灵学习空间！", "success");
+  } catch(err) {
+    toast(err.message || "注册失败", "error");
+    if (regBtn) { regBtn.disabled = false; regBtn.textContent = "创建新账号"; }
+  }
+}
+
+async function enterApp(){
+  const email = document.querySelectorAll(".login-form input")[0]?.value;
+  const password = document.querySelectorAll(".login-form input")[1]?.value;
+  
+  if (!email || !password) {
+    toast("请输入账号和密码", "error");
+    return;
+  }
+  
+  const loginBtn = document.querySelector(".login-form button.primary");
+  if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = "登录中..."; }
+  
+  try {
+    const data = await apiRequest("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ account: email, password: password })
+    });
+    const token = data.access_token;
+    const user = data.user;
+    localStorage.setItem("turing408_token", token);
+    localStorage.setItem("turing408_user", JSON.stringify(user));
+    
+    app.innerHTML = applyBrandName(shellHTML());
+    repairPagePlacement();
+    bindAll();
+    
+    if (user?.nickname) {
+      const nameEl = document.getElementById("topUserName");
+      const avatarEl = document.getElementById("topAvatar");
+      if (nameEl) nameEl.textContent = user.nickname;
+      if (avatarEl) avatarEl.textContent = user.nickname[0];
+    }
+    
+    showPage("home");
+    toast("登录成功，欢迎回来！", "success");
+  } catch(err) {
+    toast(err.message || "登录失败", "error");
+    if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = "进入图灵学习空间"; }
+  }
 }
 function repairPagePlacement(){
   const main=document.querySelector(".shell .main")
@@ -384,7 +497,7 @@ function questionHTML(){
         <div><b>智能推荐出题</b><small>根据薄弱点、错题和高频提问生成</small></div>
         <button class="primary" id="openSmartDrawer">右侧选择</button>
       </div>
-    </div><div class="question-config"><span class="tag">当前出题条件</span><span class="config-chip" id="configMode">智能推荐</span><span class="config-chip" id="configSubject">操作系统</span><span class="config-chip" id="configPoint">页面置换算法</span><span class="config-chip" id="configDifficulty">中等</span><span class="config-chip" id="configType">选择题 · 3 道</span><button class="ghost" id="changeConfig">重新选择</button></div><div class="question-stage"><button class="question-switch prev" id="prevQuestion" aria-label="上一题">‹</button><article class="card question-card"><div class="question-meta"><span id="questionMeta">2026 模拟 · 第 1 题 · 2 分</span><span class="question-position"><b id="currentQuestionNo">1</b> / <span id="totalQuestionNo">3</span></span><span>☆ 收藏</span></div><div class="rec"><b id="recommendTitle">为什么推荐这道题？</b><small id="recommendReason">你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。</small></div><h3 class="question-title" id="questionTitle">某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？</h3><div id="options">${["A. 4 次","B. 5 次","C. 6 次","D. 7 次"].map(x=>`<div class="option">${x}</div>`).join("")}</div><div class="tools"><button class="soft" data-drawer="hint">💡 分步提示</button><button class="soft" data-drawer="video">▶ 推荐视频</button><button class="primary" id="submitAnswer">✓ 提交答案</button></div><div class="drawer" id="hint"><h4>提示 1 / 3</h4><p id="hintText">本题考查 LRU 页面置换算法。先画出 3 个页框，再逐项处理访问序列。</p><button class="ghost" id="nextHint">下一层提示</button></div><div class="drawer" id="video"><h4>相关公开视频</h4><div id="videoContent"></div></div><div class="drawer" id="answer"><h4>批改结果：回答错误</h4><p id="answerText">你的答案：B · 5 次。标准答案：C · 6 次。系统初步判断可能存在计算遗漏，请由用户确认真实错因。</p></div><div class="wrong-action" id="wrongAction"><b>这道题为什么答错？</b><p>请选择一个或多个最符合的原因。用户确认的错因将作为高可信证据写入长期学习记忆。</p><button class="primary" id="openCause">选择错因</button><div class="cause-detail" id="causeDetail"><div class="cause-options">${causes.map(x=>`<button data-cause="${x}">${x}</button>`).join("")}</div><div class="field"><label>补充说明（可选）</label><textarea id="causeNote" style="min-height:70px" placeholder="例如：我忘记在页面命中时更新最近访问顺序"></textarea></div><button class="primary" id="confirmCause">确认错因并记录到长期学习</button></div><div class="cause-summary" id="causeSummary"></div></div><div class="mastery"><span class="tag">本题掌握情况</span><button>掌握</button><button>不熟</button><button>不会</button></div></article><button class="question-switch next" id="nextQuestion" aria-label="下一题">›</button></div>${questionDrawersHTML()}</section>`}
+    </div><div class="question-config"><span class="tag">当前出题条件</span><span class="config-chip" id="configMode">智能推荐</span><span class="config-chip" id="configSubject">操作系统</span><span class="config-chip" id="configPoint">页面置换算法</span><span class="config-chip" id="configDifficulty">中等</span><span class="config-chip" id="configType">选择题 · 3 道</span><button class="ghost" id="changeConfig">重新选择</button></div><div class="question-stage"><button class="question-switch prev" id="prevQuestion" aria-label="上一题">‹</button><article class="card question-card"><div class="question-meta"><span id="questionMeta">2026 模拟 · 第 1 题 · 2 分</span><span id="questionQualityBadges"></span><span class="question-position"><b id="currentQuestionNo">1</b> / <span id="totalQuestionNo">3</span></span><span>☆ 收藏</span></div><div class="rec"><b id="recommendTitle">为什么推荐这道题？</b><small id="recommendReason">你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。</small></div><h3 class="question-title" id="questionTitle">某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？</h3><div id="options">${["A. 4 次","B. 5 次","C. 6 次","D. 7 次"].map(x=>`<div class="option">${x}</div>`).join("")}</div><div class="easy-mistakes-box" id="easyMistakesBox" style="display:none"><b>⚠ 易错点</b><small id="easyMistakesText"></small></div><div class="tools"><button class="soft" data-drawer="hint">💡 分步提示</button><button class="soft" data-drawer="video">▶ 推荐视频</button><button class="soft" id="openFeedbackDrawer">⚐ 反馈题</button><button class="primary" id="submitAnswer">✓ 提交答案</button></div><div class="drawer" id="hint"><h4>提示 1 / 3</h4><p id="hintText">本题考查 LRU 页面置换算法。先画出 3 个页框，再逐项处理访问序列。</p><button class="ghost" id="nextHint">下一层提示</button></div><div class="drawer" id="video"><h4>相关公开视频</h4><div id="videoContent"></div></div><div class="drawer" id="answer"><h4>批改结果：回答错误</h4><p id="answerText">你的答案：B · 5 次。标准答案：C · 6 次。系统初步判断可能存在计算遗漏，请由用户确认真实错因。</p></div><div class="wrong-action" id="wrongAction"><b>这道题为什么答错？</b><p>请选择一个或多个最符合的原因。用户确认的错因将作为高可信证据写入长期学习记忆。</p><button class="primary" id="openCause">选择错因</button><div class="cause-detail" id="causeDetail"><div class="cause-options">${causes.map(x=>`<button data-cause="${x}">${x}</button>`).join("")}</div><div class="field"><label>补充说明（可选）</label><textarea id="causeNote" style="min-height:70px" placeholder="例如：我忘记在页面命中时更新最近访问顺序"></textarea></div><button class="primary" id="confirmCause">确认错因并记录到长期学习</button></div><div class="cause-summary" id="causeSummary"></div></div><div class="mastery"><span class="tag">本题掌握情况</span><button>掌握</button><button>不熟</button><button>不会</button></div></article><button class="question-switch next" id="nextQuestion" aria-label="下一题">›</button></div>${questionDrawersHTML()}</section>`}
 function questionDrawersHTML(){
   return `<div class="drawer-mask" id="questionDrawerMask"></div>
 <aside class="side-drawer left" id="manualDrawer">
@@ -444,6 +557,33 @@ function questionDrawersHTML(){
     <div class="drawer-footer">
       <button class="ghost" data-close-question>取消</button>
       <button class="primary" id="generateSmart">生成智能推荐题</button>
+    </div>
+  </aside>
+  <aside class="side-drawer right" id="feedbackDrawer">
+    <div class="side-drawer-head">
+      <div><h2>题目质量反馈</h2><p>反馈会写入后端；累计 3 次"答案有误"将自动下线该题</p></div>
+      <button class="close-drawer" data-close-question>×</button>
+    </div>
+    <div class="select-block">
+      <label>反馈类型</label>
+      <div class="choice-list" data-choice-group="feedbackType">
+        <button class="selected" data-value="wrong_answer"><b>答案有误</b><small>标准答案/解析有事实错误</small></button>
+        <button data-value="off_topic"><b>偏题</b><small>题目与指定知识点不匹配</small></button>
+        <button data-value="typo"><b>错别字</b><small>题干或选项有笔误</small></button>
+        <button data-value="other"><b>其他</b><small>补充说明</small></button>
+      </div>
+    </div>
+    <div class="select-block">
+      <label>补充说明（可选）</label>
+      <textarea id="feedbackContent" placeholder="如有具体描述可写在这里" style="width:100%;min-height:120px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:12px;border-radius:10px;outline:none;resize:vertical"></textarea>
+    </div>
+    <div class="select-block">
+      <label>当前题目</label>
+      <div class="rec" style="margin:0"><b id="feedbackQuestionTitle">—</b><small id="feedbackQuestionMeta">—</small></div>
+    </div>
+    <div class="drawer-footer">
+      <button class="ghost" data-close-question>取消</button>
+      <button class="primary" id="submitFeedback">提交反馈</button>
     </div>
   </aside>`
 }
@@ -933,10 +1073,20 @@ function bindAccountSettings(){
  document.getElementById("openAccount").onclick=open;
  document.getElementById("closeAccount").onclick=close;
  mask.onclick=close;
- const saveName=()=>{const input=document.getElementById("accountName"),name=input.value.trim()||"林同学",avatar=name.slice(0,1);input.value=name;document.getElementById("topUserName").textContent=name;document.getElementById("topAvatar").textContent=avatar;document.querySelectorAll(".learning-user-card h3").forEach(x=>x.textContent=name);toast("账号昵称已保存")};
+ const saveName=()=>{const input=document.getElementById("accountName"),name=input.value.trim()||"林同学",avatar=name.slice(0,1);
+  apiRequest("/api/profile/update",{method:"PUT",body:JSON.stringify({nickname:name})}).then(data=>{
+    const userStr=localStorage.getItem("turing408_user");
+    if(userStr){try{const u=JSON.parse(userStr);u.nickname=name;localStorage.setItem("turing408_user",JSON.stringify(u))}catch(e){}}
+    input.value=name;document.getElementById("topUserName").textContent=name;document.getElementById("topAvatar").textContent=avatar;document.querySelectorAll(".learning-user-card h3").forEach(x=>x.textContent=name);toast("账号昵称已保存")
+  }).catch(err=>{toast(err.message||"保存失败","error")})
+ };
  document.getElementById("accountName").onblur=saveName;
  document.getElementById("accountName").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();saveName();e.currentTarget.blur()}};
- const savePassword=()=>{const oldPwd=document.getElementById("oldPassword").value,newPwd=document.getElementById("newPassword").value,confirmPwd=document.getElementById("confirmPassword").value;if(!oldPwd)return toast("请输入当前密码");if(newPwd.length<8)return toast("新密码至少需要 8 位");if(newPwd!==confirmPwd)return toast("两次输入的新密码不一致");["oldPassword","newPassword","confirmPassword"].forEach(id=>document.getElementById(id).value="");toast("密码修改成功")};
+ const savePassword=()=>{const oldPwd=document.getElementById("oldPassword").value,newPwd=document.getElementById("newPassword").value,confirmPwd=document.getElementById("confirmPassword").value;if(!oldPwd)return toast("请输入当前密码");if(newPwd.length<6)return toast("新密码至少需要 6 位");if(newPwd!==confirmPwd)return toast("两次输入的新密码不一致");
+  apiRequest("/api/auth/change-password",{method:"POST",body:JSON.stringify({old_password:oldPwd,new_password:newPwd})}).then(data=>{
+    ["oldPassword","newPassword","confirmPassword"].forEach(id=>document.getElementById(id).value="");toast("密码修改成功")
+  }).catch(err=>{toast(err.message||"密码修改失败","error")})
+ };
  document.getElementById("confirmPassword").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();savePassword()}};
  document.onkeydown=e=>{if(e.key==="Escape"&&panel.classList.contains("open"))close()};
 }
@@ -1196,7 +1346,7 @@ function selectedValue(group){const selected=document.querySelector(`[data-choic
 
 function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent="早上好，继续向目标前进 👋";const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天 · 今日计划完成 3 / 5`}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();renderMapping(id);window.scrollTo(0,0)}
 function renderMapping(id){const panel=document.getElementById("devContent");if(!panel)return;const m=mapping[id];panel.innerHTML=`<div class="mapping"><h4>建议接口</h4><code>${m[0]}</code></div><div class="mapping"><h4>核心数据实体</h4><code>${m[1]}</code></div><div class="mapping"><h4>Agent / LangGraph 节点</h4><code>${m[2]}</code></div>`}
-function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){if(s===null||s===undefined)return"";return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
 
 /* ========= 可运行后端接口接入 + 统一报错机制 ========= */
 const API_BASE=location.protocol==="file:"?"http://127.0.0.1:8000":location.origin;
@@ -1259,7 +1409,13 @@ function normalizeQuestion(q,index=0){
   knowledge_point:q.knowledge_point||document.getElementById("configPoint")?.textContent||"页面置换算法",
   hints:q.hints||[q.hint||"先定位题目考查的知识点。"],
   variant_type:vt,
-  sub_questions:q.sub_questions||null
+  sub_questions:q.sub_questions||null,
+  // 质量画像（后端 question_to_dict 已输出）
+  easy_mistakes:q.easy_mistakes||"",
+  quality_score:Number(q.quality_score||0),
+  quality_flag:q.quality_flag||"normal",
+  is_verified:Boolean(q.is_verified),
+  source:q.source||"",
  };
 }
 
@@ -1275,6 +1431,19 @@ renderQuestion=function(){
  document.getElementById("recommendReason").textContent=q.reason;
  document.getElementById("hintText").textContent=q.hint;
  document.getElementById("answerText").textContent=q.answer;
+ // 质量徽标
+ renderQualityBadges(q);
+ // 易错点
+ const emBox=document.getElementById("easyMistakesBox");
+ const emText=document.getElementById("easyMistakesText");
+ if(emBox&&emText){
+  if(q.easy_mistakes&&q.easy_mistakes.trim()){
+   emText.textContent=q.easy_mistakes;
+   emBox.style.display="";
+  }else{
+   emBox.style.display="none";
+  }
+ }
  const answerBox=document.getElementById("answer");
  if(answerBox){
   const heading=answerBox.querySelector("h4");
@@ -1313,6 +1482,51 @@ let hasGeneratedQuestionBatch=false;
 let smartRecommendationItems=[];
 let knowledgeGraphCache=null;
 
+// 渲染题目质量徽标（已验证/AI生成/被反馈有误/已下线）
+function renderQualityBadges(q){
+ const el=document.getElementById("questionQualityBadges");
+ if(!el)return;
+ const badges=[];
+ const score=Number(q.quality_score||0);
+ if(q.is_verified){
+  badges.push(`<span class="q-badge q-badge-verified" title="已通过验证，质量分 ${score}">✓ 权威题 · ${score}</span>`);
+ } else {
+  badges.push(`<span class="q-badge q-badge-llm" title="由 AI 生成，质量分 ${score}">✦ AI 出题 · ${score}</span>`);
+ }
+ if(q.quality_flag==="disputed"){
+  badges.push(`<span class="q-badge q-badge-disputed" title="已有用户反馈过该题存在问题">⚠ 被反馈</span>`);
+ } else if(q.quality_flag==="deprecated"){
+  badges.push(`<span class="q-badge q-badge-deprecated" title="已自动下线，不再进入参考池">✕ 已下线</span>`);
+ }
+ el.innerHTML=badges.join(" ");
+}
+
+// 提交题目质量反馈 → /api/questions/feedback
+async function submitQuestionFeedback(){
+ const q=activeQuestions[currentQuestionIndex];
+ if(!q||!q.id)return toast("当前题目没有 ID，无法反馈","error");
+ const fbTypeBtn=document.querySelector('[data-choice-group="feedbackType"] .selected');
+ const fbType=fbTypeBtn?.dataset.value||"wrong_answer";
+ const content=document.getElementById("feedbackContent")?.value?.trim()||"";
+ try{
+  const data=await apiRequest("/api/questions/feedback",{
+   method:"POST",
+   body:JSON.stringify({question_id:q.id, feedback_type:fbType, content}),
+  });
+  toast("✅ 反馈已提交，感谢你的帮助");
+  // 关闭抽屉
+  const drawer=document.getElementById("feedbackDrawer");
+  if(drawer)drawer.classList.remove("open");
+  const mask=document.getElementById("questionDrawerMask");
+  if(mask)mask.classList.remove("show");
+  // 清空 textarea
+  const ta=document.getElementById("feedbackContent");
+  if(ta)ta.value="";
+ }catch(error){
+  toast("反馈提交失败："+(error?.message||"未知错误"),"error");
+ }
+}
+
 async function loadHint(questionId){
  const el=document.getElementById("hintText");
  const head=document.querySelector("#hint h4");
@@ -1334,20 +1548,33 @@ async function loadVideo(questionId){
  if(!el)return;
  el.innerHTML=`<div style="padding:12px 0;color:var(--muted);text-align:center">正在匹配相关视频…</div>`;
  try{
-  const data=await apiRequest(`/api/questions/${questionId}/videos`);
-  const items=data.items||[];
+  let data, items;
+  if(questionId && questionId > 0){
+   // 有questionId，调用题目关联的视频接口
+   data=await apiRequest(`/api/questions/${questionId}/videos`);
+   items=data.items||[];
+  } else {
+   // 没有questionId（如mock题目），从当前题目提取信息调用推荐接口
+   const q=activeQuestions[currentQuestionIndex];
+   if(!q)throw new Error("当前没有题目");
+   const subject=encodeURIComponent(q.subject||"数据结构");
+   const kp=encodeURIComponent(q.knowledge_point||"线性表");
+   const qt=encodeURIComponent(q.title||"");
+   data=await apiRequest(`/api/videos/recommend?subject=${subject}&knowledge_point=${kp}&question_text=${qt}&limit=3`);
+   items=data.items||[];
+  }
   if(!items.length){
-   el.innerHTML=`<div class="conversation-empty">暂无「${escapeHtml(data.knowledge_point||'')}」相关推荐视频<br><small style="color:var(--muted)">可前往B站搜索王道408对应章节</small></div>`;
+   el.innerHTML=`<div class="conversation-empty">暂无相关推荐视频<br><small style="color:var(--muted)">可前往B站搜索王道408对应章节</small></div>`;
    return;
   }
   const matchLabel={exact:"<span style='color:#27a978;font-weight:600'>● 精确匹配</span>",alias:"<span style='color:#2f80ed;font-weight:600'>● 章节相关</span>",keyword:"<span style='color:#f7b500;font-weight:600'>● 关键词命中</span>",subject:"<span style='color:#9aa5b1;font-weight:600'>● 同科目推荐</span>"};
   el.innerHTML=`
     <div style="margin-bottom:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
-      <span>为「${escapeHtml(data.subject||'')} · ${escapeHtml(data.knowledge_point||'')}」匹配到 ${items.length} 个讲解视频</span>
+      <span>为「${escapeHtml(data.knowledge_point||'')}」匹配到 ${items.length} 个讲解视频</span>
       <span style="background:var(--good);color:#fff;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700">BV直链</span>
     </div>
-    ${items.map(v=>`
-      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="video-card" style="display:block;text-decoration:none;padding:12px 14px;margin:9px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer">
+    ${items.map((v,i)=>`
+      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="video-card" data-vid="${escapeHtml(v.id||'')}" data-pos="${i}" style="display:block;text-decoration:none;padding:12px 14px;margin:9px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:7px">
@@ -1375,9 +1602,34 @@ async function loadVideo(questionId){
       🔗 点击卡片将直接在新标签页打开 B 站视频播放页
     </div>
   `;
- }catch(error){
-  el.innerHTML=`<div class="conversation-empty">视频加载失败<br><small style="color:var(--muted)">${escapeHtml(error.message||"")}</small></div>`;
- }
+ // 视频点击埋点 - 记录用户行为用于个性化推荐
+ el.querySelectorAll(".video-card").forEach(card=>{
+  card.addEventListener("click",()=>{
+   const vid=card.getAttribute("data-vid");
+   const pos=parseInt(card.getAttribute("data-pos")||"0",10);
+   const v=items[pos]||{};
+   const q=activeQuestions[currentQuestionIndex]||{};
+   fetch("/api/videos/click",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":`Bearer ${localStorage.getItem("turing408_token")||""}`},
+    body:JSON.stringify({
+     video_id: v.id||null,
+     video_url: v.url||"",
+     video_title: v.title||"",
+     question_id: q.id||null,
+     subject: q.subject||v.subject||"",
+     knowledge_point: q.knowledge_point||v.knowledge_point||"",
+     author: v.author||"",
+     click_position: pos,
+     match_level: v.match_level||"",
+     source: v.source||"",
+    })
+   }).catch(()=>{});
+  });
+ });
+}catch(error){
+ el.innerHTML=`<div class="conversation-empty">视频加载失败<br><small style="color:var(--muted)">${escapeHtml(error.message||"")}</small></div>`;
+}
 }
 
 function bindBackendAwareActions(){
@@ -1408,6 +1660,31 @@ function bindBackendAwareActions(){
    }
   };
  });
+
+ // 反馈抽屉：打开时把当前题写入抽屉
+ const openFbBtn=document.getElementById("openFeedbackDrawer");
+ if(openFbBtn){
+  openFbBtn.onclick=()=>{
+   const q=activeQuestions[currentQuestionIndex];
+   if(!q)return toast("当前没有题目","error");
+   if(!q.id)return toast("Mock 题目无 ID，无法反馈","error");
+   const titleEl=document.getElementById("feedbackQuestionTitle");
+   const metaEl=document.getElementById("feedbackQuestionMeta");
+   if(titleEl)titleEl.textContent=(q.title||"").slice(0,80);
+   if(metaEl)metaEl.textContent=`ID:${q.id} · ${q.subject||""} / ${q.knowledge_point||""} · 质量分 ${q.quality_score||0}`;
+   openQuestionDrawer("feedbackDrawer");
+  };
+ }
+ // 反馈类型选择
+ document.querySelectorAll('[data-choice-group="feedbackType"] button').forEach(b=>{
+  b.onclick=()=>{
+   document.querySelectorAll('[data-choice-group="feedbackType"] button').forEach(x=>x.classList.remove("selected"));
+   b.classList.add("selected");
+  };
+ });
+ // 提交反馈
+ const submitFbBtn=document.getElementById("submitFeedback");
+ if(submitFbBtn)submitFbBtn.onclick=submitQuestionFeedback;
  const nextHint=document.getElementById("nextHint");
  if(nextHint)nextHint.onclick=()=>{
   const hints=window._currentHints;
@@ -1503,15 +1780,19 @@ async function loadKnowledgePoints(subject){
  container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">正在加载知识点…</div>`;
  try{
   if(!knowledgeGraphCache)knowledgeGraphCache=await apiRequest("/api/knowledge/graph");
+  if(!knowledgeGraphCache){
+   container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">知识图谱加载失败，请刷新重试</div>`;
+   return;
+  }
   const points=knowledgeGraphCache.subjects?.[subject]||[];
   if(!points.length){
-   container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">该科目暂无知识点</div>`;
+   container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">该科目暂无知识点（数据为空）</div>`;
    return;
   }
   container.innerHTML=points.map((p,i)=>`<button class="${i===0?"selected":""}" data-value="${escapeHtml(p.name)}"><b>${escapeHtml(p.name)}</b>${p.content?`<small>${escapeHtml(p.content)}</small>`:""}</button>`).join("");
   container.querySelectorAll("button").forEach(b=>b.onclick=()=>{container.querySelectorAll("button").forEach(x=>x.classList.remove("selected"));b.classList.add("selected");});
  }catch(error){
-  container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">加载失败：${escapeHtml(error.message)}</div>`;
+  container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">加载失败：${escapeHtml(error.message||String(error))}</div>`;
  }
 }
 

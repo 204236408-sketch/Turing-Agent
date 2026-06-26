@@ -4,8 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from unittest.mock import patch, MagicMock
-# 修复：正确导入generate_questions
-from agents.question_graph import get_question_graph, set_db, generate_questions
+# 修复：正确导入 generate_questions（实际定义在 question_agent，question_graph 只暴露 graph/set_db）
+from agents.question_graph import get_question_graph, set_db
+from agents.question_agent import generate_questions
 from agents.graph_state import QuestionState
 from database import SessionLocal
 from main import app
@@ -213,16 +214,22 @@ def test_question_graph_agent_steps_complete(db_session: Session, mock_llm_json)
             count=1
         )
         step_names = [s["name"] for s in result["agent_steps"]]
+        # 核心必经节点：生成 → 去重 → 自检 → 补足 → 校验 → 保存
         expect_nodes = [
             "analyze_user_state",
             "select_target",
             "retrieve_question_context",
             "generate_questions",
+            "deduplicate",
+            "self_check",
+            "refill",
             "validate_questions",
-            "save_questions"
+            "save_questions",
         ]
         for node in expect_nodes:
-            assert node in step_names
+            assert node in step_names, f"missing agent step: {node}"
+        # 至少 9 个节点执行记录
+        assert len(step_names) >= len(expect_nodes)
 
 def test_api_generate_question_normal():
     """接口：手动出题 /api/questions/generate 正常流程"""

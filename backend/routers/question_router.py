@@ -20,9 +20,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from agents.question_agent import generate_questions
 from database import get_db
-from dependencies import get_current_user
-from models import Question, QuestionGenerationSession, User
-from schemas import MasteryFeedbackRequest, QuestionGenerateRequest, SmartQuestionGenerateRequest
+from dependencies import get_current_user, get_current_user_optional
+from models import Question, QuestionFeedback, QuestionGenerationSession, User
+from schemas import MasteryFeedbackRequest, QuestionFeedbackRequest, QuestionGenerateRequest, SmartQuestionGenerateRequest
 from services.mastery_service import apply_manual_feedback
 from services.recommendation_service import build_smart_recommendations, resolve_smart_recommendation
 from services.serialization import question_to_dict
@@ -88,12 +88,63 @@ def hints(question_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{question_id}/videos")
-def videos(question_id: int, db: Session = Depends(get_db)):
+def videos(
+    question_id: int,
+    limit: int = 3,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user_optional),
+):
+    """
+    获取题目推荐视频（增强版）
+
+    - limit: 返回视频数量，默认3条
+    - 返回结构化结果，包含关键词提取信息和推荐理由
+    """
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise AppError("QUESTION_NOT_FOUND", "题目不存在", status_code=404)
-    items = recommend_videos(db, subject=question.subject, knowledge_point=question.knowledge_point or "", question_text=question.question_text, limit=8)
-    return success({"items": items, "subject": question.subject, "knowledge_point": question.knowledge_point or ""})
+
+    # 使用增强版推荐
+    from services.video_service import recommend_videos_v2
+    # 组装完整题目文本（含选项）
+    full_question_text = question.question_text
+    options = question.options_json or []
+    if options:
+        # 兼容两种格式：dict 列表 或 字符串列表
+        opt_strs = []
+        for o in options:
+            if isinstance(o, dict):
+                k = o.get("key", "")
+                t = o.get("text", "")
+                if t:
+                    opt_strs.append(f"{k}. {t}" if k else t)
+            elif isinstance(o, str) and o.strip():
+                opt_strs.append(o.strip())
+        if opt_strs:
+            full_question_text = f"{question.question_text}\n" + "  ".join(opt_strs)
+    result = recommend_videos_v2(
+        db,
+        question_id=question_id,
+        subject=question.subject,
+        knowledge_point=question.knowledge_point or "",
+        question_text=full_question_text,
+        options=options,
+        limit=limit,
+        use_llm=True,
+        user_id=user.id if user else None,
+    )
+
+    return success({
+        "items": result.get("items", []),
+        "subject": question.subject,
+        "knowledge_point": question.knowledge_point or "",
+        "llm_keywords": result.get("llm_keywords", []),
+        "keyword_extract_method": result.get("keyword_extract_method", "unknown"),
+        "total_candidates": result.get("total_candidates", 0),
+        "cache_hit": result.get("cache_hit", False),
+        "question_type": result.get("question_type", "未知"),
+        "difficulty_hint": result.get("difficulty_hint", "中等"),
+    })
 
 
 @router.post("/{question_id}/mastery")
@@ -116,3 +167,39 @@ def mastery(payload: MasteryFeedbackRequest, db: Session = Depends(get_db), user
 @router.post("/{question_id}/interaction")
 def interaction(question_id: int):
     return success({"question_id": question_id, "logged": True})
+
+
+@router.post("/feedback")
+def submit_feedback(
+    payload: QuestionFeedbackRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """用户对题目质量反馈；累 3 次 wrong_answer 自动降级（is_verified=False、quality_flag=deprecated）。"""
+    q = db.query(Question).filter(Question.id == payload.question_id, Question.is_deleted == False).first()
+    if not q:
+        raise AppError(404, "题目不存在")
+
+    db.add(QuestionFeedback(
+        question_id=q.id,
+        user_id=user.id,
+        feedback_type=payload.feedback_type,
+        content=(payload.content or "")[:500],
+    ))
+
+    # 累计 3 次"答案有误"反馈：自动降级
+    if payload.feedback_type == "wrong_answer":
+        wrong_count = (
+            db.query(QuestionFeedback)
+            .filter(QuestionFeedback.question_id == q.id, QuestionFeedback.feedback_type == "wrong_answer", QuestionFeedback.is_deleted == False)
+            .count()
+        )
+        if wrong_count >= 3:
+            q.is_verified = False
+            q.quality_flag = "deprecated"
+            q.quality_score = 0
+        elif wrong_count >= 1:
+            q.quality_flag = "disputed"
+
+    db.commit()
+    return success({"question_id": q.id, "received": True})

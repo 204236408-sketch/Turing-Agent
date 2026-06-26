@@ -60,6 +60,13 @@ class MasteryFeedbackRequest(BaseModel):
     question_id: int | None = None
 
 
+class QuestionFeedbackRequest(BaseModel):
+    """用户对题目质量的反馈（答案有误 / 偏题 / 错别字 等）。"""
+    question_id: int
+    feedback_type: str = "wrong_answer"  # wrong_answer / off_topic / typo / other
+    content: str = ""
+
+
 class OcrAnalyzeRequest(BaseModel):
     text: str
     subject: str = "操作系统"

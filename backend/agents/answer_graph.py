@@ -237,6 +237,24 @@ def update_answer_record(state: AnswerCheckState) -> dict:
     db.add(record)
     db.flush()
 
+    # P2-8: 答题后自动更新题目质量分
+    if db and question.get("id"):
+        q = db.query(Question).filter(Question.id == question["id"]).first()
+        if q:
+            q.answer_count = (q.answer_count or 0) + 1
+            if is_correct:
+                q.correct_answer_count = (q.correct_answer_count or 0) + 1
+            # 评分公式：种子题保持 100；其他题按正确率 + 答题数稳定性
+            if q.source == "seed":
+                q.quality_score = 100
+            else:
+                acc = (q.correct_answer_count or 0) / max(q.answer_count or 1, 1)
+                stability = min(50, (q.answer_count or 0) * 5)  # 答题数越多置信度越高，封顶 50
+                q.quality_score = max(0, min(100, int(acc * 50 + stability)))
+            # 被答对 ≥ 2 次后可考虑提升为 verified（仅在本来 verify=True 的题，或累计答题 ≥ 3 且全对）
+            if not q.is_verified and (q.answer_count or 0) >= 3 and (q.correct_answer_count or 0) == (q.answer_count or 0):
+                q.is_verified = True
+
     out = f"record_id={record.id}, correct={is_correct}"
     step = _make_step("update_answer_record", f"user_id={user_id}", out, "success", start)
     return {

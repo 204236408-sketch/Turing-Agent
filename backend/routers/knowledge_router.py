@@ -99,6 +99,7 @@ def graph(
             "id": f"{p.subject}-{p.name}",
             "subject": p.subject,
             "name": p.name,
+            "content": p.content or "",
             "parent_name": p.parent_name or p.subject,
             "level": 2,
             "is_high_frequency": p.is_high_frequency,

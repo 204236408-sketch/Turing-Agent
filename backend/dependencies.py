@@ -35,5 +35,22 @@ def get_current_user(
     raise AppError("UNAUTHORIZED", "请先登录后再访问该接口", status_code=401)
 
 
+def get_current_user_optional(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+) -> User | None:
+    """可选的用户认证 - 用于未登录也能访问但登录后体验更好的接口"""
+    if not authorization:
+        return None
+    try:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token.strip():
+            return None
+        user_id = user_id_from_token(token.strip())
+        return db.query(User).filter(User.id == user_id).first()
+    except Exception:
+        return None
+
+
 def get_chroma(request: Request) -> ChromaService:
     return request.app.state.chroma

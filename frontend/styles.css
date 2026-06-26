@@ -438,3 +438,13 @@ body[data-theme=workspace] .main{box-sizing:border-box;min-width:0;margin:0 auto
 @keyframes apiPulse{from{opacity:.28;transform:scale(.85)}to{opacity:1;transform:scale(1.2)}}
 .option.selected{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 10%,transparent)}
 
+/* ===== 题目质量徽标 + 易错点盒（智能出题对齐后端字段） ===== */
+.q-badge{display:inline-flex;align-items:center;gap:4px;font-size:8px;font-weight:800;padding:4px 8px;border-radius:99px;letter-spacing:.2px;line-height:1.2;margin-left:4px}
+.q-badge-verified{background:color-mix(in srgb,var(--good) 14%,var(--panel2));color:var(--good);border:1px solid color-mix(in srgb,var(--good) 35%,var(--line))}
+.q-badge-llm{background:color-mix(in srgb,var(--brand) 12%,var(--panel2));color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line))}
+.q-badge-disputed{background:color-mix(in srgb,var(--warn) 16%,var(--panel2));color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line))}
+.q-badge-deprecated{background:color-mix(in srgb,var(--danger) 16%,var(--panel2));color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line))}
+.easy-mistakes-box{margin-top:14px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--warn) 38%,var(--line));background:color-mix(in srgb,var(--warn) 8%,var(--panel));border-radius:11px}
+.easy-mistakes-box b{font-size:10px;color:var(--warn);display:block;margin-bottom:5px}
+.easy-mistakes-box small{font-size:9px;color:var(--muted);line-height:1.6;display:block}
+

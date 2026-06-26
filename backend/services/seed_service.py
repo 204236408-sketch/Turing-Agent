@@ -127,6 +127,8 @@ def seed_questions(db: Session) -> None:
                 hints_json=json.dumps(["先写出关键状态变化。", "注意边界条件和初始状态。"], ensure_ascii=False),
                 recommend_reason=f"用于巩固 {point} 的高频考法。",
                 source="seed",
+                # 种子题天然权威，自动进入"参考题池"
+                is_verified=True,
             )
         )
 

@@ -131,6 +131,17 @@ class Question(Base):
     recommend_reason = Column(Text, default="")
     source = Column(String(32), default="agent_mock")
     is_deleted = Column(Boolean, default=False)
+    # 是否进入"参考题池"：种子题默认 1，LLM 生成题默认 0；阻断 LLM 幻觉在生成链路里循环放大
+    is_verified = Column(Boolean, default=False)
+    # 题目"易错点"：来自 prompt 的 easy_mistakes，存库与展示对齐
+    easy_mistakes = Column(Text, default="")
+    # 质量分（0-100）：种子题 100；LLM 生成题由答题正确率自动更新
+    quality_score = Column(Integer, default=0)
+    # 质量标记：normal / disputed / deprecated
+    quality_flag = Column(String(32), default="normal")
+    # 答题统计（冗余字段，避免每次 JOIN answer_record）
+    answer_count = Column(Integer, default=0)
+    correct_answer_count = Column(Integer, default=0)
     create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -138,6 +149,8 @@ class Question(Base):
         Index("idx_q_session", "session_id"),
         Index("idx_q_ctime", "create_time"),
         Index("idx_q_del", "is_deleted"),
+        Index("idx_q_quality_score", "quality_score"),
+        Index("idx_q_quality_flag", "quality_flag"),
     )
 
 # -------------------------- 7. 用户收藏题目 FavoriteQuestion --------------------------
@@ -398,14 +411,22 @@ class VideoResource(Base):
     cover_url = Column(String(255), default="")
     duration = Column(String(32), default="")
     reason = Column(Text, default="")
+    description = Column(Text, default="")
     quality_score = Column(Integer, default=0)
+    play_count = Column(Integer, default=0)
     author = Column(String(128), default="")
     crawl_source = Column(String(16), default="seed")
+    is_active = Column(Boolean, default=True)
     is_deleted = Column(Boolean, default=False)
+    last_verify_time = Column(DateTime, nullable=True)
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_video_sub_kp", "subject", "knowledge_point"),
         Index("idx_video_del", "is_deleted"),
+        Index("idx_video_active", "is_active"),
+        Index("idx_video_url", "url"),
     )
 
 # -------------------------- 21. 视频爬取日志 VideoCrawlLog --------------------------
@@ -500,5 +521,50 @@ class Report(Base):
         Index("idx_report_uid", "user_id"),
         Index("idx_report_type", "report_type"),
         Index("idx_report_del", "is_deleted"),
+    )
+
+# -------------------------- 26. 视频点击日志 VideoViewLog --------------------------
+class VideoViewLog(Base):
+    """用户视频点击日志 - 用于个性化推荐加权"""
+    __tablename__ = "video_view_log"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    video_id = Column(Integer, nullable=True)  # 可能是本地或爬虫视频
+    video_url = Column(String(255), default="")
+    video_title = Column(String(255), default="")
+    question_id = Column(Integer, nullable=True)
+    subject = Column(String(64), default="")
+    knowledge_point = Column(String(128), default="")
+    author = Column(String(128), default="")
+    click_position = Column(Integer, default=0)  # 在推荐列表中的位置
+    match_level = Column(String(32), default="")  # exact/keyword/alias/subject
+    source = Column(String(32), default="")  # local_seed/realtime_crawl
+    create_time = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_vvl_user", "user_id"),
+        Index("idx_vvl_video", "video_id"),
+        Index("idx_vvl_url", "video_url"),
+        Index("idx_vvl_subject_kp", "subject", "knowledge_point"),
+        Index("idx_vvl_ctime", "create_time"),
+    )
+
+
+# -------------------------- 27. 题目用户反馈 QuestionFeedback --------------------------
+class QuestionFeedback(Base):
+    """用户对题目质量的反馈，累 3 次 wrong_answer 自动触发质量分降级。"""
+    __tablename__ = "question_feedback"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question_id = Column(Integer, ForeignKey("question.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    feedback_type = Column(String(32), default="wrong_answer")  # wrong_answer / off_topic / typo / other
+    content = Column(Text, default="")
+    is_deleted = Column(Boolean, default=False)
+    create_time = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_qfb_qid", "question_id"),
+        Index("idx_qfb_uid", "user_id"),
+        Index("idx_qfb_del", "is_deleted"),
     )
 
