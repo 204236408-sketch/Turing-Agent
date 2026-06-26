@@ -227,6 +227,7 @@ class SeedImporter:
                 video = VideoResource(
                     subject=subject,
                     knowledge_point=str(item.get("knowledge_point", "")).strip(),
+                    section=str(item.get("section", "")).strip(),
                     title=title,
                     platform=str(item.get("platform", "")).strip(),
                     url=url,
