@@ -11,11 +11,11 @@
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from auth import authenticate_user, register_user, token_for_user
+from auth import authenticate_user, change_password, register_user, token_for_user
 from database import get_db
 from dependencies import get_current_user
 from models import User
-from schemas import LoginRequest, RegisterRequest
+from schemas import ChangePasswordRequest, LoginRequest, RegisterRequest
 from utils.response import success
 
 
@@ -46,3 +46,10 @@ def me(user: User = Depends(get_current_user)):
 @router.post("/logout")
 def logout():
     return success({"logged_out": True})
+
+
+@router.post("/change-password")
+def change_pwd(payload: ChangePasswordRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    change_password(db, user, payload.old_password, payload.new_password)
+    db.commit()
+    return success({"changed": True})

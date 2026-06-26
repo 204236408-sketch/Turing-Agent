@@ -4,9 +4,16 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from config import settings
 
 
-engine_kwargs = {"pool_pre_ping": True}
-if settings.active_database_url.startswith("sqlite"):
+engine_kwargs: dict = {"pool_pre_ping": True}
+url = settings.active_database_url
+if url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
+elif "mysql" in url:
+    engine_kwargs.update(
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=3600,
+    )
 
 engine = create_engine(settings.active_database_url, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

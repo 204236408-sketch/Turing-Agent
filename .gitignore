@@ -24,3 +24,5 @@ backend/uploads/ocr_images/
 
 # Local database files should not be committed unless P2 explicitly asks.
 *.db
+
+*.pyc

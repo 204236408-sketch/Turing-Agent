@@ -29,6 +29,13 @@ def authenticate_user(db: Session, account: str, password: str) -> User:
     return user
 
 
+def change_password(db: Session, user: User, old_password: str, new_password: str) -> None:
+    if not verify_password(old_password, user.password_hash):
+        raise AppError("PASSWORD_MISMATCH", "旧密码错误", status_code=403)
+    user.password_hash = hash_password(new_password)
+    db.flush()
+
+
 def token_for_user(user: User) -> str:
     return create_token({"sub": str(user.id), "username": user.username})
 

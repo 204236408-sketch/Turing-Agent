@@ -10,8 +10,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from config import FRONTEND_DIR, settings, validate_security_settings
 from database import SessionLocal, init_database
+from services.migration_service import check_migration_state
 from routers import (
     answer_router,
     auth_router,
@@ -94,17 +96,45 @@ async def unknown_error_handler(request: Request, exc: Exception):
 
 @app.get("/api/health")
 def health():
+    db_ok = False
+    db_error = ""
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception as e:
+        db_error = str(e)
+
+    migration_state = check_migration_state()
+
+    overall_healthy = all([
+        db_ok,
+        chroma is not None and chroma._enabled if chroma else False,
+        not migration_state["pending"],
+        not migration_state["drift"],
+    ])
+
     return success(
         {
-            "app": settings.app_name,
-            "env": settings.app_env,
-            "database": settings.active_database_url.split("://", 1)[0],
+            "healthy": overall_healthy,
+            "app": {"name": settings.app_name, "env": settings.app_env, "version": "1.0.0"},
+            "database": {
+                "type": settings.active_database_url.split("://", 1)[0],
+                "reachable": db_ok,
+                "error": db_error or None,
+            },
+            "migration": {
+                "applied_count": migration_state["applied_count"],
+                "pending": migration_state["pending"],
+                "drift": migration_state["drift"],
+                "up_to_date": not migration_state["pending"] and not migration_state["drift"],
+            },
+            "chroma": chroma.status() if chroma else {"enabled": False, "error": "not initialized"},
             "llm": {
                 "enabled": settings.llm_enabled,
                 "base_url": settings.siliconflow_base_url,
                 "model": settings.siliconflow_model,
             },
-            "chroma": chroma.status(),
         }
     )
 

@@ -13,12 +13,13 @@
       retrain 接口仅返回固定 mock 值，detail 返回字段偏少，缺少错题统计分析接口。
 """
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from agents.mistake_agent import confirm_cause
+from agents.question_agent import generate_questions
 from database import get_db
 from dependencies import get_current_user
 from models import AnswerRecord, Mistake, Question, User
-from schemas import CauseConfirmRequest, MasteryFeedbackRequest
+from schemas import CauseConfirmRequest, MasteryFeedbackRequest, RetrainRequest
 from services.mastery_service import apply_manual_feedback
 from utils.response import AppError, success
 
@@ -40,11 +41,26 @@ def _ocr_question_text(error_reason: str) -> str:
 
 
 @router.get("")
-def list_mistakes(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.query(Mistake).filter(Mistake.user_id == user.id).order_by(Mistake.create_time.desc()).all()
+def list_mistakes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    total = db.query(Mistake).filter(Mistake.user_id == user.id).count()
+    rows = (
+        db.query(Mistake)
+        .filter(Mistake.user_id == user.id)
+        .order_by(Mistake.create_time.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    q_ids = [r.question_id for r in rows if r.question_id]
+    questions = {q.id: q for q in db.query(Question).filter(Question.id.in_(q_ids)).all()} if q_ids else {}
     items = []
     for r in rows:
-        q = db.query(Question).filter(Question.id == r.question_id).first()
+        q = questions.get(r.question_id)
         items.append({
             "id": r.id,
             "subject": r.subject,
@@ -54,28 +70,36 @@ def list_mistakes(db: Session = Depends(get_db), user: User = Depends(get_curren
             "question_text": q.question_text if q else "",
             "question_id": r.question_id,
         })
-    return success({"items": items})
+    return success({"items": items, "total": total, "page": page, "page_size": page_size})
 
 
 @router.get("/notebook")
-def notebook(status: str = Query("不熟,不会"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def notebook(
+    status: str = Query("不熟,不会"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     status_list = [s.strip() for s in status.split(",")]
-    mistakes = (
-        db.query(Mistake)
-        .filter(
-            Mistake.user_id == user.id,
-            Mistake.status == "active",
-            Mistake.mastery_status.in_(status_list),
-        )
-        .order_by(Mistake.create_time.desc())
-        .all()
+    base_filter = db.query(Mistake).filter(
+        Mistake.user_id == user.id,
+        Mistake.status == "active",
+        Mistake.mastery_status.in_(status_list),
     )
+    total = base_filter.count()
+    mistakes = base_filter.order_by(Mistake.create_time.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    q_ids = [m.question_id for m in mistakes if m.question_id]
+    questions = {q.id: q for q in db.query(Question).filter(Question.id.in_(q_ids)).all()} if q_ids else {}
+
+    ar_ids = [m.answer_record_id for m in mistakes if m.answer_record_id]
+    answer_records = {r.id: r for r in db.query(AnswerRecord).filter(AnswerRecord.id.in_(ar_ids)).all()} if ar_ids else {}
+
     result = []
     for m in mistakes:
-        q = db.query(Question).filter(Question.id == m.question_id).first()
-        rec = None
-        if m.answer_record_id:
-            rec = db.query(AnswerRecord).filter(AnswerRecord.id == m.answer_record_id).first()
+        q = questions.get(m.question_id)
+        rec = answer_records.get(m.answer_record_id) if m.answer_record_id else None
         question_text = q.question_text if q else _ocr_question_text(m.error_reason)
         standard_answer = q.standard_answer if q else ""
         explanation = q.explanation if q else ""
@@ -104,11 +128,14 @@ def notebook(status: str = Query("不熟,不会"), db: Session = Depends(get_db)
         })
     return success({
         "items": result,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
         "stats": {
             "unfamiliar": sum(1 for r in result if r["mastery_status"] == "不熟"),
             "unknown": sum(1 for r in result if r["mastery_status"] == "不会"),
             "total": len(result),
-        }
+        },
     })
 
 
@@ -150,8 +177,31 @@ def cause_confirm(payload: CauseConfirmRequest, db: Session = Depends(get_db), u
 
 
 @router.post("/retrain")
-def retrain():
-    return success({"message": "已根据错题生成同类训练建议", "count": 3})
+def retrain(payload: RetrainRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    mistake = db.query(Mistake).filter(Mistake.id == payload.mistake_id, Mistake.user_id == user.id).first()
+    if not mistake:
+        raise AppError("MISTAKE_NOT_FOUND", "错题不存在", status_code=404)
+    data = generate_questions(
+        db=db,
+        user_id=user.id,
+        mode="错题重练",
+        subject=mistake.subject or "",
+        knowledge_point=mistake.knowledge_point or "",
+        difficulty="中等",
+        question_type="选择题",
+        count=3,
+        recommendation_reason=f"基于错题（{mistake.error_type}）的同类训练",
+    )
+    db.commit()
+    return success({
+        "mistake_id": mistake.id,
+        "subject": mistake.subject,
+        "knowledge_point": mistake.knowledge_point,
+        "error_type": mistake.error_type,
+        "session_id": data.get("session_id"),
+        "questions": data.get("questions", []),
+        "count": len(data.get("questions", [])),
+    })
 
 
 @router.post("/{mistake_id}/mastery")

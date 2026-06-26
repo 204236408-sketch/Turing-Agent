@@ -84,6 +84,28 @@ def retrieve_user_memory(
     db: Session, user_id: int,
     query: str = "", limit: int = 5,
 ) -> list[dict]:
+    from services.chroma_service import query_documents
+
+    if query.strip():
+        chroma_result = query_documents(
+            collection="user_memory_vector",
+            query=query,
+            limit=limit,
+            where={"user_id": user_id},
+        )
+        if not chroma_result.get("fallback", True) and chroma_result["items"]:
+            return [
+                {
+                    "id": item["metadata"].get("id", item["id"]),
+                    "type": item["metadata"].get("memory_type", ""),
+                    "subject": item["metadata"].get("subject", ""),
+                    "knowledge_point": item["metadata"].get("knowledge_point", ""),
+                    "content": item["text"],
+                    "evidence": "",
+                    "score": item["score"],
+                }
+                for item in chroma_result["items"]
+            ]
     rows = (
         db.query(UserMemory)
         .filter(UserMemory.user_id == user_id, UserMemory.status == "active")

@@ -282,6 +282,7 @@ class ConversationMessage(Base):
 
     __table_args__ = (
         Index("idx_msg_conv", "conversation_id"),
+        Index("idx_msg_conv_ctime", "conversation_id", "create_time"),
     )
 
 # -------------------------- 14. 论坛分类 ForumCategory --------------------------

@@ -91,3 +91,12 @@ class MemoryUpdateRequest(BaseModel):
 class SemanticSearchRequest(BaseModel):
     query: str
     limit: int = 5
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=6)
+
+
+class RetrainRequest(BaseModel):
+    mistake_id: int

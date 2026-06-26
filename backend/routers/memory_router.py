@@ -19,6 +19,7 @@ from database import get_db
 from dependencies import get_current_user
 from models import User, UserMemory
 from schemas import MemoryUpdateRequest, SemanticSearchRequest
+from services.chroma_service import upsert_document
 from services.rag_service import retrieve_user_memory
 from utils.response import AppError, success
 
@@ -82,6 +83,13 @@ def update(payload: MemoryUpdateRequest, db: Session = Depends(get_db), user: Us
     else:
         row = UserMemory(user_id=user.id, **payload.model_dump())
         db.add(row)
+    db.flush()
+    upsert_document(
+        collection="user_memory_vector",
+        document_id=f"memory_{row.id}",
+        text=f"{payload.subject} {payload.knowledge_point}: {payload.content}",
+        metadata={"user_id": user.id, "memory_type": payload.memory_type, "subject": payload.subject, "knowledge_point": payload.knowledge_point},
+    )
     db.commit()
     db.refresh(row)
     return success({"item": memory_payload(row)})

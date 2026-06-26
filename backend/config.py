@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -58,6 +59,27 @@ def _database_url(name: str, default: str) -> str:
     return f"{prefix}{resolved}"
 
 
+_WEAK_SECRETS = {"", "change-this-secret-in-production", "please-change-me"}
+
+
+def _resolve_secret_key() -> str:
+    value = _get("SECRET_KEY", "change-this-secret-in-production")
+    if value not in _WEAK_SECRETS and len(value) >= 32:
+        return value
+    env = _get("APP_ENV", "dev")
+    if env.lower() in {"prod", "production"}:
+        raise RuntimeError(
+            "SECRET_KEY must be set to a strong value (>=32 chars) in production via .env"
+        )
+    strong = os.urandom(32).hex()
+    logging.warning(
+        "SECRET_KEY is weak or default ('%s...'). Auto-generated temporary key in dev mode. "
+        "Set SECRET_KEY in .env for persistence.",
+        value[:16],
+    )
+    return strong
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = "Turing 408 Agent"
@@ -68,7 +90,7 @@ class Settings:
     mysql_url: str = _get("MYSQL_URL", "")
     auto_migrate_on_startup: bool = _bool("AUTO_MIGRATE_ON_STARTUP", False)
 
-    secret_key: str = _get("SECRET_KEY", "change-this-secret-in-production")
+    secret_key: str = _resolve_secret_key()
     access_token_expire_minutes: int = _int("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7)
     allow_demo_auth_fallback: bool = _bool("ALLOW_DEMO_AUTH_FALLBACK", False)
 
@@ -99,13 +121,17 @@ class Settings:
 def validate_security_settings() -> None:
     if not settings.is_production:
         return
-    weak_secrets = {"", "change-this-secret-in-production", "please-change-me"}
-    if settings.secret_key in weak_secrets or len(settings.secret_key) < 32:
+    if settings.secret_key in _WEAK_SECRETS or len(settings.secret_key) < 32:
         raise RuntimeError("SECRET_KEY must be set to a strong value in production")
     if settings.allow_demo_auth_fallback:
         raise RuntimeError("ALLOW_DEMO_AUTH_FALLBACK must be disabled in production")
     if settings.auto_migrate_on_startup:
         raise RuntimeError("AUTO_MIGRATE_ON_STARTUP must be disabled in production")
+    if settings.cors_origins == "*":
+        raise RuntimeError(
+            "CORS_ORIGINS must not be '*' in production. "
+            "Set to comma-separated allowed origins (e.g. https://example.com)."
+        )
 
 
 @lru_cache
