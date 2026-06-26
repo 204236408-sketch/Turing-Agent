@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import PROJECT_DIR
+from config import PROJECT_DIR, BASE_DIR
 from services.chunk_optimizer import (
     ChunkConfig,
     batch_chunk,
@@ -27,7 +27,7 @@ from services.chroma_service import (
 from services.vector_embedding_service import embedding_status
 
 
-DOCS_DIR = PROJECT_DIR / "knowledge_docs"
+DOCS_DIR = BASE_DIR / "data" / "knowledge_docs"
 COLLECTION = "knowledge_base_408"
 
 

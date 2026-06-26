@@ -117,12 +117,34 @@ def detail(mistake_id: int, db: Session = Depends(get_db), user: User = Depends(
     row = db.query(Mistake).filter(Mistake.id == mistake_id, Mistake.user_id == user.id).first()
     if not row:
         raise AppError("MISTAKE_NOT_FOUND", "错题不存在", status_code=404)
-    return success({"item": {"id": row.id, "error_reason": row.error_reason, "suggestion": row.suggestion}})
+    q = db.query(Question).filter(Question.id == row.question_id).first()
+    rec = None
+    if row.answer_record_id:
+        rec = db.query(AnswerRecord).filter(AnswerRecord.id == row.answer_record_id).first()
+    return success({
+        "item": {
+            "id": row.id,
+            "subject": row.subject,
+            "knowledge_point": row.knowledge_point,
+            "error_type": row.error_type,
+            "error_reason": row.error_reason,
+            "suggestion": row.suggestion,
+            "mastery_status": row.mastery_status,
+            "input_type": row.input_type,
+            "create_time": row.create_time.isoformat() if row.create_time else None,
+            "question_id": row.question_id,
+            "question_text": q.question_text if q else "",
+            "standard_answer": q.standard_answer if q else "",
+            "explanation": q.explanation if q else "",
+            "user_answer": rec.user_answer if rec else "",
+            "is_correct": rec.is_correct if rec else False,
+        }
+    })
 
 
 @router.post("/cause-confirm")
 def cause_confirm(payload: CauseConfirmRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = confirm_cause(db, user.id, payload.answer_record_id, payload.error_types, payload.user_note, payload.evidence_source)
+    data = confirm_cause(db, user.id, payload.answer_record_id, payload.error_types, payload.user_note, payload.evidence_source, payload.agent_suggested_types)
     db.commit()
     return success(data)
 

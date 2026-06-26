@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Literal
 
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, END
 from sqlalchemy.orm import Session
 
 from agents.graph_state import QuestionState
@@ -198,7 +198,7 @@ def analyze_user_state(state: QuestionState) -> dict:
     out = f"user_id={user_id}, mode={mode}, {mastery_text}"
     step = _make_step("analyze_user_state", f"user_id={user_id}, mode={mode}", out, "success", start)
     return {
-        "_mastery_text": mastery_text,
+        "mastery_text": mastery_text,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -241,7 +241,7 @@ def retrieve_question_context(state: QuestionState) -> dict:
     }
 
 
-def generate_questions(state: QuestionState) -> dict:
+def generate_questions_node(state: QuestionState) -> dict:
     start = time.time()
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
@@ -305,9 +305,9 @@ JSON 格式必须严格如下：
     step = _make_step("generate_questions", f"count={count}, type={question_type}", step_out, step_status, start)
 
     return {
-        "_raw_questions": raw_questions,
-        "_vt": vt,
-        "_llm": llm,
+        "raw_questions": raw_questions,
+        "variant_type": vt,
+        "llm_result": llm,
         "llm_used": llm.used_llm,
         "llm_error": llm.error,
         "agent_steps": state.get("agent_steps", []) + [step],
@@ -316,7 +316,7 @@ JSON 格式必须严格如下：
 
 def validate_questions(state: QuestionState) -> dict:
     start = time.time()
-    raw_questions = state.get("_raw_questions", [])
+    raw_questions = state.get("raw_questions", [])
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
 
@@ -343,7 +343,7 @@ def validate_questions(state: QuestionState) -> dict:
     reason_text = "valid" if valid else "; ".join(reasons)
     step = _make_step("validate_questions", f"{len(raw_questions)} questions", reason_text, "success" if valid else "warning", start)
     return {
-        "_questions_valid": valid,
+        "questions_valid": valid,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -351,9 +351,9 @@ def validate_questions(state: QuestionState) -> dict:
 def save_questions(state: QuestionState) -> dict:
     db = _get_db()
     start = time.time()
-    raw_questions = state.get("_raw_questions", [])
-    vt = state.get("_vt", "choice")
-    llm = state.get("_llm", None)
+    raw_questions = state.get("raw_questions", [])
+    vt = state.get("variant_type", "choice")
+    llm = state.get("llm_result", None)
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
     difficulty = state.get("difficulty", "中等")
@@ -378,9 +378,10 @@ def save_questions(state: QuestionState) -> dict:
     db.flush()
 
     questions = []
+    fallback_data = _build_fallback(vt, subject, knowledge_point, max(count, 1))
     for idx, item in enumerate(raw_questions):
         sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if vt == "comprehensive" else "[]"
-        fallback_data = _build_fallback(vt, subject, knowledge_point, count)
+        fallback_item = fallback_data[idx % len(fallback_data)]
         question = Question(
             session_id=session.id,
             subject=subject,
@@ -389,7 +390,7 @@ def save_questions(state: QuestionState) -> dict:
             question_type=question_type,
             variant_type=vt,
             question_text=_with_target_prefix(
-                item.get("question_text") or fallback_data[idx % len(fallback_data)]["question_text"],
+                item.get("question_text") or fallback_item["question_text"],
                 subject,
                 knowledge_point,
             ),
@@ -410,6 +411,7 @@ def save_questions(state: QuestionState) -> dict:
     return {
         "session_id": session.id,
         "questions": questions,
+        "config": session.reason,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -471,16 +473,17 @@ def fallback_questions(state: QuestionState) -> dict:
     return {
         "session_id": session.id,
         "questions": questions,
+        "config": session.reason,
         "llm_used": False,
         "llm_error": "question validation failed, fallback triggered",
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
 
-def should_fallback(state: QuestionState) -> Literal["fallback_questions", "end"]:
-    if not state.get("_questions_valid", True):
+def should_fallback(state: QuestionState) -> Literal["fallback_questions", "save_questions"]:
+    if not state.get("questions_valid", True):
         return "fallback_questions"
-    return "end"
+    return "save_questions"
 
 
 def _build_question_graph() -> StateGraph:
@@ -490,7 +493,7 @@ def _build_question_graph() -> StateGraph:
         ("analyze_user_state", analyze_user_state),
         ("select_target", select_target),
         ("retrieve_question_context", retrieve_question_context),
-        ("generate_questions", _with_timeout(generate_questions)),
+        ("generate_questions", _with_timeout(generate_questions_node)),
         ("validate_questions", validate_questions),
         ("save_questions", save_questions),
         ("fallback_questions", fallback_questions),
@@ -504,10 +507,10 @@ def _build_question_graph() -> StateGraph:
     workflow.add_edge("generate_questions", "validate_questions")
     workflow.add_conditional_edges("validate_questions", should_fallback, {
         "fallback_questions": "fallback_questions",
-        "end": "save_questions",
+        "save_questions": "save_questions",
     })
-    workflow.add_edge("save_questions", "__end__")
-    workflow.add_edge("fallback_questions", "__end__")
+    workflow.add_edge("save_questions", END)
+    workflow.add_edge("fallback_questions", END)
 
     return workflow.compile()
 

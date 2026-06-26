@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from __future__ import annotations
 import sys
 from pathlib import Path
@@ -5,6 +6,12 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent
 BACKEND_PATH = BASE_DIR / "backend"
 sys.path.insert(0, str(BACKEND_PATH))
+=======
+from pathlib import Path
+import sys
+
+from fastapi.testclient import TestClient
+>>>>>>> 7caeee66e74108737c9dbe600a33a889dcdf09bc
 
 import uuid
 import httpx
@@ -20,6 +27,7 @@ FRONTEND_HTML_PATH = Path(PROJECT_DIR) / "frontend" / "version-b.html"
 FRONTEND_CSS_PATH = Path(PROJECT_DIR) / "frontend" / "styles.css"
 FRONTEND_JS_PATH = Path(PROJECT_DIR) / "frontend" / "app.js"
 
+<<<<<<< HEAD
 # 后端本地服务地址（对应nginx proxy_pass）
 BACKEND_API_BASE = "http://127.0.0.1:8000/api"
 
@@ -117,3 +125,43 @@ def test_static_asset_route():
 if __name__ == "__main__":
     import pytest
     pytest.main(["-v", "-s", __file__])
+=======
+def auth_headers() -> dict[str, str]:
+    res = client.post("/api/auth/login", json={"account": "demo@turing408.ai", "password": "123456"})
+    token = res.json()["data"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_health_ok():
+    res = client.get("/api/health")
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+
+def test_generate_and_check_question():
+    headers = auth_headers()
+    generated = client.post(
+        "/api/questions/generate",
+        json={"subject": "操作系统", "knowledge_point": "页面置换算法", "count": 1},
+        headers=headers,
+    ).json()
+    assert generated["ok"] is True
+    question_id = generated["data"]["questions"][0]["id"]
+    checked = client.post(
+        "/api/answers/check",
+        json={"question_id": question_id, "user_answer": "A"},
+        headers=headers,
+    ).json()
+    assert checked["ok"] is True
+    assert "answer_record_id" in checked["data"]
+
+
+def test_frontend_static_page():
+    res = client.get("/version-b.html")
+    assert res.status_code == 200
+
+
+def test_404_unknown_route():
+    res = client.get("/api/nonexist")
+    assert res.json()["detail"] == "Not Found"
+>>>>>>> 7caeee66e74108737c9dbe600a33a889dcdf09bc

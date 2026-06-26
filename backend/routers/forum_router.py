@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from agents.forum_agent import ai_answer_for_post
 from database import get_db
 from dependencies import get_current_user
-from models import ForumCategory, ForumCheckin, ForumComment, ForumPost, User
+from models import ForumCategory, ForumCheckin, ForumComment, ForumLike, ForumPost, User
 from schemas import ForumCommentRequest, ForumPostRequest
 from services.llm_service import chat_completion
 from utils.response import AppError, success
@@ -88,6 +88,8 @@ def categories(db: Session = Depends(get_db)):
 def posts(
     search: str = Query(default=""),
     category: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     query = (
@@ -102,12 +104,13 @@ def posts(
         )
     if category and category != "全部":
         query = query.filter(ForumPost.category == category)
-    rows = query.order_by(ForumPost.create_time.desc()).all()
+    total = query.count()
+    rows = query.order_by(ForumPost.create_time.desc()).offset((page - 1) * page_size).limit(page_size).all()
     items = []
     for post, user in rows:
         d = post_to_dict(post, user)
         items.append(d)
-    return success({"items": items})
+    return success({"items": items, "total": total, "page": page, "page_size": page_size})
 
 
 @router.post("/posts")
@@ -184,9 +187,16 @@ def like(
     row = db.query(ForumPost).filter(ForumPost.id == post_id).first()
     if not row:
         raise AppError("POST_NOT_FOUND", "帖子不存在", status_code=404)
-    row.like_count += 1
-    db.commit()
-    return success({"like_count": row.like_count})
+    existing = db.query(ForumLike).filter(
+        ForumLike.user_id == user.id,
+        ForumLike.target_type == "post",
+        ForumLike.target_id == post_id,
+    ).first()
+    if not existing:
+        db.add(ForumLike(user_id=user.id, target_type="post", target_id=post_id))
+        row.like_count += 1
+        db.commit()
+    return success({"like_count": row.like_count, "liked": True})
 
 
 @router.post("/posts/{post_id}/unlike")
@@ -198,9 +208,16 @@ def unlike(
     row = db.query(ForumPost).filter(ForumPost.id == post_id).first()
     if not row:
         raise AppError("POST_NOT_FOUND", "帖子不存在", status_code=404)
-    row.like_count = max(0, row.like_count - 1)
-    db.commit()
-    return success({"like_count": row.like_count})
+    existing = db.query(ForumLike).filter(
+        ForumLike.user_id == user.id,
+        ForumLike.target_type == "post",
+        ForumLike.target_id == post_id,
+    ).first()
+    if existing:
+        db.delete(existing)
+        row.like_count = max(0, row.like_count - 1)
+        db.commit()
+    return success({"like_count": row.like_count, "liked": False})
 
 
 @router.get("/posts/{post_id}/comments")
@@ -359,8 +376,8 @@ def checkin_status(
     week_start = datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())
     week_begin = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
     weekly_count = (
-        db.query(func.count(func.distinct(ForumCheckin.user_id)))
-        .filter(ForumCheckin.create_time >= week_begin)
+        db.query(func.count(ForumCheckin.id))
+        .filter(ForumCheckin.user_id == user.id, ForumCheckin.create_time >= week_begin)
         .scalar()
         or 0
     )
@@ -399,8 +416,8 @@ def checkin(
 
     if existing:
         weekly_count = (
-            db.query(func.count(func.distinct(ForumCheckin.user_id)))
-            .filter(ForumCheckin.create_time >= week_begin)
+            db.query(func.count(ForumCheckin.id))
+            .filter(ForumCheckin.user_id == user.id, ForumCheckin.create_time >= week_begin)
             .scalar()
             or 0
         )
@@ -414,8 +431,8 @@ def checkin(
     db.add(ForumCheckin(user_id=user.id, checkin_date=today))
     db.commit()
     weekly_count = (
-        db.query(func.count(func.distinct(ForumCheckin.user_id)))
-        .filter(ForumCheckin.create_time >= week_begin)
+        db.query(func.count(ForumCheckin.id))
+        .filter(ForumCheckin.user_id == user.id, ForumCheckin.create_time >= week_begin)
         .scalar()
         or 0
     )

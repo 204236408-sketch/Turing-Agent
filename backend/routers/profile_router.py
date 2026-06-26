@@ -38,7 +38,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(get_current_use
                 "total_answer_count": total,
                 "correct_rate": round(correct / total * 100, 1) if total else 0,
                 "mastered": sum(1 for item in mastery if item.final_status == "掌握"),
-                "weak": sum(1 for item in mastery if item.final_status in ["薄弱点", "不会"]),
+                "weak": sum(1 for item in mastery if item.final_status in ["薄弱点", "不会", "不熟"]),
             },
         }
     )

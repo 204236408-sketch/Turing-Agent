@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Literal
 
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, END
 from sqlalchemy.orm import Session
 
 from agents.graph_state import AnswerCheckState
@@ -89,18 +89,18 @@ def check_objective_answer(state: AnswerCheckState) -> dict:
     out = f"vt={vt}, user='{normalized[:20]}', std='{standard[:20]}', correct={is_correct}"
     step = _make_step("check_objective_answer", f"user_answer='{user_answer[:30]}'", out, "success", start)
     return {
-        "_normalized_answer": normalized,
+        "normalized_answer": normalized,
         "is_correct": is_correct,
         "score": 1.0 if is_correct else 0.0,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
 
-def llm_feedback(state: AnswerCheckState) -> dict:
+def llm_feedback_node(state: AnswerCheckState) -> dict:
     start = time.time()
     is_correct = state.get("is_correct", False)
     question = state.get("question", {})
-    normalized = state.get("_normalized_answer", "")
+    normalized = state.get("normalized_answer", "")
 
     fallback_text = (
         f"批改结果：{'回答正确' if is_correct else '回答错误'}。你的答案：{normalized or '未填写'}；"
@@ -162,9 +162,9 @@ def llm_feedback(state: AnswerCheckState) -> dict:
     step_status = "success" if llm.used_llm else "degraded"
     step = _make_step("llm_feedback", f"correct={is_correct}", f"feedback_len={len(feedback)}", step_status, start)
     return {
-        "_feedback": feedback,
-        "_suggested_error_types": suggested,
-        "_llm": llm,
+        "feedback": feedback,
+        "suggested_error_types": suggested,
+        "llm_result": llm,
         "llm_used": llm.used_llm,
         "llm_error": llm.error,
         "agent_steps": state.get("agent_steps", []) + [step],
@@ -175,7 +175,7 @@ def recommend_causes(state: AnswerCheckState) -> dict:
     start = time.time()
     question = state.get("question", {})
     is_correct = state.get("is_correct", False)
-    suggested = state.get("_suggested_error_types", [])
+    suggested = state.get("suggested_error_types", [])
 
     db = _get_db()
     user_id = state.get("user_id", 0)
@@ -221,8 +221,8 @@ def update_answer_record(state: AnswerCheckState) -> dict:
     user_id = state.get("user_id", 0)
     question = state.get("question", {})
     is_correct = state.get("is_correct", False)
-    normalized = state.get("_normalized_answer", "")
-    feedback = state.get("_feedback", "")
+    normalized = state.get("normalized_answer", "")
+    feedback = state.get("feedback", "")
 
     record = AnswerRecord(
         user_id=user_id,
@@ -270,7 +270,7 @@ def fallback_check(state: AnswerCheckState) -> dict:
     start = time.time()
     question = state.get("question", {})
     is_correct = state.get("is_correct", False)
-    normalized = state.get("_normalized_answer", "")
+    normalized = state.get("normalized_answer", "")
 
     feedback = (
         f"批改结果：{'回答正确' if is_correct else '回答错误'}。你的答案：{normalized or '未填写'}；"
@@ -301,7 +301,7 @@ def _build_answer_graph() -> StateGraph:
     for name, fn in [
         ("load_question", load_question),
         ("check_objective_answer", check_objective_answer),
-        ("llm_feedback", _with_timeout(llm_feedback)),
+        ("llm_feedback", _with_timeout(llm_feedback_node)),
         ("recommend_causes", recommend_causes),
         ("update_answer_record", update_answer_record),
         ("update_mastery", update_mastery),
@@ -317,9 +317,9 @@ def _build_answer_graph() -> StateGraph:
     workflow.add_edge("update_answer_record", "update_mastery")
     workflow.add_conditional_edges("update_mastery", should_fallback, {
         "fallback_check": "fallback_check",
-        "end": "__end__",
+        "end": END,
     })
-    workflow.add_edge("fallback_check", "__end__")
+    workflow.add_edge("fallback_check", END)
 
     return workflow.compile()
 

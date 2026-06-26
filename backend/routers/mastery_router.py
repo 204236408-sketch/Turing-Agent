@@ -45,7 +45,7 @@ def list_mastery(db: Session = Depends(get_db), user: User = Depends(get_current
 
 
 @router.get("/detail")
-def detail(subject: str = Query("操作系统"), knowledge_point: str = Query("页面置换算法"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def detail(subject: str = Query(""), knowledge_point: str = Query(""), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = (
         db.query(KnowledgeMastery)
         .filter(KnowledgeMastery.user_id == user.id, KnowledgeMastery.subject == subject, KnowledgeMastery.knowledge_point == knowledge_point)
@@ -55,7 +55,7 @@ def detail(subject: str = Query("操作系统"), knowledge_point: str = Query("�
 
 
 @router.post("/recalculate")
-def recalculate(subject: str = "操作系统", knowledge_point: str = "页面置换算法", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def recalculate(subject: str = "", knowledge_point: str = "", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = recalculate_mastery(db, user.id, subject, knowledge_point)
     db.commit()
     return success({"item": payload(item)})

@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from config import PROJECT_DIR, settings
+from config import FRONTEND_DIR, settings, validate_security_settings
 from database import SessionLocal, init_database
 from routers import (
     answer_router,
@@ -33,11 +33,16 @@ from services.chroma_service import ChromaService
 from services.seed_service import seed_all
 from utils.response import AppError, failure, success
 
+chroma: ChromaService | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    global chroma
+    validate_security_settings()
     init_database()
-    app.state.chroma = ChromaService(settings.chroma_path)
+    chroma = ChromaService(settings.chroma_path)
+    app.state.chroma = chroma
     with SessionLocal() as db:
         seed_all(db)
     yield
@@ -87,13 +92,6 @@ async def unknown_error_handler(request: Request, exc: Exception):
     )
 
 
-@app.on_event("startup")
-def startup():
-    init_database()
-    with SessionLocal() as db:
-        seed_all(db)
-
-
 @app.get("/api/health")
 def health():
     return success(
@@ -128,4 +126,4 @@ app.include_router(memory_router.router)
 app.include_router(report_router.router)
 
 
-app.mount("/", StaticFiles(directory=PROJECT_DIR, html=True), name="frontend")
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

@@ -64,8 +64,24 @@ def by_knowledge(knowledge_point: str = Query("页面置换算法"), db: Session
 
 @router.post("/update")
 def update(payload: MemoryUpdateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    row = UserMemory(user_id=user.id, **payload.model_dump())
-    db.add(row)
+    row = (
+        db.query(UserMemory)
+        .filter(
+            UserMemory.user_id == user.id,
+            UserMemory.subject == payload.subject,
+            UserMemory.knowledge_point == payload.knowledge_point,
+            UserMemory.memory_type == payload.memory_type,
+            UserMemory.status == "active",
+        )
+        .first()
+    )
+    if row:
+        row.content = payload.content
+        if payload.evidence:
+            row.evidence = payload.evidence
+    else:
+        row = UserMemory(user_id=user.id, **payload.model_dump())
+        db.add(row)
     db.commit()
     db.refresh(row)
     return success({"item": memory_payload(row)})

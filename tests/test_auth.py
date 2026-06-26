@@ -23,6 +23,7 @@ TEST_PASSWORD = "Test@123456"
 TEST_TOKEN = ""
 
 
+<<<<<<< HEAD
 def test_register_success():
     """正常注册"""
     payload = {
@@ -44,6 +45,20 @@ def test_register_success():
     assert user_info["nickname"] == TEST_NICKNAME
     global TEST_TOKEN
     TEST_TOKEN = res_data["access_token"]
+
+=======
+def test_demo_login():
+    res = client.post("/api/auth/login", json={"account": "demo@turing408.ai", "password": "123456"})
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+
+def test_login_wrong_password():
+    req = {"account": "demo@turing408.ai", "password": "wrong123"}
+    resp = client.post("/api/auth/login", json=req)
+    assert resp.status_code == 401
+    assert resp.json()["ok"] is False
+>>>>>>> 7caeee66e74108737c9dbe600a33a889dcdf09bc
 
 
 def test_register_duplicate_email():
@@ -71,6 +86,7 @@ def test_register_duplicate_username():
     assert resp.json()["ok"] is False
 
 
+<<<<<<< HEAD
 def test_register_missing_field():
     """缺少必填字段触发422校验"""
     payload = {
@@ -166,3 +182,15 @@ def test_cors_auth_register():
 if __name__ == "__main__":
     import pytest
     pytest.main(["-v", "-s", __file__])
+=======
+def test_access_private_api_no_token():
+    resp = client.get("/api/home/overview")
+    assert resp.status_code == 401
+    assert resp.json()["ok"] is False
+
+
+def test_access_private_api_bad_auth_scheme():
+    resp = client.get("/api/home/overview", headers={"Authorization": "Token invalid"})
+    assert resp.status_code == 401
+    assert resp.json()["ok"] is False
+>>>>>>> 7caeee66e74108737c9dbe600a33a889dcdf09bc

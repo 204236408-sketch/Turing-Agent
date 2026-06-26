@@ -201,7 +201,7 @@ function forumHTML(){
       <label class="forum-search"><span>⌕</span><input id="forumSearch" placeholder="搜索讨论主题或关键词"></label>
     </div>
     <div class="forum-layout">
-      <section class="forum-feed" id="forumFeed"><div class="card state-loading">正在加载讨论列表…</div></section>
+      <section class="forum-feed" id="forumFeed">${"<div class='card' style='text-align:center;padding:40px;color:var(--muted);font-size:10px'>正在加载讨论列表…</div>"}</section>
       <aside class="forum-side">
         <article class="card forum-rules">
           <div class="head"><h3>社区公约</h3><span class="tag">友好讨论</span></div>
@@ -209,7 +209,7 @@ function forumHTML(){
         </article>
         <article class="card forum-hot">
           <div class="head"><h3>今日热议</h3><span class="tag" id="hotTag">TOP 3</span></div>
-          <ol id="hotList"><li class="state-loading">加载中…</li></ol>
+          <ol id="hotList"><li style="text-align:center;color:var(--muted);font-size:9px;padding:15px 0;border:0">加载中…</li></ol>
         </article>
         <article class="card forum-checkin">
           <b>本周社区打卡</b><strong id="checkinCount">-</strong><span>位同学完成学习记录</span>
@@ -235,8 +235,7 @@ function forumPostCardHTML(p){
   const commentCount=Number(p.comment_count||0);
   return `<article class="card forum-post" data-post-id="${p.id}" data-forum-subject="${escapeHtml(String(p.subject||""))}">
     <div class="forum-vote">
-      <button data-forum-like aria-label="点赞">赞</button>
-      <b data-forum-like-count>${likeCount}</b>
+<button data-forum-like aria-label="点赞"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg></button>      <b data-forum-like-count>${likeCount}</b>
     </div>
     <div class="forum-post-body">
       <div class="forum-post-meta">
@@ -385,7 +384,7 @@ function questionHTML(){
         <div><b>智能推荐出题</b><small>根据薄弱点、错题和高频提问生成</small></div>
         <button class="primary" id="openSmartDrawer">右侧选择</button>
       </div>
-    </div><div class="question-config"><span class="tag">当前出题条件</span><span class="config-chip" id="configMode">智能推荐</span><span class="config-chip" id="configSubject">操作系统</span><span class="config-chip" id="configPoint">页面置换算法</span><span class="config-chip" id="configDifficulty">中等</span><span class="config-chip" id="configType">选择题 · 3 道</span><button class="ghost" id="changeConfig">重新选择</button></div><div class="question-stage"><button class="question-switch prev" id="prevQuestion" aria-label="上一题">‹</button><article class="card question-card"><div class="question-meta"><span id="questionMeta">2026 模拟 · 第 1 题 · 2 分</span><span class="question-position"><b id="currentQuestionNo">1</b> / <span id="totalQuestionNo">3</span></span></div><div class="rec"><b id="recommendTitle">为什么推荐这道题？</b><small id="recommendReason">你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。</small></div><h3 class="question-title" id="questionTitle">某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？</h3><div id="options">${["A. 4 次","B. 5 次","C. 6 次","D. 7 次"].map(x=>`<div class="option">${x}</div>`).join("")}</div><div class="tools"><button class="soft" data-drawer="hint">💡 分步提示</button><button class="soft" data-drawer="video">▶ 推荐视频</button><button class="primary" id="submitAnswer">✓ 提交答案</button></div><div class="drawer" id="hint"><h4>提示 1 / 3</h4><p id="hintText">本题考查 LRU 页面置换算法。先画出 3 个页框，再逐项处理访问序列。</p><button class="ghost" id="nextHint">下一层提示</button></div><div class="drawer" id="video"><h4>相关公开视频</h4><div id="videoContent"></div></div><div class="drawer" id="answer"><h4>批改结果：回答错误</h4><p id="answerText">你的答案：B · 5 次。标准答案：C · 6 次。系统初步判断可能存在计算遗漏，请由用户确认真实错因。</p></div><div class="wrong-action" id="wrongAction"><b>这道题为什么答错？</b><p>请选择一个或多个最符合的原因。用户确认的错因将作为高可信证据写入长期学习记忆。</p><button class="primary" id="openCause">选择错因</button><div class="cause-detail" id="causeDetail"><div class="cause-options">${causes.map(x=>`<button data-cause="${x}">${x}</button>`).join("")}</div><div class="field"><label>补充说明（可选）</label><textarea id="causeNote" style="min-height:70px" placeholder="例如：我忘记在页面命中时更新最近访问顺序"></textarea></div><button class="primary" id="confirmCause">确认错因并记录到长期学习</button></div><div class="cause-summary" id="causeSummary"></div></div><div class="mastery"><span class="tag">本题掌握情况</span><button>掌握</button><button>不熟</button><button>不会</button></div></article><button class="question-switch next" id="nextQuestion" aria-label="下一题">›</button></div>${questionDrawersHTML()}</section>`}
+    </div><div class="question-config"><span class="tag">当前出题条件</span><span class="config-chip" id="configMode">智能推荐</span><span class="config-chip" id="configSubject">操作系统</span><span class="config-chip" id="configPoint">页面置换算法</span><span class="config-chip" id="configDifficulty">中等</span><span class="config-chip" id="configType">选择题 · 3 道</span><button class="ghost" id="changeConfig">重新选择</button></div><div class="question-stage"><button class="question-switch prev" id="prevQuestion" aria-label="上一题">‹</button><article class="card question-card"><div class="question-meta"><span id="questionMeta">2026 模拟 · 第 1 题 · 2 分</span><span class="question-position"><b id="currentQuestionNo">1</b> / <span id="totalQuestionNo">3</span></span><span>☆ 收藏</span></div><div class="rec"><b id="recommendTitle">为什么推荐这道题？</b><small id="recommendReason">你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。</small></div><h3 class="question-title" id="questionTitle">某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？</h3><div id="options">${["A. 4 次","B. 5 次","C. 6 次","D. 7 次"].map(x=>`<div class="option">${x}</div>`).join("")}</div><div class="tools"><button class="soft" data-drawer="hint">💡 分步提示</button><button class="soft" data-drawer="video">▶ 推荐视频</button><button class="primary" id="submitAnswer">✓ 提交答案</button></div><div class="drawer" id="hint"><h4>提示 1 / 3</h4><p id="hintText">本题考查 LRU 页面置换算法。先画出 3 个页框，再逐项处理访问序列。</p><button class="ghost" id="nextHint">下一层提示</button></div><div class="drawer" id="video"><h4>相关公开视频</h4><div id="videoContent"></div></div><div class="drawer" id="answer"><h4>批改结果：回答错误</h4><p id="answerText">你的答案：B · 5 次。标准答案：C · 6 次。系统初步判断可能存在计算遗漏，请由用户确认真实错因。</p></div><div class="wrong-action" id="wrongAction"><b>这道题为什么答错？</b><p>请选择一个或多个最符合的原因。用户确认的错因将作为高可信证据写入长期学习记忆。</p><button class="primary" id="openCause">选择错因</button><div class="cause-detail" id="causeDetail"><div class="cause-options">${causes.map(x=>`<button data-cause="${x}">${x}</button>`).join("")}</div><div class="field"><label>补充说明（可选）</label><textarea id="causeNote" style="min-height:70px" placeholder="例如：我忘记在页面命中时更新最近访问顺序"></textarea></div><button class="primary" id="confirmCause">确认错因并记录到长期学习</button></div><div class="cause-summary" id="causeSummary"></div></div><div class="mastery"><span class="tag">本题掌握情况</span><button>掌握</button><button>不熟</button><button>不会</button></div></article><button class="question-switch next" id="nextQuestion" aria-label="下一题">›</button></div>${questionDrawersHTML()}</section>`}
 function questionDrawersHTML(){
   return `<div class="drawer-mask" id="questionDrawerMask"></div>
 <aside class="side-drawer left" id="manualDrawer">
@@ -672,7 +671,9 @@ async function loadMistakeVideo(questionId){
     const data = await apiRequest(`/api/questions/${questionId}/videos`);
     const items = data.items || [];
     if(!items.length) return toast("暂无推荐视频");
-    items.forEach(v => toast("▶ " + v.title));
+    const v = items[0];
+    if(v.url) window.open(v.url, "_blank");
+    toast("▶ " + v.title);
   }catch(error){ toast("视频加载失败", "error"); }
 }
 async function startPracticeForPoint(subject, point){
@@ -1023,7 +1024,7 @@ async function loadForum(){
 async function loadForumPosts(category,search){
   const feed=document.getElementById("forumFeed");
   if(!feed)return;
-  setContainerState(feed,"loading","正在加载…");
+  feed.innerHTML="<div class='card' style='text-align:center;padding:40px;color:var(--muted);font-size:10px'>正在加载…</div>";
   try{
     let url="/api/forum/posts";
     const params=[];
@@ -1033,15 +1034,13 @@ async function loadForumPosts(category,search){
     const data=await apiRequest(url);
     const items=data.items||[];
     if(!items.length){
-      setContainerState(feed,"empty","暂无讨论，快来发布第一条吧");
+      feed.innerHTML="<div class='card' style='text-align:center;padding:40px;color:var(--muted);font-size:10px'>暂无讨论，快来发布第一条吧</div>";
       return;
     }
-    feed.innerHTML="";
-    feed.className="forum-feed";
     feed.innerHTML=items.map(p=>forumPostCardHTML(p)).join("");
     feed.querySelectorAll(".forum-post").forEach(post=>bindForumDynamic(post));
   }catch(err){
-    setContainerState(feed,"error",`加载失败：${escapeHtml(err.message)}`);
+    feed.innerHTML=`<div class='card' style='text-align:center;padding:40px;color:var(--danger);font-size:10px'>加载失败：${escapeHtml(err.message)}</div>`;
   }
 }
 async function loadHotTopics(){
@@ -1051,14 +1050,15 @@ async function loadHotTopics(){
     const data=await apiRequest("/api/forum/hot");
     const items=data.items||[];
     if(!items.length){
-      setContainerState(list,"empty","暂无热门讨论");
+      list.innerHTML="<li style='text-align:center;color:var(--muted);font-size:9px;padding:15px 0;border:0'>暂无热门讨论</li>";
       return;
     }
     list.innerHTML=items.slice(0,5).map((item,i)=>`<li><b>${String(i+1).padStart(2,"0")}</b><span>${escapeHtml(item.title)}<small>${item.like_count} 人点赞 · ${item.comment_count} 人评论</small></span></li>`).join("");
     const tag=document.getElementById("hotTag");
     if(tag)tag.textContent="TOP "+Math.min(items.length,5);
   }catch(err){
-    setContainerState(document.getElementById("hotList"),"error","加载失败");
+    const list=document.getElementById("hotList");
+    if(list)list.innerHTML="<li style='text-align:center;color:var(--muted);font-size:9px;padding:15px 0;border:0'>加载失败</li>";
   }
 }
 async function loadCheckinStatus(){
@@ -1113,18 +1113,17 @@ async function likeForumPost(postId,button){
 async function loadComments(postId,post){
   const container=post.querySelector(".forum-comments-items");
   if(!container)return;
-  setContainerState(container,"loading","正在加载评论…");
+  container.innerHTML="<div style='font-size:9px;color:var(--muted);padding:10px;text-align:center'>正在加载评论…</div>";
   try{
     const data=await apiRequest(`/api/forum/posts/${postId}/comments`);
     const items=data.items||[];
     if(!items.length){
-      setContainerState(container,"empty","暂无评论，快来抢沙发");
+      container.innerHTML="<div style='font-size:9px;color:var(--muted);padding:10px;text-align:center'>暂无评论，快来抢沙发</div>";
       return;
     }
-    container.className="forum-comments-items";
     container.innerHTML=items.map(c=>`<div style="padding:10px 0;border-bottom:1px solid var(--line);font-size:9px"><span style="color:var(--brand);font-weight:800">${escapeHtml(c.author)}</span> <span style="color:var(--muted)">${c.create_time}</span><p style="margin:5px 0 0;color:var(--ink)">${escapeHtml(c.content)}</p></div>`).join("");
   }catch(err){
-    setContainerState(container,"error","评论加载失败");
+    container.innerHTML="<div style='font-size:9px;color:var(--danger);padding:10px'>评论加载失败</div>";
   }
 }
 async function submitComment(postId,content,post){
@@ -1206,19 +1205,6 @@ const originalBindAll=bindAll;
 const originalRenderQuestion=renderQuestion;
 const originalToast=toast;
 
-/* ========= Token 存取（任务2） ========= */
-function getToken(){return localStorage.getItem("turing408_token")}
-function setToken(token){localStorage.setItem("turing408_token",token)}
-function clearToken(){localStorage.removeItem("turing408_token")}
-function isLoggedIn(){return !!getToken()}
-
-/* ========= 统一容器状态设置（任务3） ========= */
-function setContainerState(container, type, message){
- if(!container) return;
- container.className=type==="loading"?"state-loading":type==="empty"?"state-empty":type==="error"?"state-error":"";
- container.textContent=message||"";
-}
-
 toast=function(message,type="info"){
  const el=document.getElementById("toast");
  if(!el)return;
@@ -1238,27 +1224,17 @@ window.addEventListener("unhandledrejection",event=>{
  toast("接口或异步任务异常，已自动启用降级方案","error");
 });
 
-/* ========= 统一 API 调用封装（任务1）+ Token 鉴权（任务2） ========= */
 async function apiRequest(path,options={}){
  const isFormData=options.body instanceof FormData;
  const headers=isFormData?{}:{"Content-Type":"application/json"};
  Object.assign(headers,options.headers||{});
- const token=getToken();
+ const token=localStorage.getItem("turing408_token");
  if(token)headers.Authorization=`Bearer ${token}`;
  let response,payload;
  try{
   response=await fetch(`${API_BASE}${path}`,{...options,headers});
-  if(response.status===401||response.status===403){
-   clearToken();
-   if(!document.querySelector(".login")){
-    toast("登录已失效，请重新登录","error");
-    setTimeout(()=>location.reload(),1500);
-   }
-   throw new Error("登录已失效，请重新登录");
-  }
   payload=await response.json();
  }catch(error){
-  if(error.message==="登录已失效，请重新登录") throw error;
   throw new Error("无法连接后端服务，请先启动 backend/main.py");
  }
  if(!response.ok||payload.ok===false){
@@ -1266,24 +1242,6 @@ async function apiRequest(path,options={}){
   throw new Error(`${err.message||"接口请求失败"}${err.request_id?`（请求号：${err.request_id}）`:""}`);
  }
  return payload.data;
-}
-
-/* ========= 带空状态容器的 API 请求快捷方法（任务3） ========= */
-async function apiRequestWithState(path, options={}, containerId, loadingMsg, emptyMsg){
- const container=document.getElementById(containerId);
- if(container&&loadingMsg)setContainerState(container,"loading",loadingMsg);
- try{
-  const data=await apiRequest(path,options);
-  const items=data.items||data;
-  if(container&&emptyMsg&&(!items||(Array.isArray(items)&&!items.length))){
-   setContainerState(container,"empty",emptyMsg);
-   return null;
-  }
-  return data;
- }catch(error){
-  if(container)setContainerState(container,"error",error.message);
-  throw error;
- }
 }
 
 function normalizeQuestion(q,index=0){
@@ -1374,12 +1332,51 @@ async function loadHint(questionId){
 async function loadVideo(questionId){
  const el=document.getElementById("videoContent");
  if(!el)return;
+ el.innerHTML=`<div style="padding:12px 0;color:var(--muted);text-align:center">正在匹配相关视频…</div>`;
  try{
   const data=await apiRequest(`/api/questions/${questionId}/videos`);
   const items=data.items||[];
-  el.innerHTML=items.length?items.map(v=>`<div style="margin:8px 0"><b>${escapeHtml(v.title)}</b><p style="font-size:10px;color:var(--muted)">${escapeHtml(v.reason||"")}</p></div>`).join(""):`<div class="conversation-empty">暂无推荐视频</div>`;
+  if(!items.length){
+   el.innerHTML=`<div class="conversation-empty">暂无「${escapeHtml(data.knowledge_point||'')}」相关推荐视频<br><small style="color:var(--muted)">可前往B站搜索王道408对应章节</small></div>`;
+   return;
+  }
+  const matchLabel={exact:"<span style='color:#27a978;font-weight:600'>● 精确匹配</span>",alias:"<span style='color:#2f80ed;font-weight:600'>● 章节相关</span>",keyword:"<span style='color:#f7b500;font-weight:600'>● 关键词命中</span>",subject:"<span style='color:#9aa5b1;font-weight:600'>● 同科目推荐</span>"};
+  el.innerHTML=`
+    <div style="margin-bottom:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+      <span>为「${escapeHtml(data.subject||'')} · ${escapeHtml(data.knowledge_point||'')}」匹配到 ${items.length} 个讲解视频</span>
+      <span style="background:var(--good);color:#fff;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700">BV直链</span>
+    </div>
+    ${items.map(v=>`
+      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="video-card" style="display:block;text-decoration:none;padding:12px 14px;margin:9px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--brand) 15%,var(--panel2));color:var(--brand);font-size:12px;flex-shrink:0">▶</span>
+              <div style="font-weight:700;font-size:13px;line-height:1.4;color:var(--brand);overflow:hidden;text-overflow:ellipsis" class="video-title">
+                ${escapeHtml(v.title)}
+              </div>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;font-size:10px;align-items:center;margin-left:33px">
+              <span style="background:linear-gradient(135deg,#00a1d6,#fb7299);color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:9px">▶ B站</span>
+              ${v.author?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">👤 ${escapeHtml(v.author)}</span>`:""}
+              ${v.duration?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">⏱ ${escapeHtml(v.duration)}</span>`:""}
+              <span style="font-size:9px;margin-left:3px">${matchLabel[v.match_level]||""}</span>
+            </div>
+            ${v.reason?`<p style="font-size:10px;color:var(--muted);margin:6px 0 0 33px;line-height:1.5">${escapeHtml(v.reason)}</p>`:""}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
+            <span class="video-go" style="color:var(--brand);font-size:11px;font-weight:800;white-space:nowrap">去观看</span>
+            <span style="font-size:14px;color:var(--brand);font-weight:900">↗</span>
+          </div>
+        </div>
+      </a>
+    `).join("")}
+    <div style="margin-top:14px;font-size:10px;color:var(--muted);text-align:center;line-height:1.6;padding:8px;background:var(--panel2);border-radius:8px">
+      🔗 点击卡片将直接在新标签页打开 B 站视频播放页
+    </div>
+  `;
  }catch(error){
-  el.innerHTML=`<div class="conversation-empty">视频加载失败</div>`;
+  el.innerHTML=`<div class="conversation-empty">视频加载失败<br><small style="color:var(--muted)">${escapeHtml(error.message||"")}</small></div>`;
  }
 }
 
@@ -1451,8 +1448,8 @@ function prepareQuestionEmptyState(){
  activeQuestions=[];
  const meta=document.getElementById("questionMeta"),title=document.getElementById("questionTitle"),options=document.getElementById("options"),reason=document.getElementById("recommendReason");
  if(meta)meta.textContent="等待生成训练题";
-  if(title)title.textContent="从首页开始个性化训练，或在上方选择自由出题 / 智能推荐出题。";
-  if(options)options.innerHTML=`<div class="state-empty">生成后，题目与答题记录会同步到数据库。</div>`;
+ if(title)title.textContent="从首页开始个性化训练，或在上方选择自由出题 / 智能推荐出题。";
+ if(options)options.innerHTML=`<div class="home-empty-state">生成后，题目与答题记录会同步到数据库。</div>`;
  if(reason)reason.textContent="系统会根据当前用户的掌握状态、错题、问答和长期记忆实时计算推荐条件。";
  ["configMode","configSubject","configPoint","configDifficulty","configType"].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent="待生成";});
  const current=document.getElementById("currentQuestionNo"),total=document.getElementById("totalQuestionNo");
@@ -1495,13 +1492,12 @@ async function generateQuestionsFromApi(payload,successMessage,endpoint="/api/qu
   closeQuestionDrawers();
   toast(data.llm_used?`${successMessage}（AI 生成）`:`${successMessage}（后端规则题库）`,data.llm_used?"success":"info");
  }catch(error){
-   console.error(error);
-   prepareQuestionEmptyState();
-   toast(`${error.message}。本次未生成题目，也不会使用前端 Mock 冒充结果。`,"error");
-  }
+  console.error(error);
+  toast(`${error.message}。本次未生成题目，也不会使用前端 Mock 冒充结果。`,"error");
  }
+}
 
- async function loadKnowledgePoints(subject){
+async function loadKnowledgePoints(subject){
  const container=document.querySelector('[data-choice-group="manualPoint"]');
  if(!container)return;
  container.innerHTML=`<div class="conversation-empty" style="grid-column:1/-1">正在加载知识点…</div>`;
@@ -1625,27 +1621,116 @@ async function sendQa(){
  const question=input.value.trim(),messages=document.getElementById("messages");
  const emptyState=messages.querySelector(".chat-empty-state");
  if(emptyState)emptyState.remove();
- messages.insertAdjacentHTML("beforeend",`<div class="bubble user">${escapeHtml(question)}</div><div class="bubble ai" data-loading="qa">Agent 正在读取长期记忆并生成回答…</div>`);
  input.value="";
+
+ // Step 1: Show user bubble + AI bubble with step indicator
+ messages.insertAdjacentHTML("beforeend",
+  `<div class="bubble user">${escapeHtml(question)}</div>
+   <div class="bubble ai" data-qa-streaming="true">
+    <div class="qa-steps" id="qaSteps">
+     <div class="qa-step" data-step="意图识别">⏳ 意图识别</div>
+     <div class="qa-step" data-step="检索知识库">⏳ 检索知识库</div>
+     <div class="qa-step" data-step="读取长期记忆">⏳ 读取长期记忆</div>
+     <div class="qa-step" data-step="加载掌握度">⏳ 加载掌握度</div>
+     <div class="qa-step" data-step="LLM 生成回答">⏳ 生成回答</div>
+    </div>
+    <div class="qa-answer" id="qaAnswer" style="display:none"></div>
+   </div>`);
  messages.scrollTop=messages.scrollHeight;
+
+ const updateStep=function(stepName,status,detail){
+  const steps=document.getElementById("qaSteps");
+  if(!steps)return;
+  let found=false;
+  steps.querySelectorAll(".qa-step").forEach(el=>{
+   const name=el.dataset.step;
+   if(name===stepName){found=true;
+    el.className="qa-step qa-step-"+status;
+    el.textContent=(status==="success"?"✅":status==="streaming"?"⏳":status==="pending"?"○":"❌")+" "+name+(detail?" · "+detail:"");}
+   else if(!found)el.className="qa-step qa-step-success"; // past steps done
+   else el.className="qa-step qa-step-pending";
+  });
+ };
+
+ const showAnswer=function(text){
+  const steps=document.getElementById("qaSteps");
+  const answer=document.getElementById("qaAnswer");
+  if(steps)steps.style.display="none";
+  if(answer){answer.style.display="block";answer.innerHTML+=text;}
+ };
+
  try{
-  const data=await apiRequest("/api/qa/chat",{method:"POST",body:JSON.stringify({question,conversation_id:currentConversationId})});
-  const cid=data.conversation_id;
-  if(cid&&!currentConversationId){
-   currentConversationId=cid;
-   document.getElementById("currentChatTitle").textContent=question.slice(0,30);
-   loadConversations();
+  const token=localStorage.getItem("turing408_token");
+  const url=`${API_BASE}/api/qa/chat/stream?question=${encodeURIComponent(question)}&conversation_id=${currentConversationId||""}`;
+  const response=await fetch(url,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!response.ok){
+   const errPayload=await response.json().catch(()=>({}));
+   throw new Error(errPayload?.error?.message||`SSE 请求失败 (${response.status})`);
   }
-  const answer=(data.answer||"").trim()||"后端没有返回可展示回答，已保留本次问题，请稍后重试。";
-  const source=data.llm_used?"AI 大模型":"后端保底";
-  const memory=data.agent_steps?.[1]?.output||"已读取本地学习记忆";
-  const actions=(data.related_actions||["生成专项题"]).join(" / ");
-  messages.querySelector("[data-loading='qa']").innerHTML=`${answer}<div class="answer-sections"><span>${source}</span><span>${memory}</span><span>${actions}</span></div>`;
-  toast(data.llm_used?"AI 回答已生成":"已使用后端保底回答","success");
+  const reader=response.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer="",currentEvent="",fullAnswer="";
+
+  while(true){
+   const {done,value}=await reader.read();
+   if(done)break;
+   buffer+=decoder.decode(value,{stream:true});
+   const parts=buffer.split("\n");
+   buffer=parts.pop()||"";
+   for(const line of parts){
+    const trimmed=line.trim();
+    if(trimmed.startsWith("event: ")){currentEvent=trimmed.slice(7).trim();}
+    else if(trimmed.startsWith("data: ")){
+     let data;
+     try{data=JSON.parse(trimmed.slice(6));}catch(e){continue;}
+     if(currentEvent==="step"){
+      updateStep(data.name,data.status,data.output||data.reason||(data.chunks!==undefined?data.chunks+" 片段":""));
+      messages.scrollTop=messages.scrollHeight;
+     }else if(currentEvent==="token"){
+      showAnswer(data.text||"");
+      fullAnswer+=data.text||"";
+      messages.scrollTop=messages.scrollHeight;
+     }else if(currentEvent==="done"){
+      const cid=data.conversation_id;
+      if(cid&&!currentConversationId){currentConversationId=cid;
+       document.getElementById("currentChatTitle").textContent=question.slice(0,30);
+       loadConversations();}
+      const steps=document.getElementById("qaSteps");
+      const answer=document.getElementById("qaAnswer");
+      if(steps)steps.style.display="none";
+      if(answer)answer.style.display="block";
+      if(data.suggested_followups){
+       const actionsHtml=data.suggested_followups.map(a=>`<span>${escapeHtml(a)}</span>`).join("");
+       if(answer)answer.insertAdjacentHTML("beforeend",`<div class="answer-sections">${actionsHtml}</div>`);}
+      break;
+     }else if(currentEvent==="error"){
+      throw new Error(data.message||"流式处理异常");
+     }
+    }
+   }
+  }
  }catch(error){
-  console.error(error);
-  messages.querySelector("[data-loading='qa']").innerHTML="我已结合当前会话摘要、最近对话和你的长期记忆理解了这个追问。<br><br><b>降级提醒：</b>后端未连接，当前显示本地演示回答。";
-  toast(error.message,"error");
+  console.error("SSE stream failed, falling back to POST",error);
+  const loadingBubble=messages.querySelector("[data-qa-streaming]");
+  if(loadingBubble)loadingBubble.remove();
+  // Fallback to synchronous POST
+  try{
+   const data=await apiRequest("/api/qa/chat",{method:"POST",body:JSON.stringify({question,conversation_id:currentConversationId})});
+   const cid=data.conversation_id;
+   if(cid&&!currentConversationId){currentConversationId=cid;
+    document.getElementById("currentChatTitle").textContent=question.slice(0,30);
+    loadConversations();}
+   const answer=(data.answer||"").trim()||"后端没有返回可展示回答，已保留本次问题，请稍后重试。";
+   const source=data.llm_used?"AI 大模型":"后端保底";
+   const memory=data.agent_steps?.[1]?.output||"已读取本地学习记忆";
+   const actions=(data.related_actions||["生成专项题"]).join(" / ");
+   messages.insertAdjacentHTML("beforeend",
+    `<div class="bubble ai">${answer}<div class="answer-sections"><span>${source}</span><span>${memory}</span><span>${actions}</span></div></div>`);
+   toast(data.llm_used?"AI 回答已生成":"已使用后端保底回答","success");
+  }catch(fallbackError){
+   messages.insertAdjacentHTML("beforeend",`<div class="bubble ai">系统暂时无法处理该问题，请稍后重试。</div>`);
+   toast(fallbackError.message,"error");
+  }
  }
  messages.scrollTop=messages.scrollHeight;
 }
@@ -1667,13 +1752,12 @@ async function loadConversations(){
   container.querySelectorAll(".conversation-item").forEach(el=>{
    el.onclick=()=>switchConversation(Number(el.dataset.conversationId));
   });
-  }catch(error){
-   console.error(error);
-   setContainerState(container,"error",`会话列表加载失败：${error.message}`);
-  }
+ }catch(error){
+  console.error(error);
  }
+}
 
- async function switchConversation(id){
+async function switchConversation(id){
  currentConversationId=id;
  const messages=document.getElementById("messages");
  const emptyState=messages.querySelector(".chat-empty-state");
@@ -1833,8 +1917,6 @@ function renderHomeError(message){
  if(reason)reason.textContent=`首页数据接口暂不可用：${message}`;
  const list=document.getElementById("todayRecommendList");
  if(list)list.innerHTML=`<div class="rec"><b>接口暂不可用</b><small>请确认后端服务已启动，首页不会再使用固定 mock 数据冒充真实推荐。</small></div>`;
- const stats=document.getElementById("homeStats");
- if(stats)stats.innerHTML=`<div class="card stat"><small>服务暂不可用</small><strong>--</strong><span class="delta">${escapeHtml(message)}</span></div>`;
 }
 window.startPersonalizedTraining=startPersonalizedTraining;
 
@@ -1865,102 +1947,33 @@ async function loadMistakeNotebook(statuses="不熟,不会"){
   if(el2)el2.textContent=stats.unknown||0;
   if(tag)tag.textContent=(stats.total||0)>0?"已同步后端":"暂无数据";
   return payload;
-  }catch(error){
-   console.error(error);
-   const el1=document.getElementById("unfamiliarCount");
-   const el2=document.getElementById("unknownCount");
-   if(el1)el1.textContent="0";
-   if(el2)el2.textContent="0";
-    toast(error.message||"题本加载失败","error");
-    const parts=statuses.split(",");
-   parts.forEach(s=>{
-    const id=s==="不熟"?"unfamiliar":"unknown";
-    const container=document.getElementById(`${id}BookList`);
-    if(container)setContainerState(container,"error","题本加载失败，请稍后重试");
-   });
-   return null;
-  }
+ }catch(error){
+  console.error(error);
+  const el1=document.getElementById("unfamiliarCount");
+  const el2=document.getElementById("unknownCount");
+  if(el1)el1.textContent="0";
+  if(el2)el2.textContent="0";
+  toast(error.message||"题本加载失败","error");
+  return null;
  }
-
- function renderMistakeCards(items, type){
-  const container = document.getElementById(`${type}BookList`);
-  if(!container) return;
-  const label = type === "unfamiliar" ? "不熟" : "不会";
-  if(!items || !items.length){
-    container.innerHTML = `<div class="conversation-empty">暂无${label}题目</div>`;
-    return;
-  }
-  container.innerHTML = items.map(item => {
-    const optionsHtml = item.options_json ? (() => {
-      try{
-        const opts = JSON.parse(item.options_json || "[]");
-        return opts.length ? `<div class="book-options">${opts.map((x,j)=>`<div class="book-option"><b>${String.fromCharCode(65+j)}</b>${escapeHtml(String(x).replace(/^[A-D]\.\s*/,""))}</div>`).join("")}</div>` : "";
-      }catch(error){ return ""; }
-    })() : "";
-    const mStatus = item.mastery_status || label;
-    const isOcr = (item.input_type || "").toLowerCase().includes("ocr");
-    const title = item.question_text || item.error_reason || `知识点：${item.knowledge_point}`;
-    const answer = item.standard_answer || "暂无标准答案";
-    const explanation = item.explanation ? ` · ${escapeHtml(String(item.explanation))}` : "";
-    const userAnswer = item.user_answer ? `<br><span>你的答案：${escapeHtml(String(item.user_answer))}</span>` : "";
-    const source = isOcr ? "OCR 导入" : "系统出题";
-    return `<article class="book-question" data-book-type="${type}" data-mistake-id="${item.id}">
-      <div class="book-question-head">
-        <div class="book-labels">
-          <span>${escapeHtml(String(item.subject||""))}</span>
-          <span>${escapeHtml(String(item.knowledge_point||""))}</span>
-          <span>${source}</span>
-        </div>
-        <span class="tag">${escapeHtml(String(mStatus))}</span>
-      </div>
-      <h3>${escapeHtml(String(title))}</h3>
-      ${optionsHtml}
-      <div class="book-tools">
-        <div class="book-tools-left">
-          ${item.question_id ? `<button class="soft" data-mistake-hint="${item.question_id}">提示</button><button class="soft" data-mistake-video="${item.question_id}">视频</button>` : ""}
-          <button class="soft" data-book-answer>查看答案</button>
-        </div>
-        <button class="primary" data-mistake-practice="${escapeHtml(String(item.subject||""))}|${escapeHtml(String(item.knowledge_point||""))}">重新练习</button>
-      </div>
-      <div class="book-answer">
-        <b>答案与解析</b><br>
-        标准答案：${escapeHtml(String(answer))}${explanation}${userAnswer}<br>
-        <span style="color:var(--danger)">错因：${escapeHtml(String(item.error_type||"待确认"))}</span>
-        ${item.suggestion ? `<br><span>建议：${escapeHtml(String(item.suggestion))}</span>` : ""}
-      </div>
-      <div class="book-mastery">
-        <button data-book-mastery="掌握" data-mistake-id="${item.id}">✓<br>掌握</button>
-        <button class="${mStatus === "不熟" ? "current" : ""}" data-book-mastery="不熟" data-mistake-id="${item.id}">◉<br>不熟</button>
-        <button class="${mStatus === "不会" ? "current" : ""}" data-book-mastery="不会" data-mistake-id="${item.id}">×<br>不会</button>
-      </div>
-    </article>`;
-  }).join("");
-  container.querySelectorAll("[data-book-answer]").forEach(b=>b.onclick=()=>b.closest(".book-question").querySelector(".book-answer").classList.toggle("show"));
-  container.querySelectorAll("[data-book-mastery]").forEach(b=>b.onclick=()=>submitBookMastery(b));
-  container.querySelectorAll("[data-mistake-hint]").forEach(b=>b.onclick=()=>loadMistakeHint(b.dataset.mistakeHint));
-  container.querySelectorAll("[data-mistake-video]").forEach(b=>b.onclick=()=>loadMistakeVideo(b.dataset.mistakeVideo));
-  container.querySelectorAll("[data-mistake-practice]").forEach(b=>{
-    const parts = b.dataset.mistakePractice.split("|");
-    b.onclick=()=>startPracticeForPoint(parts[0], parts[1]);
-  });
 }
 
 async function submitBookMastery(button){
-  const group=button.parentElement;
-  group.querySelectorAll("button").forEach(x=>x.classList.remove("current"));
-  button.classList.add("current");
-  const status=button.dataset.bookMastery;
-  const mistakeId=button.dataset.mistakeId;
-  try{
-   await apiRequest(`/api/mistakes/${mistakeId}/mastery`,{method:"POST",body:JSON.stringify({status})});
-   notebookCache=null;
-   toast(status==="掌握"?"已标记掌握，将移出题本":`已归入${status}题本`,"success");
-   const current=document.querySelector(".book-view.active")?.id?.replace("book-","");
-   await loadMistakeNotebook();
-   if(current==="unfamiliar"||current==="unknown")openBookView(current);
-  }catch(error){
-   toast(error.message||"状态更新失败","error");
-  }
+ const group=button.parentElement;
+ group.querySelectorAll("button").forEach(x=>x.classList.remove("current"));
+ button.classList.add("current");
+ const status=button.dataset.bookMastery;
+ const mistakeId=button.dataset.mistakeId;
+ try{
+  await apiRequest(`/api/mistakes/${mistakeId}/mastery`,{method:"POST",body:JSON.stringify({status})});
+  notebookCache=null;
+  toast(status==="掌握"?"已标记掌握，将移出题本":`已归入${status}题本`,"success");
+  const current=document.querySelector(".book-view.active")?.id?.replace("book-","");
+  await loadMistakeNotebook();
+  if(current==="unfamiliar"||current==="unknown")openBookView(current);
+ }catch(error){
+  toast(error.message||"状态更新失败","error");
+ }
 }
 
 async function openBookView(name){
@@ -2034,8 +2047,7 @@ async function likeForumPost(postId,button){
  try{
   const data=await apiRequest(`/api/forum/posts/${postId}/${wasLiked?"unlike":"like"}`,{method:"POST"});
   button.classList.toggle("liked",!wasLiked);
-  button.textContent=wasLiked?"赞":"已赞";
-  updateForumPostCounts(post,{like_count:data.like_count});
+  button.innerHTML=wasLiked?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg>':'<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg>';  updateForumPostCounts(post,{like_count:data.like_count});
   loadHotTopics();
  }catch(err){
   toast(err.message||"点赞失败","error");
@@ -2060,7 +2072,7 @@ async function submitComment(postId,content,post){
 
 /* ========= 学习报告真实数据对接 ========= */
 reportHTML=function(){
- return `<section class="page" id="report"><div class="stats" id="reportStats"><div class="card stat"><small>答题总数</small><strong>--</strong></div><div class="card stat"><small>答对</small><strong>--</strong></div><div class="card stat"><small>答错</small><strong>--</strong></div><div class="card stat"><small>正确率</small><strong>--</strong></div></div><div class="report-grid report-main-grid"><article class="card report-main-card"><div class="head"><h3>四科掌握趋势</h3><span class="tag">后端统计</span></div><div class="chart" id="reportSubjectTrend"><div class="state-loading">正在读取四科掌握趋势...</div></div></article><article class="card report-plan-card"><div class="head"><h3>下一轮个性化训练计划</h3><button class="primary" id="exportReport">导出报告</button></div><div id="reportPlanList"><div class="state-loading">正在计算下一轮训练计划...</div></div></article></div><div class="report-section-title"><div><h2>学习画像</h2><p>基于答题、错题、问答、论坛与长期记忆生成</p></div></div><div class="learning-profile-grid"><article class="card learning-user-card" id="reportProfile"><div class="profile-avatar">--</div><h3>读取中</h3><p>正在同步后端学习画像</p><div></div></article><article class="card learning-memory-card"><div class="head"><h3>长期记忆权重</h3></div><div id="reportMemoryWeights"><div class="state-loading">正在读取长期记忆权重...</div></div></article></div></section>`;
+ return `<section class="page" id="report"><div class="stats" id="reportStats"><div class="card stat"><small>答题总数</small><strong>--</strong></div><div class="card stat"><small>答对</small><strong>--</strong></div><div class="card stat"><small>答错</small><strong>--</strong></div><div class="card stat"><small>正确率</small><strong>--</strong></div></div><div class="report-grid report-main-grid"><article class="card report-main-card"><div class="head"><h3>四科掌握趋势</h3><span class="tag">后端统计</span></div><div class="chart" id="reportSubjectTrend"><div class="home-empty-state">正在读取四科掌握趋势...</div></div></article><article class="card report-plan-card"><div class="head"><h3>下一轮个性化训练计划</h3><button class="primary" id="exportReport">导出报告</button></div><div id="reportPlanList"><div class="home-empty-state">正在计算下一轮训练计划...</div></div></article></div><div class="report-section-title"><div><h2>学习画像</h2><p>基于答题、错题、问答、论坛与长期记忆生成</p></div></div><div class="learning-profile-grid"><article class="card learning-user-card" id="reportProfile"><div class="profile-avatar">--</div><h3>读取中</h3><p>正在同步后端学习画像</p><div></div></article><article class="card learning-memory-card"><div class="head"><h3>长期记忆权重</h3></div><div id="reportMemoryWeights"><div class="home-empty-state">正在读取长期记忆权重...</div></div></article></div></section>`;
 };
 
 async function loadReportOverview(){
@@ -2069,18 +2081,12 @@ async function loadReportOverview(){
  try{
   const data=await apiRequest("/api/reports/overview");
   renderReportOverview(data);
-  }catch(error){
-   console.error(error);
-   const stats=document.getElementById("reportStats");
-   if(stats)stats.innerHTML=`<div class="card stat"><small>报告加载失败</small><strong>--</strong><span class="delta">${escapeHtml(error.message)}</span></div>`;
-   ["reportSubjectTrend","reportPlanList","reportMemoryWeights"].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el)setContainerState(el,"error","加载失败："+error.message);
-   });
-   const profile=document.getElementById("reportProfile");
-   if(profile)profile.querySelector("h3").textContent="加载失败";
-   toast(error.message||"学习报告加载失败","error");
-  }
+ }catch(error){
+  console.error(error);
+  const stats=document.getElementById("reportStats");
+  if(stats)stats.innerHTML=`<div class="card stat"><small>报告加载失败</small><strong>--</strong><span class="delta">${escapeHtml(error.message)}</span></div>`;
+  toast(error.message||"学习报告加载失败","error");
+ }
 }
 
 function renderReportOverview(data){

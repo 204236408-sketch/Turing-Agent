@@ -21,11 +21,12 @@ from sqlalchemy.orm import Session
 from agents.question_agent import generate_questions
 from database import get_db
 from dependencies import get_current_user
-from models import Question, QuestionGenerationSession, User, VideoResource
+from models import Question, QuestionGenerationSession, User
 from schemas import MasteryFeedbackRequest, QuestionGenerateRequest, SmartQuestionGenerateRequest
 from services.mastery_service import apply_manual_feedback
 from services.recommendation_service import build_smart_recommendations, resolve_smart_recommendation
 from services.serialization import question_to_dict
+from services.video_service import recommend_videos
 from utils.response import AppError, success
 
 
@@ -91,8 +92,8 @@ def videos(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise AppError("QUESTION_NOT_FOUND", "题目不存在", status_code=404)
-    rows = db.query(VideoResource).filter(VideoResource.subject == question.subject).limit(5).all()
-    return success({"items": [{"id": r.id, "title": r.title, "url": r.url, "reason": r.reason} for r in rows]})
+    items = recommend_videos(db, subject=question.subject, knowledge_point=question.knowledge_point or "", question_text=question.question_text, limit=8)
+    return success({"items": items, "subject": question.subject, "knowledge_point": question.knowledge_point or ""})
 
 
 @router.post("/{question_id}/mastery")

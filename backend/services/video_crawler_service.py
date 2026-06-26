@@ -1,3 +1,416 @@
+# from __future__ import annotations
+
+# import json
+# import logging
+# import re
+# import time
+# from datetime import datetime, timedelta
+# from typing import Any
+# from urllib.parse import quote
+
+# import requests
+# from bs4 import BeautifulSoup
+# from sqlalchemy.orm import Session
+
+# from models import VideoCrawlLog, VideoResource
+
+# logger = logging.getLogger("video_crawler")
+
+# BILIBILI_SEARCH_URL = "https://api.bilibili.com/x/web-interface/search/type"
+# BILIBILI_HEADERS = {
+#     "User-Agent": (
+#         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+#         "AppleWebKit/537.36 (KHTML, like Gecko) "
+#         "Chrome/120.0.0.0 Safari/537.36"
+#     ),
+#     "Referer": "https://search.bilibili.com/",
+#     "Accept": "application/json, text/plain, */*",
+#     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+#     "Origin": "https://search.bilibili.com",
+#     "Connection": "keep-alive",
+# }
+
+# _bili_session: requests.Session | None = None
+# _bili_session_ready: float = 0
+
+
+# def _get_bili_session() -> requests.Session:
+#     global _bili_session, _bili_session_ready
+#     now = time.time()
+#     if _bili_session is not None and (now - _bili_session_ready) < 600:
+#         return _bili_session
+#     s = requests.Session()
+#     s.headers.update({
+#         "User-Agent": BILIBILI_HEADERS["User-Agent"],
+#         "Accept-Language": BILIBILI_HEADERS["Accept-Language"],
+#     })
+#     try:
+#         s.get("https://www.bilibili.com/", timeout=15)
+#         time.sleep(0.5)
+#     except requests.RequestException:
+#         pass
+#     s.headers.update({
+#         "Referer": BILIBILI_HEADERS["Referer"],
+#         "Origin": BILIBILI_HEADERS["Origin"],
+#         "Accept": BILIBILI_HEADERS["Accept"],
+#     })
+#     _bili_session = s
+#     _bili_session_ready = now
+#     return s
+
+
+# PLATFORM_WEIGHTS = {"Bilibili": 1.0, "YouTube": 0.7, "其他": 0.5}
+# DEFAULT_PLATFORM_WEIGHT = 0.5
+
+# CRAWL_COOLDOWN_SECONDS = 3600
+# MAX_VIDEOS_PER_POINT = 5
+# MIN_VIDEOS_FOR_SKIP = 3
+
+
+# def _subject_search_keywords(subject: str) -> list[str]:
+#     mapping = {
+#         "数据结构": "数据结构",
+#         "计算机组成原理": "计组",
+#         "操作系统": "操作系统",
+#         "计算机网络": "计网",
+#     }
+#     return [mapping.get(subject, subject), "408", "考研"]
+
+
+# def _parse_play_count(val: Any) -> int:
+#     if isinstance(val, int):
+#         return val
+#     if isinstance(val, str):
+#         s = val.strip()
+#         try:
+#             if s.endswith("万"):
+#                 return int(float(s[:-1]) * 10000)
+#             if s.endswith("亿"):
+#                 return int(float(s[:-1]) * 100000000)
+#             return int(s.replace(",", ""))
+#         except (ValueError, TypeError):
+#             return 0
+#     return 0
+
+
+# def _search_bilibili(keyword: str, page: int = 1, limit: int = 10, order: str = "click", duration: int = 0) -> list[dict]:
+#     try:
+#         s = _get_bili_session()
+#         params = {
+#             "search_type": "video",
+#             "keyword": keyword,
+#             "page": page,
+#             "page_size": limit,
+#             "order": order,
+#         }
+#         if duration:
+#             params["duration"] = duration
+#         resp = s.get(BILIBILI_SEARCH_URL, params=params, timeout=15)
+#         resp.raise_for_status()
+#         data = resp.json()
+#         if data.get("code") != 0:
+#             logger.warning("Bilibili API error: code=%s, msg=%s", data.get("code"), data.get("message", ""))
+#             if data.get("code") == -412:
+#                 global _bili_session_ready
+#                 _bili_session_ready = 0
+#             return []
+#         result = data.get("data", {})
+#         videos = []
+#         for item in (result.get("result", []) or []):
+#             bvid = item.get("bvid", "")
+#             aid = item.get("aid", "")
+#             url = f"https://www.bilibili.com/video/{bvid}" if bvid else item.get("arcurl", "")
+#             if not url and aid:
+#                 url = f"https://www.bilibili.com/video/av{aid}"
+#             play = _parse_play_count(item.get("play", 0))
+#             pic = item.get("pic", "")
+#             if pic and pic.startswith("//"):
+#                 pic = "https:" + pic
+#             videos.append({
+#                 "platform": "Bilibili",
+#                 "title": item.get("title", "").replace("<em class=\"keyword\">", "").replace("</em>", ""),
+#                 "url": url,
+#                 "bvid": bvid,
+#                 "cover_url": pic,
+#                 "duration": _format_duration(item.get("duration", "")),
+#                 "author": item.get("author", ""),
+#                 "play_count": play,
+#                 "danmaku_count": item.get("video_review", 0) or 0,
+#                 "like_count": item.get("like", 0) or 0,
+#                 "publish_time": item.get("pubdate", 0),
+#                 "tag": item.get("tag", ""),
+#                 "description": item.get("description", ""),
+#             })
+#         return videos
+#     except requests.RequestException as e:
+#         logger.error("Bilibili search failed: %s", e)
+#         return []
+#     except (KeyError, json.JSONDecodeError) as e:
+#         logger.error("Bilibili parse failed: %s", e)
+#         return []
+
+
+# def _format_duration(raw: str | int) -> str:
+#     try:
+#         seconds = int(raw)
+#         m, s = divmod(seconds, 60)
+#         h, m = divmod(m, 60)
+#         if h:
+#             return f"{h}:{m:02d}:{s:02d}"
+#         return f"{m}:{s:02d}"
+#     except (ValueError, TypeError):
+#         return str(raw)
+
+
+# def _relevance_score(video: dict, subject: str, knowledge_point: str) -> float:
+#     text = f"{video.get('title', '')} {video.get('tag', '')} {video.get('description', '')}".lower()
+#     score = 0.0
+#     if knowledge_point.lower() in text:
+#         score += 0.6
+#     elif subject.lower() in text:
+#         score += 0.3
+#     kp_words = set(re.findall(r"[\w\u4e00-\u9fff]+", knowledge_point))
+#     if kp_words:
+#         matched = sum(1 for w in kp_words if w in text)
+#         score += matched * 0.1
+#     keywords = {"408", "考研", "计算机", subject[:2]}
+#     for kw in keywords:
+#         if kw in text:
+#             score += 0.05
+#     return min(score, 1.0)
+
+
+# def _popularity_score(video: dict) -> float:
+#     play = video.get("play_count", 0) or 0
+#     likes = video.get("like_count", 0) or 0
+#     danmaku = video.get("danmaku_count", 0) or 0
+#     combined = play + likes * 10 + danmaku * 5
+#     if combined >= 100000:
+#         return 1.0
+#     if combined >= 50000:
+#         return 0.8
+#     if combined >= 10000:
+#         return 0.6
+#     if combined >= 1000:
+#         return 0.4
+#     if combined >= 100:
+#         return 0.2
+#     return 0.1
+
+
+# def _freshness_score(video: dict) -> float:
+#     publish = video.get("publish_time", 0)
+#     if not publish:
+#         return 0.5
+#     try:
+#         pub_time = datetime.fromtimestamp(publish)
+#         days_ago = (datetime.now() - pub_time).days
+#         if days_ago <= 30:
+#             return 1.0
+#         if days_ago <= 90:
+#             return 0.8
+#         if days_ago <= 180:
+#             return 0.6
+#         if days_ago <= 365:
+#             return 0.4
+#         return 0.2
+#     except (OSError, ValueError):
+#         return 0.5
+
+
+# def score_video(video: dict, subject: str, knowledge_point: str) -> float:
+#     platform = video.get("platform", "其他")
+#     platform_weight = PLATFORM_WEIGHTS.get(platform, DEFAULT_PLATFORM_WEIGHT)
+#     relevance = _relevance_score(video, subject, knowledge_point)
+#     popularity = _popularity_score(video)
+#     freshness = _freshness_score(video)
+
+#     quality = (
+#         relevance * 0.40
+#         + popularity * 0.50
+#         + platform_weight * 0.10
+#         + freshness * 0.00
+#     )
+#     return round(quality, 4)
+
+
+# def deduplicate_videos(videos: list[dict]) -> list[dict]:
+#     seen_urls: set[str] = set()
+#     seen_titles: set[str] = set()
+#     result = []
+#     for v in videos:
+#         url = v.get("url", "").strip()
+#         title = v.get("title", "").strip()[:50]
+#         if url and url in seen_urls:
+#             continue
+#         if title and title in seen_titles:
+#             continue
+#         if url:
+#             seen_urls.add(url)
+#         if title:
+#             seen_titles.add(title)
+#         result.append(v)
+#     return result
+
+
+# def _can_crawl(db: Session, subject: str, knowledge_point: str) -> bool:
+#     existing = _existing_count(db, subject, knowledge_point)
+#     if existing >= MIN_VIDEOS_FOR_SKIP:
+#         return False
+#     last_log = (
+#         db.query(VideoCrawlLog)
+#         .filter(
+#             VideoCrawlLog.subject == subject,
+#             VideoCrawlLog.knowledge_point == knowledge_point,
+#             VideoCrawlLog.status == "success",
+#         )
+#         .order_by(VideoCrawlLog.crawl_time.desc())
+#         .first()
+#     )
+#     if last_log:
+#         elapsed = (datetime.utcnow() - last_log.crawl_time).total_seconds()
+#         if elapsed < CRAWL_COOLDOWN_SECONDS:
+#             return False
+#     return True
+
+
+# def _existing_count(db: Session, subject: str, knowledge_point: str) -> int:
+#     return (
+#         db.query(VideoResource)
+#         .filter(
+#             VideoResource.subject == subject,
+#             VideoResource.knowledge_point == knowledge_point,
+#             VideoResource.is_deleted == False,
+#         )
+#         .count()
+#     )
+
+
+# def _log_crawl(db: Session, subject: str, knowledge_point: str, url: str, platform: str, status: str, error_msg: str = "") -> None:
+#     log = VideoCrawlLog(subject=subject, knowledge_point=knowledge_point, url=url, platform=platform, status=status, error_msg=error_msg)
+#     db.add(log)
+#     db.flush()
+
+
+# def crawl_for_point(db: Session, subject: str, knowledge_point: str) -> list[dict]:
+#     existing = _existing_count(db, subject, knowledge_point)
+#     if existing >= MAX_VIDEOS_PER_POINT:
+#         logger.info("Already have %d videos for %s/%s, skip crawl", existing, subject, knowledge_point)
+#         return []
+
+#     if not _can_crawl(db, subject, knowledge_point):
+#         logger.info("Crawl skipped due to cooldown or sufficient videos for %s/%s", subject, knowledge_point)
+#         return []
+
+#     keywords = _subject_search_keywords(subject)
+#     keyword = f"{' '.join(keywords)} {knowledge_point}"
+#     raw = _search_bilibili(keyword, limit=20, order="click", duration=3)
+#     if not raw:
+#         raw = _search_bilibili(keyword, limit=20, order="click", duration=0)
+#         time.sleep(1)
+#     if not raw:
+#         logger.warning("Bilibili returned no results for %s", keyword)
+#         return []
+
+#     for v in raw:
+#         v["score"] = score_video(v, subject, knowledge_point)
+#         v["subject"] = subject
+#         v["knowledge_point"] = knowledge_point
+
+#     raw.sort(key=lambda v: v["score"], reverse=True)
+#     deduped = deduplicate_videos(raw)
+
+#     new_count = 0
+#     saved = []
+#     for v in deduped:
+#         if existing + new_count >= MAX_VIDEOS_PER_POINT:
+#             break
+#         dup = (
+#             db.query(VideoResource)
+#             .filter(VideoResource.url == v["url"], VideoResource.is_deleted == False)
+#             .first()
+#         )
+#         if dup:
+#             continue
+#         resource = VideoResource(
+#             subject=subject,
+#             knowledge_point=knowledge_point,
+#             title=v["title"],
+#             platform=v["platform"],
+#             url=v["url"],
+#             cover_url=v.get("cover_url", ""),
+#             duration=v.get("duration", ""),
+#             reason=_generate_reason(v, subject, knowledge_point),
+#         )
+#         db.add(resource)
+#         db.flush()
+#         saved.append({
+#             "id": resource.id,
+#             "title": resource.title,
+#             "url": resource.url,
+#             "platform": resource.platform,
+#             "score": v["score"],
+#         })
+#         _log_crawl(db, subject, knowledge_point, v["url"], v["platform"], "success")
+#         new_count += 1
+
+#     if not saved:
+#         logger.info("No new unique videos found for %s/%s", subject, knowledge_point)
+#     return saved
+
+
+# def _generate_reason(video: dict, subject: str, knowledge_point: str) -> str:
+#     score = video.get("score", 0)
+#     author = video.get("author", "未知")
+#     play = video.get("play_count", 0)
+#     if score >= 0.7:
+#         return f"优质推荐 · {author} 制作 · 播放 {play} 次 · 与 {knowledge_point} 高度相关"
+#     if score >= 0.5:
+#         return f"{author} 讲解 · 播放 {play} 次 · 覆盖 {knowledge_point} 相关内容"
+#     return f"{author} · 播放 {play} 次 · 与 {knowledge_point} 相关"
+
+
+# def crawl_all_points(db: Session) -> dict:
+#     from models import KnowledgePoint
+
+#     points = (
+#         db.query(KnowledgePoint)
+#         .filter(KnowledgePoint.is_deleted == False)
+#         .distinct(KnowledgePoint.subject, KnowledgePoint.name)
+#         .all()
+#     )
+#     seen = set()
+#     results: dict[str, list[dict]] = {}
+#     total_new = 0
+#     total_skipped = 0
+
+#     for kp in points:
+#         key = (kp.subject, kp.name)
+#         if key in seen:
+#             continue
+#         seen.add(key)
+#         existing = _existing_count(db, kp.subject, kp.name)
+#         if existing >= MAX_VIDEOS_PER_POINT:
+#             total_skipped += 1
+#             continue
+#         if not _can_crawl(db, kp.subject, kp.name):
+#             total_skipped += 1
+#             continue
+#         saved = crawl_for_point(db, kp.subject, kp.name)
+#         if saved:
+#             key_str = f"{kp.subject}/{kp.name}"
+#             results[key_str] = saved
+#             total_new += len(saved)
+#         time.sleep(1)
+
+#     return {
+#         "total_points": len(seen),
+#         "total_new_videos": total_new,
+#         "total_skipped": total_skipped,
+#         "results": results,
+#     }
+
+
 from __future__ import annotations
 
 import json
@@ -12,7 +425,7 @@ import requests
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
-from models import VideoCrawlLog, VideoResource
+from models import VideoCrawlLog, VideoResource, KnowledgePoint
 
 logger = logging.getLogger("video_crawler")
 
@@ -30,12 +443,43 @@ BILIBILI_HEADERS = {
     "Connection": "keep-alive",
 }
 
+_bili_session: requests.Session | None = None
+_bili_session_ready: float = 0
+
+
+def _get_bili_session() -> requests.Session:
+    global _bili_session, _bili_session_ready
+    now = time.time()
+    if _bili_session is not None and (now - _bili_session_ready) < 600:
+        return _bili_session
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": BILIBILI_HEADERS["User-Agent"],
+        "Accept-Language": BILIBILI_HEADERS["Accept-Language"],
+    })
+    try:
+        s.get("https://www.bilibili.com/", timeout=15)
+        time.sleep(0.5)
+    except requests.RequestException:
+        pass
+    s.headers.update({
+        "Referer": BILIBILI_HEADERS["Referer"],
+        "Origin": BILIBILI_HEADERS["Origin"],
+        "Accept": BILIBILI_HEADERS["Accept"],
+    })
+    _bili_session = s
+    _bili_session_ready = now
+    return s
+
+
 PLATFORM_WEIGHTS = {"Bilibili": 1.0, "YouTube": 0.7, "其他": 0.5}
 DEFAULT_PLATFORM_WEIGHT = 0.5
 
-CRAWL_COOLDOWN_SECONDS = 3600
+# 调整冷却时间（为了保证覆盖，临时降低冷却）
+CRAWL_COOLDOWN_SECONDS = 1800
 MAX_VIDEOS_PER_POINT = 5
-MIN_VIDEOS_FOR_SKIP = 3
+# 取消最小跳过阈值，改为强制至少抓取1条
+MIN_VIDEOS_FOR_SKIP = 0
 
 
 def _subject_search_keywords(subject: str) -> list[str]:
@@ -48,26 +492,65 @@ def _subject_search_keywords(subject: str) -> list[str]:
     return [mapping.get(subject, subject), "408", "考研"]
 
 
-def _search_bilibili(keyword: str, page: int = 1, limit: int = 10) -> list[dict]:
+def _parse_play_count(val: Any) -> int:
+    if isinstance(val, int):
+        return val
+    if isinstance(val, str):
+        s = val.strip()
+        try:
+            if s.endswith("万"):
+                return int(float(s[:-1]) * 10000)
+            if s.endswith("亿"):
+                return int(float(s[:-1]) * 100000000)
+            return int(s.replace(",", ""))
+        except (ValueError, TypeError):
+            return 0
+    return 0
+
+
+def _search_bilibili(keyword: str, page: int = 1, limit: int = 10, order: str = "click", duration: int = 0) -> list[dict]:
     try:
-        params = {"search_type": "video", "keyword": keyword, "page": page, "page_size": limit}
-        resp = requests.get(BILIBILI_SEARCH_URL, params=params, headers=BILIBILI_HEADERS, timeout=15)
+        s = _get_bili_session()
+        params = {
+            "search_type": "video",
+            "keyword": keyword,
+            "page": page,
+            "page_size": limit,
+            "order": order,
+        }
+        if duration:
+            params["duration"] = duration
+        resp = s.get(BILIBILI_SEARCH_URL, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
             logger.warning("Bilibili API error: code=%s, msg=%s", data.get("code"), data.get("message", ""))
+            if data.get("code") == -412:
+                global _bili_session_ready
+                _bili_session_ready = 0
             return []
         result = data.get("data", {})
         videos = []
         for item in (result.get("result", []) or []):
+            bvid = item.get("bvid", "")
+            aid = item.get("aid", "")
+            url = f"https://www.bilibili.com/video/{bvid}" if bvid else item.get("arcurl", "")
+            if not url and aid:
+                url = f"https://www.bilibili.com/video/av{aid}"
+            play = _parse_play_count(item.get("play", 0))
+            pic = item.get("pic", "")
+            if pic and pic.startswith("//"):
+                pic = "https:" + pic
+            author = item.get("author", "") or (item.get("owner") or {}).get("name", "")
             videos.append({
                 "platform": "Bilibili",
                 "title": item.get("title", "").replace("<em class=\"keyword\">", "").replace("</em>", ""),
-                "url": item.get("arcurl", ""),
-                "cover_url": item.get("pic", ""),
+                "url": url,
+                "bvid": bvid,
+                "cover_url": pic,
                 "duration": _format_duration(item.get("duration", "")),
-                "author": item.get("author", ""),
-                "play_count": item.get("play", 0) or 0,
+                "author": author,
+                "play_count": play,
                 "danmaku_count": item.get("video_review", 0) or 0,
                 "like_count": item.get("like", 0) or 0,
                 "publish_time": item.get("pubdate", 0),
@@ -186,74 +669,131 @@ def deduplicate_videos(videos: list[dict]) -> list[dict]:
     return result
 
 
-def _can_crawl(db: Session, subject: str, knowledge_point: str) -> bool:
-    existing = _existing_count(db, subject, knowledge_point)
-    if existing >= MIN_VIDEOS_FOR_SKIP:
+def _can_crawl(db: Session, subject: str, knowledge_point: str, section: str = "") -> bool:
+    existing = _existing_count(db, subject, knowledge_point, section)
+    # 如果已经有视频，直接禁止重复抓取
+    if existing >= 1:
         return False
+    # 放宽冷却限制：还没有视频的知识点，不受冷却约束
     last_log = (
         db.query(VideoCrawlLog)
         .filter(
             VideoCrawlLog.subject == subject,
             VideoCrawlLog.knowledge_point == knowledge_point,
+            VideoCrawlLog.section == section,
             VideoCrawlLog.status == "success",
         )
         .order_by(VideoCrawlLog.crawl_time.desc())
         .first()
     )
-    if last_log:
+    if last_log and existing >= 1:
         elapsed = (datetime.utcnow() - last_log.crawl_time).total_seconds()
         if elapsed < CRAWL_COOLDOWN_SECONDS:
             return False
     return True
 
 
-def _existing_count(db: Session, subject: str, knowledge_point: str) -> int:
+def _existing_count(db: Session, subject: str, knowledge_point: str, section: str = "") -> int:
     return (
         db.query(VideoResource)
         .filter(
             VideoResource.subject == subject,
             VideoResource.knowledge_point == knowledge_point,
+            VideoResource.section == section,
             VideoResource.is_deleted == False,
         )
         .count()
     )
 
 
-def _log_crawl(db: Session, subject: str, knowledge_point: str, url: str, platform: str, status: str, error_msg: str = "") -> None:
-    log = VideoCrawlLog(subject=subject, knowledge_point=knowledge_point, url=url, platform=platform, status=status, error_msg=error_msg)
+def _log_crawl(db: Session, subject: str, knowledge_point: str, section: str, url: str, platform: str, status: str, error_msg: str = "") -> None:
+    if not url:
+        url = None
+    log = VideoCrawlLog(subject=subject, knowledge_point=knowledge_point, section=section, url=url, platform=platform, status=status, error_msg=error_msg)
     db.add(log)
     db.flush()
 
 
-def crawl_for_point(db: Session, subject: str, knowledge_point: str) -> list[dict]:
-    existing = _existing_count(db, subject, knowledge_point)
-    if existing >= MAX_VIDEOS_PER_POINT:
-        logger.info("Already have %d videos for %s/%s, skip crawl", existing, subject, knowledge_point)
+def _search_bilibili_fallback(keyword: str, knowledge_point: str, section: str = "") -> list[dict]:
+    """兜底搜索策略：扩大范围、调整排序"""
+    fallback_orders = ["pubdate", "stow", "score"]
+    fallback_limits = [30, 50]
+    candidates = [keyword, knowledge_point, section]
+    if section:
+        candidates.extend([
+            f"{section} {knowledge_point}".strip(),
+            f"{knowledge_point} {section}".strip(),
+            f"{section} 基础讲解",
+            f"{section} 教程",
+        ])
+    candidates.extend([
+        f"{knowledge_point} 基础讲解",
+        f"{knowledge_point} 教程",
+    ])
+    fallback_keywords = [k for k in candidates if k]
+    
+    all_videos = []
+    for kw in fallback_keywords:
+        for order in fallback_orders:
+            for limit in fallback_limits:
+                videos = _search_bilibili(kw, page=1, limit=limit, order=order, duration=0)
+                if videos:
+                    all_videos.extend(videos)
+                time.sleep(0.5)
+                if len(all_videos) >= 10:
+                    break
+            if len(all_videos) >= 10:
+                break
+    return all_videos
+
+
+def crawl_for_point(db: Session, subject: str, knowledge_point: str, section: str = "") -> list[dict]:
+    existing = _existing_count(db, subject, knowledge_point, section)
+    # 强制保证至少1条，即使达到MAX也补充到1条（如果现有为0）
+    target_count = max(1, MAX_VIDEOS_PER_POINT)
+    if existing >= target_count:
+        logger.info("Already have %d videos for %s/%s/%s, skip crawl", existing, subject, knowledge_point, section)
         return []
 
-    if not _can_crawl(db, subject, knowledge_point):
-        logger.info("Crawl skipped due to cooldown or sufficient videos for %s/%s", subject, knowledge_point)
+    # 强制抓取（忽略冷却）如果现有视频为0
+    force_crawl = existing == 0
+    if not force_crawl and not _can_crawl(db, subject, knowledge_point, section):
+        logger.info("Crawl skipped due to cooldown for %s/%s/%s (existing: %d)", subject, knowledge_point, section, existing)
         return []
 
     keywords = _subject_search_keywords(subject)
-    keyword = f"{' '.join(keywords)} {knowledge_point}"
-    raw = _search_bilibili(keyword, limit=20)
+    keyword = f"{' '.join(keywords)} {knowledge_point} {section}".strip()
+    
+    # 基础搜索
+    raw = _search_bilibili(keyword, limit=20, order="click", duration=3)
     if not raw:
-        logger.warning("Bilibili returned no results for %s", keyword)
+        raw = _search_bilibili(keyword, limit=20, order="click", duration=0)
+        time.sleep(1)
+    
+    # 兜底搜索：如果基础搜索无结果，扩大范围
+    if not raw and force_crawl:
+        logger.info("Basic search no result, use fallback search for %s/%s/%s", subject, knowledge_point, section)
+        raw = _search_bilibili_fallback(keyword, knowledge_point, section)
+    
+    if not raw:
+        logger.warning("Bilibili returned no results for %s (even fallback)", keyword)
         return []
 
     for v in raw:
         v["score"] = score_video(v, subject, knowledge_point)
         v["subject"] = subject
         v["knowledge_point"] = knowledge_point
+        v["section"] = section
 
     raw.sort(key=lambda v: v["score"], reverse=True)
     deduped = deduplicate_videos(raw)
 
     new_count = 0
     saved = []
+    need_count = target_count - existing
+    
     for v in deduped:
-        if existing + new_count >= MAX_VIDEOS_PER_POINT:
+        if new_count >= need_count:
             break
         dup = (
             db.query(VideoResource)
@@ -265,27 +805,42 @@ def crawl_for_point(db: Session, subject: str, knowledge_point: str) -> list[dic
         resource = VideoResource(
             subject=subject,
             knowledge_point=knowledge_point,
+            section=section,
             title=v["title"],
             platform=v["platform"],
             url=v["url"],
             cover_url=v.get("cover_url", ""),
             duration=v.get("duration", ""),
+            author=v.get("author", ""),
             reason=_generate_reason(v, subject, knowledge_point),
+            quality_score=int(round(v.get("score", 0) * 100)),
+            crawl_source="crawl",
         )
         db.add(resource)
         db.flush()
         saved.append({
             "id": resource.id,
+            "subject": resource.subject,
+            "knowledge_point": resource.knowledge_point,
+            "section": resource.section,
             "title": resource.title,
-            "url": resource.url,
             "platform": resource.platform,
+            "url": resource.url,
+            "cover_url": resource.cover_url,
+            "duration": resource.duration,
+            "author": resource.author,
+            "quality_score": resource.quality_score,
+            "reason": resource.reason,
             "score": v["score"],
         })
-        _log_crawl(db, subject, knowledge_point, v["url"], v["platform"], "success")
+        _log_crawl(db, subject, knowledge_point, section, v["url"], v["platform"], "success")
         new_count += 1
 
-    if not saved:
-        logger.info("No new unique videos found for %s/%s", subject, knowledge_point)
+    # 最终检查：如果还是没有抓到，记录失败日志
+    if force_crawl and not saved:
+        logger.error("Failed to get any video for %s/%s/%s even with fallback", subject, knowledge_point, section)
+        _log_crawl(db, subject, knowledge_point, section, "", "Bilibili", "failed", "no video found even with fallback search")
+    
     return saved
 
 
@@ -301,41 +856,56 @@ def _generate_reason(video: dict, subject: str, knowledge_point: str) -> str:
 
 
 def crawl_all_points(db: Session) -> dict:
-    from models import KnowledgePoint
-
     points = (
         db.query(KnowledgePoint)
         .filter(KnowledgePoint.is_deleted == False)
-        .distinct(KnowledgePoint.subject, KnowledgePoint.name)
+        .distinct(KnowledgePoint.subject, KnowledgePoint.name, KnowledgePoint.section)
         .all()
     )
     seen = set()
     results: dict[str, list[dict]] = {}
     total_new = 0
     total_skipped = 0
+    total_forced = 0
 
     for kp in points:
-        key = (kp.subject, kp.name)
+        key = (kp.subject, kp.name, kp.section)
         if key in seen:
             continue
         seen.add(key)
-        existing = _existing_count(db, kp.subject, kp.name)
-        if existing >= MAX_VIDEOS_PER_POINT:
+        existing = _existing_count(db, kp.subject, kp.name, kp.section)
+        
+        # 强制抓取：即使达到MAX但现有为0，仍要抓1条
+        if existing == 0:
+            total_forced += 1
+            saved = crawl_for_point(db, kp.subject, kp.name, kp.section)
+        elif existing >= MAX_VIDEOS_PER_POINT:
             total_skipped += 1
             continue
-        if not _can_crawl(db, kp.subject, kp.name):
+        elif not _can_crawl(db, kp.subject, kp.name, kp.section):
             total_skipped += 1
             continue
-        saved = crawl_for_point(db, kp.subject, kp.name)
+        else:
+            saved = crawl_for_point(db, kp.subject, kp.name, kp.section)
+        
         if saved:
-            key_str = f"{kp.subject}/{kp.name}"
+            key_str = f"{kp.subject}/{kp.name}/{kp.section}"
             results[key_str] = saved
             total_new += len(saved)
         time.sleep(1)
 
+    # 最终校验：确保每个知识点都有至少1条
+    missing_points = []
+    for kp in points:
+        key = (kp.subject, kp.name, kp.section)
+        if key in seen and _existing_count(db, kp.subject, kp.name, kp.section) == 0:
+            missing_points.append(f"{kp.subject}/{kp.name}/{kp.section}")
+    
     return {
         "total_points": len(seen),
         "total_new_videos": total_new,
         "total_skipped": total_skipped,
+        "total_forced_crawl": total_forced,
+        "missing_points": missing_points,  # 输出仍缺失视频的知识点
         "results": results,
     }

@@ -235,8 +235,7 @@ function forumPostCardHTML(p){
   const commentCount=Number(p.comment_count||0);
   return `<article class="card forum-post" data-post-id="${p.id}" data-forum-subject="${escapeHtml(String(p.subject||""))}">
     <div class="forum-vote">
-      <button data-forum-like aria-label="点赞">赞</button>
-      <b data-forum-like-count>${likeCount}</b>
+<button data-forum-like aria-label="点赞"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg></button>      <b data-forum-like-count>${likeCount}</b>
     </div>
     <div class="forum-post-body">
       <div class="forum-post-meta">
@@ -1333,12 +1332,51 @@ async function loadHint(questionId){
 async function loadVideo(questionId){
  const el=document.getElementById("videoContent");
  if(!el)return;
+ el.innerHTML=`<div style="padding:12px 0;color:var(--muted);text-align:center">正在匹配相关视频…</div>`;
  try{
   const data=await apiRequest(`/api/questions/${questionId}/videos`);
   const items=data.items||[];
-  el.innerHTML=items.length?items.map(v=>`<div style="margin:8px 0"><a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:block"><b>▶ ${escapeHtml(v.title)}</b><p style="font-size:10px;color:var(--muted);margin:2px 0 0">${escapeHtml(v.reason||"")}</p></a></div>`).join(""):`<div class="conversation-empty">暂无推荐视频</div>`;
+  if(!items.length){
+   el.innerHTML=`<div class="conversation-empty">暂无「${escapeHtml(data.knowledge_point||'')}」相关推荐视频<br><small style="color:var(--muted)">可前往B站搜索王道408对应章节</small></div>`;
+   return;
+  }
+  const matchLabel={exact:"<span style='color:#27a978;font-weight:600'>● 精确匹配</span>",alias:"<span style='color:#2f80ed;font-weight:600'>● 章节相关</span>",keyword:"<span style='color:#f7b500;font-weight:600'>● 关键词命中</span>",subject:"<span style='color:#9aa5b1;font-weight:600'>● 同科目推荐</span>"};
+  el.innerHTML=`
+    <div style="margin-bottom:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+      <span>为「${escapeHtml(data.subject||'')} · ${escapeHtml(data.knowledge_point||'')}」匹配到 ${items.length} 个讲解视频</span>
+      <span style="background:var(--good);color:#fff;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700">BV直链</span>
+    </div>
+    ${items.map(v=>`
+      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="video-card" style="display:block;text-decoration:none;padding:12px 14px;margin:9px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--brand) 15%,var(--panel2));color:var(--brand);font-size:12px;flex-shrink:0">▶</span>
+              <div style="font-weight:700;font-size:13px;line-height:1.4;color:var(--brand);overflow:hidden;text-overflow:ellipsis" class="video-title">
+                ${escapeHtml(v.title)}
+              </div>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;font-size:10px;align-items:center;margin-left:33px">
+              <span style="background:linear-gradient(135deg,#00a1d6,#fb7299);color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:9px">▶ B站</span>
+              ${v.author?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">👤 ${escapeHtml(v.author)}</span>`:""}
+              ${v.duration?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">⏱ ${escapeHtml(v.duration)}</span>`:""}
+              <span style="font-size:9px;margin-left:3px">${matchLabel[v.match_level]||""}</span>
+            </div>
+            ${v.reason?`<p style="font-size:10px;color:var(--muted);margin:6px 0 0 33px;line-height:1.5">${escapeHtml(v.reason)}</p>`:""}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
+            <span class="video-go" style="color:var(--brand);font-size:11px;font-weight:800;white-space:nowrap">去观看</span>
+            <span style="font-size:14px;color:var(--brand);font-weight:900">↗</span>
+          </div>
+        </div>
+      </a>
+    `).join("")}
+    <div style="margin-top:14px;font-size:10px;color:var(--muted);text-align:center;line-height:1.6;padding:8px;background:var(--panel2);border-radius:8px">
+      🔗 点击卡片将直接在新标签页打开 B 站视频播放页
+    </div>
+  `;
  }catch(error){
-  el.innerHTML=`<div class="conversation-empty">视频加载失败</div>`;
+  el.innerHTML=`<div class="conversation-empty">视频加载失败<br><small style="color:var(--muted)">${escapeHtml(error.message||"")}</small></div>`;
  }
 }
 
@@ -1583,27 +1621,116 @@ async function sendQa(){
  const question=input.value.trim(),messages=document.getElementById("messages");
  const emptyState=messages.querySelector(".chat-empty-state");
  if(emptyState)emptyState.remove();
- messages.insertAdjacentHTML("beforeend",`<div class="bubble user">${escapeHtml(question)}</div><div class="bubble ai" data-loading="qa">Agent 正在读取长期记忆并生成回答…</div>`);
  input.value="";
+
+ // Step 1: Show user bubble + AI bubble with step indicator
+ messages.insertAdjacentHTML("beforeend",
+  `<div class="bubble user">${escapeHtml(question)}</div>
+   <div class="bubble ai" data-qa-streaming="true">
+    <div class="qa-steps" id="qaSteps">
+     <div class="qa-step" data-step="意图识别">⏳ 意图识别</div>
+     <div class="qa-step" data-step="检索知识库">⏳ 检索知识库</div>
+     <div class="qa-step" data-step="读取长期记忆">⏳ 读取长期记忆</div>
+     <div class="qa-step" data-step="加载掌握度">⏳ 加载掌握度</div>
+     <div class="qa-step" data-step="LLM 生成回答">⏳ 生成回答</div>
+    </div>
+    <div class="qa-answer" id="qaAnswer" style="display:none"></div>
+   </div>`);
  messages.scrollTop=messages.scrollHeight;
+
+ const updateStep=function(stepName,status,detail){
+  const steps=document.getElementById("qaSteps");
+  if(!steps)return;
+  let found=false;
+  steps.querySelectorAll(".qa-step").forEach(el=>{
+   const name=el.dataset.step;
+   if(name===stepName){found=true;
+    el.className="qa-step qa-step-"+status;
+    el.textContent=(status==="success"?"✅":status==="streaming"?"⏳":status==="pending"?"○":"❌")+" "+name+(detail?" · "+detail:"");}
+   else if(!found)el.className="qa-step qa-step-success"; // past steps done
+   else el.className="qa-step qa-step-pending";
+  });
+ };
+
+ const showAnswer=function(text){
+  const steps=document.getElementById("qaSteps");
+  const answer=document.getElementById("qaAnswer");
+  if(steps)steps.style.display="none";
+  if(answer){answer.style.display="block";answer.innerHTML+=text;}
+ };
+
  try{
-  const data=await apiRequest("/api/qa/chat",{method:"POST",body:JSON.stringify({question,conversation_id:currentConversationId})});
-  const cid=data.conversation_id;
-  if(cid&&!currentConversationId){
-   currentConversationId=cid;
-   document.getElementById("currentChatTitle").textContent=question.slice(0,30);
-   loadConversations();
+  const token=localStorage.getItem("turing408_token");
+  const url=`${API_BASE}/api/qa/chat/stream?question=${encodeURIComponent(question)}&conversation_id=${currentConversationId||""}`;
+  const response=await fetch(url,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!response.ok){
+   const errPayload=await response.json().catch(()=>({}));
+   throw new Error(errPayload?.error?.message||`SSE 请求失败 (${response.status})`);
   }
-  const answer=(data.answer||"").trim()||"后端没有返回可展示回答，已保留本次问题，请稍后重试。";
-  const source=data.llm_used?"AI 大模型":"后端保底";
-  const memory=data.agent_steps?.[1]?.output||"已读取本地学习记忆";
-  const actions=(data.related_actions||["生成专项题"]).join(" / ");
-  messages.querySelector("[data-loading='qa']").innerHTML=`${answer}<div class="answer-sections"><span>${source}</span><span>${memory}</span><span>${actions}</span></div>`;
-  toast(data.llm_used?"AI 回答已生成":"已使用后端保底回答","success");
+  const reader=response.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer="",currentEvent="",fullAnswer="";
+
+  while(true){
+   const {done,value}=await reader.read();
+   if(done)break;
+   buffer+=decoder.decode(value,{stream:true});
+   const parts=buffer.split("\n");
+   buffer=parts.pop()||"";
+   for(const line of parts){
+    const trimmed=line.trim();
+    if(trimmed.startsWith("event: ")){currentEvent=trimmed.slice(7).trim();}
+    else if(trimmed.startsWith("data: ")){
+     let data;
+     try{data=JSON.parse(trimmed.slice(6));}catch(e){continue;}
+     if(currentEvent==="step"){
+      updateStep(data.name,data.status,data.output||data.reason||(data.chunks!==undefined?data.chunks+" 片段":""));
+      messages.scrollTop=messages.scrollHeight;
+     }else if(currentEvent==="token"){
+      showAnswer(data.text||"");
+      fullAnswer+=data.text||"";
+      messages.scrollTop=messages.scrollHeight;
+     }else if(currentEvent==="done"){
+      const cid=data.conversation_id;
+      if(cid&&!currentConversationId){currentConversationId=cid;
+       document.getElementById("currentChatTitle").textContent=question.slice(0,30);
+       loadConversations();}
+      const steps=document.getElementById("qaSteps");
+      const answer=document.getElementById("qaAnswer");
+      if(steps)steps.style.display="none";
+      if(answer)answer.style.display="block";
+      if(data.suggested_followups){
+       const actionsHtml=data.suggested_followups.map(a=>`<span>${escapeHtml(a)}</span>`).join("");
+       if(answer)answer.insertAdjacentHTML("beforeend",`<div class="answer-sections">${actionsHtml}</div>`);}
+      break;
+     }else if(currentEvent==="error"){
+      throw new Error(data.message||"流式处理异常");
+     }
+    }
+   }
+  }
  }catch(error){
-  console.error(error);
-  messages.querySelector("[data-loading='qa']").innerHTML="我已结合当前会话摘要、最近对话和你的长期记忆理解了这个追问。<br><br><b>降级提醒：</b>后端未连接，当前显示本地演示回答。";
-  toast(error.message,"error");
+  console.error("SSE stream failed, falling back to POST",error);
+  const loadingBubble=messages.querySelector("[data-qa-streaming]");
+  if(loadingBubble)loadingBubble.remove();
+  // Fallback to synchronous POST
+  try{
+   const data=await apiRequest("/api/qa/chat",{method:"POST",body:JSON.stringify({question,conversation_id:currentConversationId})});
+   const cid=data.conversation_id;
+   if(cid&&!currentConversationId){currentConversationId=cid;
+    document.getElementById("currentChatTitle").textContent=question.slice(0,30);
+    loadConversations();}
+   const answer=(data.answer||"").trim()||"后端没有返回可展示回答，已保留本次问题，请稍后重试。";
+   const source=data.llm_used?"AI 大模型":"后端保底";
+   const memory=data.agent_steps?.[1]?.output||"已读取本地学习记忆";
+   const actions=(data.related_actions||["生成专项题"]).join(" / ");
+   messages.insertAdjacentHTML("beforeend",
+    `<div class="bubble ai">${answer}<div class="answer-sections"><span>${source}</span><span>${memory}</span><span>${actions}</span></div></div>`);
+   toast(data.llm_used?"AI 回答已生成":"已使用后端保底回答","success");
+  }catch(fallbackError){
+   messages.insertAdjacentHTML("beforeend",`<div class="bubble ai">系统暂时无法处理该问题，请稍后重试。</div>`);
+   toast(fallbackError.message,"error");
+  }
  }
  messages.scrollTop=messages.scrollHeight;
 }
@@ -1920,8 +2047,7 @@ async function likeForumPost(postId,button){
  try{
   const data=await apiRequest(`/api/forum/posts/${postId}/${wasLiked?"unlike":"like"}`,{method:"POST"});
   button.classList.toggle("liked",!wasLiked);
-  button.textContent=wasLiked?"赞":"已赞";
-  updateForumPostCounts(post,{like_count:data.like_count});
+  button.innerHTML=wasLiked?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg>':'<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg>';  updateForumPostCounts(post,{like_count:data.like_count});
   loadHotTopics();
  }catch(err){
   toast(err.message||"点赞失败","error");
