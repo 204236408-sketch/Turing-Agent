@@ -235,7 +235,7 @@ function forumPostCardHTML(p){
   const commentCount=Number(p.comment_count||0);
   return `<article class="card forum-post" data-post-id="${p.id}" data-forum-subject="${escapeHtml(String(p.subject||""))}">
     <div class="forum-vote">
-      <button data-forum-like aria-label="点赞">赞</button>
+      <button data-forum-like aria-label="点赞"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg></button>
       <b data-forum-like-count>${likeCount}</b>
     </div>
     <div class="forum-post-body">
@@ -1959,7 +1959,7 @@ async function likeForumPost(postId,button){
  try{
   const data=await apiRequest(`/api/forum/posts/${postId}/${wasLiked?"unlike":"like"}`,{method:"POST"});
   button.classList.toggle("liked",!wasLiked);
-  button.textContent=wasLiked?"赞":"已赞";
+  button.innerHTML=wasLiked?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg>':'<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3m7-2V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14Z"/></svg>';
   updateForumPostCounts(post,{like_count:data.like_count});
   loadHotTopics();
  }catch(err){
