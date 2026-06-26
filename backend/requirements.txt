@@ -8,40 +8,32 @@ python-multipart==0.0.20
 
 # Database
 SQLAlchemy==2.0.36
-pymysql==1.1.1
+pymysql==1.2.0
 cryptography==44.0.0
 
-# Data validation
+# Data validation & settings
 pydantic==2.10.4
+pydantic-settings==2.7.1
 
-# LLM & Agent orchestration (SiliconFlow / OpenAI-compatible)
-langchain==0.3.19
-langchain-core==0.3.35
-langchain-community==0.3.18
-langchain-openai==0.3.6
+# LLM Agent orchestration (LangGraph + LangChain)
 langgraph==0.3.16
+langgraph-checkpoint==2.1.2
+langgraph-prebuilt==0.1.8
+langgraph-sdk==0.1.74
+langchain-core==0.3.86
 
 # Vector store (RAG)
 chromadb==0.5.23
 
-# OCR (image text recognition)
+# OCR (image text recognition) — optional, lazy import
 paddleocr==2.9.1
 paddlepaddle==2.6.2
 Pillow==11.0.0
 
-# Background jobs
-apscheduler==3.10.4
-
 # Web scraping & HTTP
-beautifulsoup4==4.12.3
 requests==2.32.3
+beautifulsoup4==4.12.3
 httpx==0.28.1
-
-# Numerical computation
-numpy==2.2.3
 
 # Environment & config
 python-dotenv==1.0.1
-
-# Testing
-pytest==8.3.4
