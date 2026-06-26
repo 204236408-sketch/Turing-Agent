@@ -25,10 +25,10 @@ langchain-core==0.3.86
 # Vector store (RAG)
 chromadb==0.5.23
 
-# OCR (image text recognition) — optional, lazy import
+# OCR (image text recognition) — optional, lazy import in ocr_service.py
 paddleocr==2.9.1
-paddlepaddle==2.6.2
-Pillow==11.0.0
+paddlepaddle>=3.0.0,<4.0.0
+Pillow>=10.0.0
 
 # Web scraping & HTTP
 requests==2.32.3
