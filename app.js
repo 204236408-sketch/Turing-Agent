@@ -1622,6 +1622,7 @@ async function sendQa(){
  const question=input.value.trim(),messages=document.getElementById("messages");
  const emptyState=messages.querySelector(".chat-empty-state");
  if(emptyState)emptyState.remove();
+<<<<<<< HEAD
  messages.insertAdjacentHTML("beforeend",`<div class="bubble user">${escapeHtml(question)}</div><div class="bubble ai" data-loading="qa">Agent 正在读取长期记忆并生成回答…</div>`);
  input.value="";
  messages.scrollTop=messages.scrollHeight;
@@ -1643,6 +1644,118 @@ async function sendQa(){
   console.error(error);
   messages.querySelector("[data-loading='qa']").innerHTML="我已结合当前会话摘要、最近对话和你的长期记忆理解了这个追问。<br><br><b>降级提醒：</b>后端未连接，当前显示本地演示回答。";
   toast(error.message,"error");
+=======
+ input.value="";
+
+ // Step 1: Show user bubble + AI bubble with step indicator
+ messages.insertAdjacentHTML("beforeend",
+  `<div class="bubble user">${escapeHtml(question)}</div>
+   <div class="bubble ai" data-qa-streaming="true">
+    <div class="qa-steps" id="qaSteps">
+     <div class="qa-step" data-step="意图识别">⏳ 意图识别</div>
+     <div class="qa-step" data-step="检索知识库">⏳ 检索知识库</div>
+     <div class="qa-step" data-step="读取长期记忆">⏳ 读取长期记忆</div>
+     <div class="qa-step" data-step="加载掌握度">⏳ 加载掌握度</div>
+     <div class="qa-step" data-step="LLM 生成回答">⏳ 生成回答</div>
+    </div>
+    <div class="qa-answer" id="qaAnswer" style="display:none"></div>
+   </div>`);
+ messages.scrollTop=messages.scrollHeight;
+
+ const updateStep=function(stepName,status,detail){
+  const steps=document.getElementById("qaSteps");
+  if(!steps)return;
+  let found=false;
+  steps.querySelectorAll(".qa-step").forEach(el=>{
+   const name=el.dataset.step;
+   if(name===stepName){found=true;
+    el.className="qa-step qa-step-"+status;
+    el.textContent=(status==="success"?"✅":status==="streaming"?"⏳":status==="pending"?"○":"❌")+" "+name+(detail?" · "+detail:"");}
+   else if(!found)el.className="qa-step qa-step-success"; // past steps done
+   else el.className="qa-step qa-step-pending";
+  });
+ };
+
+ const showAnswer=function(text){
+  const steps=document.getElementById("qaSteps");
+  const answer=document.getElementById("qaAnswer");
+  if(steps)steps.style.display="none";
+  if(answer){answer.style.display="block";answer.innerHTML+=text;}
+ };
+
+ try{
+  const token=localStorage.getItem("turing408_token");
+  const url=`${API_BASE}/api/qa/chat/stream?question=${encodeURIComponent(question)}&conversation_id=${currentConversationId||""}`;
+  const response=await fetch(url,{headers:token?{Authorization:`Bearer ${token}`}:{}});
+  if(!response.ok){
+   const errPayload=await response.json().catch(()=>({}));
+   throw new Error(errPayload?.error?.message||`SSE 请求失败 (${response.status})`);
+  }
+  const reader=response.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer="",currentEvent="",fullAnswer="";
+
+  while(true){
+   const {done,value}=await reader.read();
+   if(done)break;
+   buffer+=decoder.decode(value,{stream:true});
+   const parts=buffer.split("\n");
+   buffer=parts.pop()||"";
+   for(const line of parts){
+    const trimmed=line.trim();
+    if(trimmed.startsWith("event: ")){currentEvent=trimmed.slice(7).trim();}
+    else if(trimmed.startsWith("data: ")){
+     let data;
+     try{data=JSON.parse(trimmed.slice(6));}catch(e){continue;}
+     if(currentEvent==="step"){
+      updateStep(data.name,data.status,data.output||data.reason||(data.chunks!==undefined?data.chunks+" 片段":""));
+      messages.scrollTop=messages.scrollHeight;
+     }else if(currentEvent==="token"){
+      showAnswer(data.text||"");
+      fullAnswer+=data.text||"";
+      messages.scrollTop=messages.scrollHeight;
+     }else if(currentEvent==="done"){
+      const cid=data.conversation_id;
+      if(cid&&!currentConversationId){currentConversationId=cid;
+       document.getElementById("currentChatTitle").textContent=question.slice(0,30);
+       loadConversations();}
+      const steps=document.getElementById("qaSteps");
+      const answer=document.getElementById("qaAnswer");
+      if(steps)steps.style.display="none";
+      if(answer)answer.style.display="block";
+      if(data.suggested_followups){
+       const actionsHtml=data.suggested_followups.map(a=>`<span>${escapeHtml(a)}</span>`).join("");
+       if(answer)answer.insertAdjacentHTML("beforeend",`<div class="answer-sections">${actionsHtml}</div>`);}
+      break;
+     }else if(currentEvent==="error"){
+      throw new Error(data.message||"流式处理异常");
+     }
+    }
+   }
+  }
+ }catch(error){
+  console.error("SSE stream failed, falling back to POST",error);
+  const loadingBubble=messages.querySelector("[data-qa-streaming]");
+  if(loadingBubble)loadingBubble.remove();
+  // Fallback to synchronous POST
+  try{
+   const data=await apiRequest("/api/qa/chat",{method:"POST",body:JSON.stringify({question,conversation_id:currentConversationId})});
+   const cid=data.conversation_id;
+   if(cid&&!currentConversationId){currentConversationId=cid;
+    document.getElementById("currentChatTitle").textContent=question.slice(0,30);
+    loadConversations();}
+   const answer=(data.answer||"").trim()||"后端没有返回可展示回答，已保留本次问题，请稍后重试。";
+   const source=data.llm_used?"AI 大模型":"后端保底";
+   const memory=data.agent_steps?.[1]?.output||"已读取本地学习记忆";
+   const actions=(data.related_actions||["生成专项题"]).join(" / ");
+   messages.insertAdjacentHTML("beforeend",
+    `<div class="bubble ai">${answer}<div class="answer-sections"><span>${source}</span><span>${memory}</span><span>${actions}</span></div></div>`);
+   toast(data.llm_used?"AI 回答已生成":"已使用后端保底回答","success");
+  }catch(fallbackError){
+   messages.insertAdjacentHTML("beforeend",`<div class="bubble ai">系统暂时无法处理该问题，请稍后重试。</div>`);
+   toast(fallbackError.message,"error");
+  }
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
  }
  messages.scrollTop=messages.scrollHeight;
 }

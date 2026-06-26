@@ -8,6 +8,11 @@
 cd C:\Users\Sophia\Desktop\turing
 python -m pip install -r backend\requirements.txt
 cd backend
+<<<<<<< HEAD
+=======
+python scripts\migrate_db.py
+python scripts\init_db.py
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 

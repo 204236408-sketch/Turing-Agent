@@ -17,6 +17,11 @@ class QAState(TypedDict, total=False):
     knowledge_point: str
     history: list[dict]
     retrieved_knowledge: list[dict]
+<<<<<<< HEAD
+=======
+    seed_questions: list[dict]
+    retrieval: dict
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     memories_used: list[dict]
     mastery: dict
     answer: dict

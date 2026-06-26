@@ -17,7 +17,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+<<<<<<< HEAD
 import re
+=======
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
@@ -52,6 +55,7 @@ KNOWLEDGE_FALLBACK = {
     "操作系统": ["进程与线程", "同步与互斥", "死锁", "内存管理", "文件系统"],
     "计算机网络": ["体系结构", "数据链路层", "网络层", "传输层", "应用层"],
 }
+<<<<<<< HEAD
 GRAPH_ALIASES = {
     ("数据结构", "绪论"): ["绪论"],
     ("数据结构", "线性表"): ["线性表"],
@@ -80,6 +84,8 @@ GRAPH_ALIASES = {
     ("计算机网络", "传输层"): ["传输层", "TCP", "UDP"],
     ("计算机网络", "应用层"): ["应用层"],
 }
+=======
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 MOJIBAKE_MAP = {
@@ -120,6 +126,7 @@ def clean_text(value: str | None, fallback: str = "") -> str:
     return text
 
 
+<<<<<<< HEAD
 def normalize_status(value: str | None, row: KnowledgeMastery | None = None) -> str:
     raw = clean_text(value, "")
     if raw in STATUS_STYLE:
@@ -141,6 +148,12 @@ def normalize_status(value: str | None, row: KnowledgeMastery | None = None) -> 
             return "掌握"
         return "不熟"
     return "未学"
+=======
+def _safe_status(row: KnowledgeMastery | None) -> str:
+    if row is None:
+        return "未学"
+    return row.final_status or "未学"
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 
 
 def target_datetime(profile: UserProfile | None) -> datetime:
@@ -182,8 +195,13 @@ def mastery_map(rows: list[KnowledgeMastery]) -> dict[tuple[str, str], Knowledge
         if not existing:
             result[key] = row
             continue
+<<<<<<< HEAD
         row_status = normalize_status(row.final_status, row)
         existing_status = normalize_status(existing.final_status, existing)
+=======
+        row_status = _safe_status(row)
+        existing_status = _safe_status(existing)
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
         row_rank = STATUS_ORDER.index(row_status)
         existing_rank = STATUS_ORDER.index(existing_status)
         if row_rank < existing_rank or (row_rank == existing_rank and (row.weak_score or 0) > (existing.weak_score or 0)):
@@ -193,14 +211,22 @@ def mastery_map(rows: list[KnowledgeMastery]) -> dict[tuple[str, str], Knowledge
 
 def compute_point_status(subject: str, point: str, rows: dict[tuple[str, str], KnowledgeMastery]) -> tuple[str, KnowledgeMastery | None]:
     row = rows.get((subject, point))
+<<<<<<< HEAD
     return normalize_status(row.final_status if row else None, row), row
+=======
+    return _safe_status(row), row
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 
 
 def sorted_mastery_candidates(rows: list[KnowledgeMastery]) -> list[KnowledgeMastery]:
     return sorted(
         rows,
         key=lambda r: (
+<<<<<<< HEAD
             STATUS_ORDER.index(normalize_status(r.final_status, r)) if normalize_status(r.final_status, r) in STATUS_ORDER else 99,
+=======
+            STATUS_ORDER.index(_safe_status(r)) if _safe_status(r) in STATUS_ORDER else 99,
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
             -(r.weak_score or 0),
             -(r.wrong_count or 0),
             -((r.qa_count or 0) + (r.forum_count or 0)),
@@ -208,6 +234,7 @@ def sorted_mastery_candidates(rows: list[KnowledgeMastery]) -> list[KnowledgeMas
     )
 
 
+<<<<<<< HEAD
 def choose_today_plan(rows: list[KnowledgeMastery], mistakes: list[Mistake], points: list[KnowledgePoint]) -> dict:
     candidate = next((r for r in sorted_mastery_candidates(rows) if normalize_status(r.final_status, r) != "未学"), None)
     if not candidate and mistakes:
@@ -266,6 +293,8 @@ def choose_today_plan(rows: list[KnowledgeMastery], mistakes: list[Mistake], poi
     }
 
 
+=======
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 def build_recommendations(rows: list[KnowledgeMastery], mistakes: list[Mistake], memories: list[UserMemory], points: list[KnowledgePoint]) -> list[dict]:
     items: list[dict] = []
     seen: set[tuple[str, str, str]] = set()
@@ -288,7 +317,11 @@ def build_recommendations(rows: list[KnowledgeMastery], mistakes: list[Mistake],
         )
 
     for row in sorted_mastery_candidates(rows):
+<<<<<<< HEAD
         status = normalize_status(row.final_status, row)
+=======
+        status = _safe_status(row)
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
         if status in {"薄弱点", "不会", "不熟"}:
             add(
                 "薄弱点强化",
@@ -327,8 +360,13 @@ def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_an
     all_correct = sum(1 for item in all_answers if item.is_correct)
     accuracy = round((all_correct / all_total) * 100) if all_total else 0
     unique_rows = list(mastery_map(rows).values())
+<<<<<<< HEAD
     weak_count = sum(1 for r in unique_rows if normalize_status(r.final_status, r) in {"薄弱点", "不会", "不熟"})
     mastered_count = sum(1 for r in unique_rows if normalize_status(r.final_status, r) == "掌握")
+=======
+    weak_count = sum(1 for r in unique_rows if _safe_status(r) in {"薄弱点", "不会", "不熟"})
+    mastered_count = sum(1 for r in unique_rows if _safe_status(r) == "掌握")
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     last_week_total = len(last_week_answers) if last_week_answers else 0
     last_week_correct = sum(1 for item in last_week_answers if item.is_correct) if last_week_answers else 0
     weekly_trend = f"+{round((total_answers - last_week_total) / last_week_total * 100)}%" if last_week_total > 0 and total_answers > last_week_total else (f"-{round((last_week_total - total_answers) / last_week_total * 100)}%" if last_week_total > total_answers else "")
@@ -339,8 +377,13 @@ def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_an
         recent_accuracy = round((recent_correct / recent_count) * 100)
         accuracy_trend = f"+{(recent_accuracy - accuracy)}%" if recent_accuracy > accuracy else (f"-{(accuracy - recent_accuracy)}%" if recent_accuracy < accuracy else "")
     weak_trend = ""
+<<<<<<< HEAD
     if rows:
         prev_weak = sum(1 for r in rows if r.final_status in {"薄弱点", "不会", "不熟"} and r.weak_score and r.weak_score > 5)
+=======
+    if unique_rows:
+        prev_weak = sum(1 for r in unique_rows if r.final_status in {"薄弱点", "不会", "不熟"} and r.weak_score and r.weak_score > 5)
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
         weak_trend = f"-{(prev_weak - weak_count)}" if prev_weak > weak_count else (f"+{(weak_count - prev_weak)}" if weak_count > prev_weak else "")
     memory_trend = ""
     if len(memories) > 0:
@@ -378,12 +421,20 @@ def build_memory_list(memories: list[UserMemory], rows: list[KnowledgeMastery]) 
     ]
     if items:
         return items
+<<<<<<< HEAD
     touched = [r for r in sorted_mastery_candidates(rows) if normalize_status(r.final_status, r) != "未学"]
+=======
+    touched = [r for r in sorted_mastery_candidates(rows) if _safe_status(r) != "未学"]
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     if touched:
         return [
             {
                 "title": clean_text(row.knowledge_point, "已学习知识点"),
+<<<<<<< HEAD
                 "content": f"当前状态：{normalize_status(row.final_status, row)}；答题 {row.total_answer_count} 次，错 {row.wrong_count} 次。",
+=======
+                "content": f"当前状态：{_safe_status(row)}；答题 {row.total_answer_count} 次，错 {row.wrong_count} 次。",
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
                 "subject": clean_text(row.subject, "408"),
             }
             for row in touched[:3]
@@ -397,6 +448,7 @@ def build_memory_list(memories: list[UserMemory], rows: list[KnowledgeMastery]) 
     ]
 
 
+<<<<<<< HEAD
 def build_graph(points: list[KnowledgePoint], rows: list[KnowledgeMastery]) -> dict:
     by_mastery = mastery_map(rows)
     grouped: dict[str, list[dict]] = {subject: [] for subject in SUBJECTS}
@@ -441,6 +493,62 @@ def build_graph(points: list[KnowledgePoint], rows: list[KnowledgeMastery]) -> d
     for subject in SUBJECTS:
         if subject not in grouped:
             grouped[subject] = []
+=======
+def _worst_status(statuses: list[str]) -> str:
+    """取状态列表中最差的一个（按 STATUS_ORDER 优先级）"""
+    if not statuses:
+        return "未学"
+    return min(statuses, key=lambda s: STATUS_ORDER.index(s) if s in STATUS_ORDER else 99)
+
+
+def build_graph(points: list[KnowledgePoint], rows: list[KnowledgeMastery]) -> dict:
+    by_mastery = mastery_map(rows)
+    grouped: dict[str, list[dict]] = {subject: [] for subject in SUBJECTS}
+
+    sections: dict[tuple[str, str], dict] = {}
+    for p in points:
+        sec = clean_text(p.section) or clean_text(p.name)
+        key = (p.subject, sec)
+        if key not in sections:
+            sections[key] = {"section": sec, "subject": p.subject, "kps": [], "is_high_frequency": False}
+        sections[key]["kps"].append(p)
+        if p.is_high_frequency:
+            sections[key]["is_high_frequency"] = True
+
+    order = sorted(sections.items(), key=lambda x: x[1]["kps"][0].id)
+    for (subject, section_name), info in order:
+        if len(grouped.get(subject, [])) >= 8:
+            continue
+
+        child_statuses: list[str] = []
+        weak_score = 0
+        total_count = 0
+        for kp in info["kps"]:
+            mastery = by_mastery.get((subject, kp.name))
+            if mastery:
+                child_statuses.append(mastery.final_status or "未学")
+                weak_score = max(weak_score, mastery.weak_score or 0)
+                total_count += mastery.total_answer_count or 0
+
+        status = _worst_status(child_statuses)
+
+        grouped.setdefault(subject, []).append({
+            "id": f"{subject}-{section_name}",
+            "subject": subject,
+            "name": section_name,
+            "section": section_name,
+            "parent_name": subject,
+            "level": 2,
+            "is_high_frequency": info["is_high_frequency"],
+            "status": status,
+            "weak_score": weak_score,
+            "total_answer_count": total_count,
+            "style": STATUS_STYLE.get(status, STATUS_STYLE["未学"]),
+        })
+
+    for s in SUBJECTS:
+        grouped.setdefault(s, [])
+>>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     summary = {status: 0 for status in STATUS_STYLE}
     for items in grouped.values():
         for item in items:
