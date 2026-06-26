@@ -390,6 +390,7 @@ class VideoResource(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     subject = Column(String(64), nullable=False)
     knowledge_point = Column(String(128), nullable=False)
+    section = Column(String(128), default="")
     title = Column(String(180), nullable=False)
     platform = Column(String(64), default="Bilibili")
     url = Column(String(255), default="")
@@ -412,14 +413,15 @@ class VideoCrawlLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     subject = Column(String(64), nullable=False)
     knowledge_point = Column(String(128), nullable=False)
-    url = Column(String(255), nullable=False, unique=True)
+    section = Column(String(128), default="")
+    url = Column(String(255), nullable=True, unique=True)
     platform = Column(String(64), nullable=False)
     status = Column(String(32), nullable=False)
     crawl_time = Column(DateTime, default=datetime.utcnow)
     error_msg = Column(Text, default="")
 
     __table_args__ = (
-        Index("idx_crawl_sub_kp", "subject", "knowledge_point"),
+        Index("idx_crawl_sub_kp", "subject", "knowledge_point", "section"),
     )
 
 # -------------------------- 22. RAG知识库文档 KnowledgeDocument --------------------------
