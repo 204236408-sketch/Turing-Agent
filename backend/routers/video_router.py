@@ -20,28 +20,16 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 def recommend(
     subject: str = Query("", description="科目"),
     knowledge_point: str = Query("", description="知识点"),
-<<<<<<< HEAD
     limit: int = Query(8, ge=1, le=20),
     db: Session = Depends(get_db),
 ):
     items = recommend_videos(db, subject, knowledge_point, limit)
-=======
-    question_text: str = Query("", description="题目原文，用于提取关键词"),
-    limit: int = Query(8, ge=1, le=20),
-    db: Session = Depends(get_db),
-):
-    items = recommend_videos(db, subject=subject, knowledge_point=knowledge_point, question_text=question_text, limit=limit)
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     return success({"items": items, "subject": subject, "knowledge_point": knowledge_point})
 
 
 @router.get("/list")
 def list_videos(subject: str = "", knowledge_point: str = "", db: Session = Depends(get_db)):
-<<<<<<< HEAD
     items = recommend_videos(db, subject, knowledge_point, limit=20)
-=======
-    items = recommend_videos(db, subject=subject, knowledge_point=knowledge_point, limit=20)
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     return success({"items": items})
 
 

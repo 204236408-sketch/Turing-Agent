@@ -1,11 +1,7 @@
 from contextlib import contextmanager
-<<<<<<< HEAD
 from datetime import datetime
 from sqlalchemy import DateTime, create_engine, inspect, text
 from sqlalchemy.schema import CreateTable
-=======
-from sqlalchemy import create_engine
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 from sqlalchemy.orm import declarative_base, sessionmaker
 from config import settings
 
@@ -43,7 +39,6 @@ def session_scope():
 def init_database() -> None:
     import models  # noqa: F401
 
-<<<<<<< HEAD
     Base.metadata.create_all(bind=engine)
     _ensure_compatibility_columns()
 
@@ -97,15 +92,3 @@ def _normalize_sqlite_datetime_values(connection) -> None:
                 text(f"UPDATE {table.name} SET {column.name} = :replacement WHERE {column.name} = 'CURRENT_TIMESTAMP'"),
                 {"replacement": replacement},
             )
-=======
-    from services.migration_service import check_migration_state, run_migrations
-
-    if settings.auto_migrate_on_startup:
-        run_migrations()
-        return
-
-    state = check_migration_state()
-    if state["pending"]:
-        pending = ", ".join(item["version"] for item in state["pending"])
-        raise RuntimeError(f"Database migrations are pending: {pending}. Run backend/scripts/migrate_db.py first.")
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)

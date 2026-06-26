@@ -423,21 +423,6 @@ body[data-theme=workspace] .main{box-sizing:border-box;min-width:0;margin:0 auto
 #toast[data-type=info]{background:var(--ink)!important;color:var(--panel)!important}
 .bubble[data-loading=qa]{position:relative;color:var(--muted)}
 .bubble[data-loading=qa]:after{content:"";display:inline-block;width:8px;height:8px;margin-left:7px;border-radius:50%;background:var(--brand);animation:apiPulse .8s infinite alternate}
-<<<<<<< HEAD
-=======
-/* SSE step indicator */
-.qa-steps{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
-.qa-step{font-size:8px;padding:4px 8px;border-radius:6px;background:var(--panel);border:1px solid var(--line);white-space:nowrap;transition:all .25s}
-.qa-step-success{background:#e8f5e9;border-color:#a5d6a7;color:#2e7d32}
-.qa-step-pending{opacity:.45}
-.qa-step-streaming{background:#fff3e0;border-color:#ffcc80;color:#e65100;animation:qaStepPulse .8s infinite alternate}
-.qa-answer{line-height:1.8;animation:qaFadeIn .2s ease-out}
-.qa-answer table{width:100%;border-collapse:collapse;margin:8px 0;font-size:10px}
-.qa-answer table td,.qa-answer table th{border:1px solid var(--line);padding:6px 10px;text-align:left}
-.qa-answer table th{background:var(--panel2);font-weight:700}
-@keyframes qaStepPulse{from{opacity:.7}to{opacity:1}}
-@keyframes qaFadeIn{from{opacity:0}to{opacity:1}}
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 .home-memory-card{margin-top:14px}.home-rec-button{border:1px solid var(--line);text-align:left;color:var(--ink);cursor:pointer}.home-rec-button:hover{border-color:var(--brand);transform:translateY(-1px)}.home-rec-button:disabled,[data-choice-group="smartMode"] button:disabled{cursor:not-allowed;opacity:.58;transform:none!important}.home-empty-state{display:grid;place-items:center;height:100%;color:var(--muted);font-size:10px}.kg-status{position:absolute;left:50%;bottom:-19px;transform:translateX(-50%);font-style:normal;font-size:6px;color:#526177;background:#fff;border:1px solid var(--status-color);border-radius:999px;padding:2px 5px;white-space:nowrap;opacity:.88}.kg-node{background:color-mix(in srgb,var(--status-color) 28%,#91a2bb)!important;border-color:color-mix(in srgb,var(--status-color) 65%,#fff)!important}.kg-node.show-status{background:var(--status-color)!important;border-color:#fff!important;outline:3px solid color-mix(in srgb,var(--status-color) 32%,transparent)!important}.status-unlearned{--status-color:#9aa5b1}.status-mastered{--status-color:#27a978}.status-unfamiliar{--status-color:#d9a441}.status-unknown{--status-color:#e17843}.status-weak{--status-color:#e95f52}
 @keyframes apiPulse{from{opacity:.28;transform:scale(.85)}to{opacity:1;transform:scale(1.2)}}
 .option.selected{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 10%,transparent)}

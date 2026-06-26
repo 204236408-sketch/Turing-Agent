@@ -2,7 +2,6 @@
   {
     "subject": "数据结构",
     "knowledge_point": "绪论",
-<<<<<<< HEAD
     "section": "数据结构的基本概念",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -12,22 +11,11 @@
     "standard_answer": "C",
     "explanation": "数据元素是基本处理单位，数据项是最小标识单位；数据是所有符号集合，范围大于数据对象。",
     "hints": ["记忆层级：数据 > 数据对象 > 数据元素 > 数据项"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于数据结构的说法正确的是：",
-    "options": ["A. 数据的逻辑结构独立于其存储结构", "B. 数据的存储结构独立于其逻辑结构", "C. 数据的逻辑结构与存储结构一一对应", "D. 数据的逻辑结构决定了其存储结构"],
-    "standard_answer": "A",
-    "explanation": "数据的逻辑结构是从抽象角度描述数据元素之间的逻辑关系，独立于存储结构；同一种逻辑结构可以采用多种存储结构（顺序、链式等）。",
-    "hints": ["区分逻辑结构与存储结构的定义", "考虑同一种逻辑结构能否用不同存储方式实现"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "绪论",
-<<<<<<< HEAD
     "section": "数据结构的基本概念",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -51,22 +39,11 @@
     "standard_answer": "1.顺序存储：连续内存，随机存取快，扩容受限；适合长度固定数据。2.链式存储：离散指针，增删高效，无法随机访问；适合动态频繁修改。3.索引存储：附加索引表查找快，额外空间开销大；适合海量有序数据。4.散列存储：哈希映射平均O(1)查找，存在哈希冲突；适合键值快速查询。",
     "explanation": "核心区分维度：内存排布、查找效率、增删开销、空间占用。",
     "hints": ["散列不能保证有序遍历"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下哪个不是算法的基本特征？",
-    "options": ["A. 有穷性", "B. 确定性", "C. 可读性", "D. 可行性"],
-    "standard_answer": "C",
-    "explanation": "算法的五个基本特征是有穷性、确定性、可行性、输入和输出。可读性是算法设计的要求，但不是基本特征。",
-    "hints": ["回忆算法的五大特征", "区分基本特征与设计要求"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "绪论",
-<<<<<<< HEAD
     "section": "数据结构三要素",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -76,86 +53,10 @@
     "standard_answer": "D",
     "explanation": "三要素：逻辑结构、存储结构、增删改查排序五类数据运算。",
     "hints": ["运算定义只和逻辑有关，实现依赖存储"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下程序段的时间复杂度为：\nx = 0;\nfor(i = 1; i < n; i *= 2)\n  x++;",
-    "options": ["A. O(log₂n)", "B. O(n)", "C. O(n²)", "D. O(log₂log₂n)"],
-    "standard_answer": "A",
-    "explanation": "循环变量 i 每次乘以 2，当 i ≥ n 时循环结束。设循环次数为 k，则 2ᵏ ≥ n，解得 k ≥ log₂n。因此时间复杂度为 O(log₂n)。",
-    "hints": ["分析循环变量的变化规律", "寻找循环次数与 n 的关系式"],
     "source": "seed"
   },
   {
     "subject": "数据结构",
-    "knowledge_point": "线性表",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在单链表中，删除 p 所指结点的后继结点的操作是：",
-    "options": ["A. p->next = p->next->next", "B. p->next = p", "C. p = p->next->next", "D. p->next->next = p->next"],
-    "standard_answer": "A",
-    "explanation": "删除 p 的后继结点 q，需要将 p 的 next 指针指向 q 的下一个结点。即 p->next = q->next = p->next->next。",
-    "hints": ["画出示意图帮助理解指针变化", "注意删除的是 p 的后继结点而非 p 本身"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "线性表",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "带头结点的单链表 L 为空的判定条件是：",
-    "options": ["A. L == NULL", "B. L->next == NULL", "C. L->next == L", "D. L != NULL"],
-    "standard_answer": "B",
-    "explanation": "带头结点的单链表中，头结点固定存在，L 始终指向头结点。判空的条件是头结点的 next 指针为 NULL，即 L->next == NULL。",
-    "hints": ["区分带头结点与不带头结点的判空方式", "头结点本身始终存在"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "线性表",
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在一个长度为 n 的顺序表中，在第 i 个元素（1 ≤ i ≤ n+1）之前插入一个新元素，需要移动的元素个数为：",
-    "options": ["A. n - i", "B. n - i + 1", "C. i", "D. n - i - 1"],
-    "standard_answer": "B",
-    "explanation": "顺序表插入时，需要将第 i 个到第 n 个元素全部后移，共移动 n - i + 1 个元素。",
-    "hints": ["考虑最好和最坏情况验证", "当 i=1 时移动 n 个，当 i=n+1 时移动 0 个"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "栈、队列和数组",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "栈和队列的共同特点是：",
-    "options": ["A. 只允许在端点处插入和删除", "B. 都是先进后出", "C. 都是先进先出", "D. 没有共同点"],
-    "standard_answer": "A",
-    "explanation": "栈和队列都是操作受限的线性表，栈只允许在一端（栈顶）进行插入和删除，队列只允许在一端（队尾）插入、另一端（队头）删除。二者都只允许在端点处操作。",
-    "hints": ["回顾栈和队列的定义", "从操作限制角度思考"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "栈、队列和数组",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "一个栈的入栈序列为 1,2,3,4，以下哪个不可能是出栈序列？",
-    "options": ["A. 1,2,3,4", "B. 4,3,2,1", "C. 3,2,4,1", "D. 3,4,1,2"],
-    "standard_answer": "D",
-    "explanation": "D 选项 3,4,1,2 不可能。分析：3 出栈时栈内为 1,2，下一个出 4 则需先入 4 再出，此时栈内为 1,2，栈顶为 2，所以 4 出栈后只能出 2 不能出 1。",
-    "hints": ["模拟入栈出栈过程", "注意栈是后进先出的"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-<<<<<<< HEAD
     "knowledge_point": "绪论",
     "section": "数据结构三要素",
     "difficulty": "中等",
@@ -628,23 +529,11 @@
     "standard_answer": "B",
     "explanation": "存储(行,列,值)三元组，跳过大量零元素，节省空间。",
     "hints": ["三元组无法O(1)随机访问元素"],
-=======
-    "knowledge_point": "栈、队列和数组",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "循环队列存储在数组 A[0..m] 中，队头指针为 front，队尾指针为 rear，则队列中元素个数为：",
-    "options": ["A. (rear - front + m + 1) % (m + 1)", "B. (rear - front) % (m + 1)", "C. rear - front", "D. (rear - front + m) % m"],
-    "standard_answer": "A",
-    "explanation": "循环队列中元素个数 = (rear - front + MAXSIZE) % MAXSIZE，其中 MAXSIZE = m + 1。",
-    "hints": ["循环队列用模运算处理回绕", "注意数组长度为 m+1"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "串",
-<<<<<<< HEAD
     "section": "串的定义和实现",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -654,22 +543,11 @@
     "standard_answer": "B",
     "explanation": "空串无任何字符；空白串仅由空格字符构成，长度大于0。",
     "hints": ["考试高频易混淆概念"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "串的长度是指：",
-    "options": ["A. 串中不同字符的个数", "B. 串中字符的个数", "C. 串中不同字母的个数", "D. 串中空格字符的个数"],
-    "standard_answer": "B",
-    "explanation": "串的长度定义为串中字符的数目，包括空格等所有字符。",
-    "hints": ["串是字符的有限序列", "空格也是有效字符"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "串",
-<<<<<<< HEAD
     "section": "串的定义和实现",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -679,22 +557,11 @@
     "standard_answer": "B",
     "explanation": "子串：连续字符；子序列：字符可间断，相对顺序不变。",
     "hints": ["截取SubString操作仅获取子串"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "已知串 S = 'aaab'，其 next 数组值为（约定 next[1]=0）：",
-    "options": ["A. 0,1,2,3", "B. 0,1,1,2", "C. 0,1,1,1", "D. 0,1,2,2"],
-    "standard_answer": "B",
-    "explanation": "KMP 算法中 next 数组：next[1]=0；next[2]=1；next[3]：前缀 'a' 和后缀 'a' 相等，next[3]=1+1=2；但此处 S[2]='a' 与 S[1]='a' 相等，根据优化 next 数组，实际应为 next[3]=1。",
-    "hints": ["按 KMP next 数组规则逐位计算", "注意优化前后 next 数组的区别"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "串",
-<<<<<<< HEAD
     "section": "串的模式匹配",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -900,21 +767,10 @@
     "standard_answer": "A",
     "explanation": "无向边双向可达，有向边仅单向通行。",
     "hints": ["握手定理无向总度数=2*边数"],
-=======
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "KMP 算法的时间复杂度为：",
-    "options": ["A. O(m+n)", "B. O(m×n)", "C. O(n²)", "D. O(log n)"],
-    "standard_answer": "A",
-    "explanation": "KMP 算法的时间复杂度为 O(m+n)，其中 m 为模式串长度，n 为主串长度。相比于朴素匹配算法的 O(m×n)，性能有显著提升。",
-    "hints": ["区别朴素匹配和 KMP 的时间复杂度", "KMP 利用已匹配信息减少比较次数"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
-<<<<<<< HEAD
     "knowledge_point": "图",
     "section": "图的存储及基本操作",
     "difficulty": "中等",
@@ -939,22 +795,10 @@
     "standard_answer": "B",
     "explanation": "广度优先逐层扩散，层数等于最短边数。",
     "hints": ["DFS适合环路检测"],
-=======
-    "knowledge_point": "树与二叉树",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "一棵完全二叉树有 1001 个结点，其叶子结点个数为：",
-    "options": ["A. 500", "B. 501", "C. 250", "D. 251"],
-    "standard_answer": "B",
-    "explanation": "完全二叉树中叶子结点数 = ⌈n/2⌉。n=1001 时，叶子结点数 = ⌈1001/2⌉ = 501。",
-    "hints": ["完全二叉树的性质：叶子结点数 = ⌈n/2⌉", "也可以从度数的角度推导"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
-<<<<<<< HEAD
     "knowledge_point": "图",
     "section": "图的应用",
     "difficulty": "中等",
@@ -965,22 +809,10 @@
     "standard_answer": "B",
     "explanation": "Kruskal依靠并查集处理稀疏图；Prim适合稠密图。",
     "hints": ["最小生成树无环、总权最小"],
-=======
-    "knowledge_point": "树与二叉树",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "已知某二叉树的前序遍历序列为 ABCDEF，中序遍历序列为 CBAEDF，其后序遍历序列为：",
-    "options": ["A. CBEFDA", "B. CBFEDA", "C. CBEDFA", "D. CBEFAD"],
-    "standard_answer": "A",
-    "explanation": "前序首元素 A 为根；中序中 A 左侧 C B 为左子树，右侧 E D F 为右子树。同理递归构建出树结构，后序遍历得 C B E F D A。",
-    "hints": ["前序定根，中序定左右", "递归分解构建二叉树"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
-<<<<<<< HEAD
     "knowledge_point": "图",
     "section": "图的应用",
     "difficulty": "中等",
@@ -991,36 +823,11 @@
     "standard_answer": "B",
     "explanation": "负权会导致最短路径反复更新，算法失效。",
     "hints": "多源最短路径用Floyd",
-=======
-    "knowledge_point": "树与二叉树",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "平衡二叉树（AVL）中，若某个结点的平衡因子为 -2，且其右子结点的平衡因子为 1，则应采用的旋转方式为：",
-    "options": ["A. 右旋", "B. 左旋", "C. 先右旋再左旋", "D. 先左旋再右旋"],
-    "standard_answer": "C",
-    "explanation": "父结点平衡因子 -2（右重），右子结点平衡因子 1（左重），属于 RL 型不平衡。需要先对右子树右旋（变成 RR 型），再对父结点左旋。",
-    "hints": ["平衡因子的正负决定旋转方向", "RL 型需要两次旋转"],
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "图",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "一个有 n 个顶点的无向连通图最少有（ ）条边。",
-    "options": ["A. n", "B. n-1", "C. n(n-1)/2", "D. n+1"],
-    "standard_answer": "B",
-    "explanation": "n 个顶点的无向连通图最少需要 n-1 条边（构成一棵树），最多有 n(n-1)/2 条边（完全图）。",
-    "hints": ["连通图的最少边对应树形结构", "树中边数 = 顶点数 - 1"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "图",
-<<<<<<< HEAD
     "section": "图的应用",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1030,22 +837,11 @@
     "standard_answer": "B",
     "explanation": "环路节点入度永远无法清零，无法输出拓扑序列。",
     "hints": ["拓扑排序每次输出入度0顶点"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "用 Dijkstra 算法求最短路径时，如果边的权值为负数，会导致：",
-    "options": ["A. 算法仍然正确", "B. 算法可能失效，结果不正确", "C. 算法效率降低", "D. 算法无法执行"],
-    "standard_answer": "B",
-    "explanation": "Dijkstra 算法基于贪心策略，已确定最短路径的顶点不再更新。如果存在负权边，可能出现先确定的路径不是最短的情况，算法失效。应改用 Bellman-Ford 算法处理负权边。",
-    "hints": ["Dijkstra 的贪心策略假设", "负权边会破坏已确定路径的最优性"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "图",
-<<<<<<< HEAD
     "section": "图的应用",
     "difficulty": "困难",
     "question_type": "简答题",
@@ -1055,22 +851,11 @@
     "standard_answer": "AOV：顶点代表活动，边代表先后约束，用于拓扑排序判断依赖环路；AOE：边代表任务，顶点代表事件，ve/vl求关键路径，计算最短总工期。",
     "explanation": "二者极易混淆，是图论大题高频考点。",
     "hints": ["AOE中ee==el为关键活动"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在一个有向图中，所有顶点的入度之和与出度之和的关系是：",
-    "options": ["A. 相等", "B. 入度之和大于出度之和", "C. 出度之和大于入度之和", "D. 无确定关系"],
-    "standard_answer": "A",
-    "explanation": "有向图中每条边为一个顶点贡献一个出度、为另一个顶点贡献一个入度，所以所有顶点的入度之和等于出度之和，均等于边数。",
-    "hints": ["从每条边对度数的贡献角度思考", "分别求入度和出度的总和表达式"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "查找",
-<<<<<<< HEAD
     "section": "查找的基本概念",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -1080,22 +865,11 @@
     "standard_answer": "B",
     "explanation": "静态查找：仅查询；动态支持插入删除。",
     "hints": ["ASL平均查找长度衡量查找效率"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在长度为 n 的有序顺序表中进行二分查找，最坏情况下的时间复杂度为：",
-    "options": ["A. O(n)", "B. O(log₂n)", "C. O(n²)", "D. O(1)"],
-    "standard_answer": "B",
-    "explanation": "二分查找每次将查找范围缩小一半，最坏情况下的查找长度为 ⌈log₂(n+1)⌉，时间复杂度为 O(log₂n)。",
-    "hints": ["分析每次比较后查找范围的变化", "与顺序查找的 O(n) 对比"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "查找",
-<<<<<<< HEAD
     "section": "顺序查找和折半查找",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1105,22 +879,11 @@
     "standard_answer": "C",
     "explanation": "二分依赖随机存取下标，链表只能顺序遍历。",
     "hints": ["mid=(low+high)//2"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于哈希查找的说法错误的是：",
-    "options": ["A. 哈希函数越复杂，冲突就越少", "B. 装填因子越大，冲突概率越大", "C. 拉链法处理冲突时，查找长度与链表长度有关", "D. 好的哈希函数应使地址均匀分布"],
-    "standard_answer": "A",
-    "explanation": "哈希函数的复杂度与冲突概率无直接关系。好的哈希函数应使关键字均匀分布在地址空间中，而非追求函数本身的复杂度。",
-    "hints": ["区分哈希函数的复杂度和均匀性", "冲突概率主要取决于装填因子和哈希函数的质量"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "查找",
-<<<<<<< HEAD
     "section": "树型查找",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1144,22 +907,11 @@
     "standard_answer": "B",
     "explanation": "α=记录数/表长，数据越满冲突概率越高。",
     "hints": ["链地址法、开放寻址解决冲突"],
-=======
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "散列表长度为 11，散列函数为 H(key) = key % 11，采用线性探测法处理冲突。依次插入 23,45,12,34,56，则 56 的存储位置为：",
-    "options": ["A. 0", "B. 1", "C. 2", "D. 3"],
-    "standard_answer": "B",
-    "explanation": "23%11=1；45%11=1 冲突，探测到 2；12%11=1 冲突，探测到 3；34%11=1 冲突，探测到 4；56%11=1 冲突，探测 2→3→4→5→6→7→8→9→10→0→1，找到位置 1。",
-    "hints": ["逐元素模拟插入过程", "线性探测法逐个探测下一个位置"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "数据结构",
     "knowledge_point": "排序",
-<<<<<<< HEAD
     "section": "排序的基本概念",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -1219,74 +971,11 @@
     "standard_answer": "B",
     "explanation": "第一代电子管，第二代晶体管，第三代中小规模集成电路，第四代超大规模集成电路。",
     "hints": ["软件伴随硬件同步迭代发展"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下排序算法中，最坏情况下时间复杂度为 O(n²) 的是：",
-    "options": ["A. 归并排序", "B. 堆排序", "C. 快速排序", "D. 希尔排序"],
-    "standard_answer": "C",
-    "explanation": "快速排序最坏情况下（每次选的基准元素都最大或最小）时间复杂度退化为 O(n²)。归并和堆排序最坏情况仍为 O(nlog₂n)。",
-    "hints": ["分析各排序算法的最坏情况", "快速排序的退化条件"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "排序",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "对序列 49,38,65,97,76,13,27 进行快速排序（首元素为基准），第一趟排序后的结果是：",
-    "options": ["A. 38,49,65,97,76,13,27", "B. 27,38,13,49,76,97,65", "C. 13,27,38,49,65,76,97", "D. 49,38,65,13,27,76,97"],
-    "standard_answer": "B",
-    "explanation": "以 49 为基准，从右向左找小：27→从左向右找大：65→交换→从右向左找小：13→从左向右找大：97→交换→从右向左找小：38，左右指针相遇在 49 处，将 49 与 27 交换。第一趟结果：27,38,13,49,76,97,65。",
-    "hints": ["模拟快速排序的分区过程", "注意左右指针的移动顺序和交换规则"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "排序",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下排序算法中，空间复杂度为 O(1) 的是：",
-    "options": ["A. 归并排序", "B. 快速排序", "C. 堆排序", "D. 计数排序"],
-    "standard_answer": "C",
-    "explanation": "堆排序只需要常数个辅助空间，空间复杂度为 O(1)。归并排序 O(n)，快速排序 O(log₂n)（递归栈），计数排序 O(k)（k 为数据范围）。",
-    "hints": ["考虑辅助空间的使用情况", "区分递归栈空间和辅助数组空间"],
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "计算机系统概述",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "冯·诺依曼计算机中指令和数据均以（ ）形式存放在存储器中。",
-    "options": ["A. 二进制", "B. 十进制", "C. 八进制", "D. 十六进制"],
-    "standard_answer": "A",
-    "explanation": "冯·诺依曼计算机的核心思想之一是「存储程序」，指令和数据都以二进制代码的形式存放在存储器中，CPU 通过指令周期区分读取的是指令还是数据。",
-    "hints": ["冯·诺依曼体系的基本特征", "计算机如何区分指令和数据"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "计算机系统概述",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "计算机执行一条指令一般分为（ ）阶段。",
-    "options": ["A. 取指令、分析指令、执行指令", "B. 取指令、执行指令", "C. 取指令、译码、执行、写回", "D. 取指令、执行指令、中断"],
-    "standard_answer": "A",
-    "explanation": "计算机执行一条指令的过程一般分为取指令（从内存取指令到 IR）、分析指令（指令译码、取操作数）、执行指令（运算或访存）三个阶段。",
-    "hints": ["区分指令周期的基本阶段", "取指→译码→执行的流水"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "计算机系统概述",
-<<<<<<< HEAD
     "section": "计算机发展历程",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -1408,22 +1097,11 @@
     "standard_answer": "FLOPS,MIPS",
     "explanation": "FLOPS每秒浮点运算次数，MIPS每秒百万条定点指令。",
     "hints": "CPI越低，单条指令耗时越少",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "CPU 的主频为 2GHz，CPI 为 1.5，则 MIPS 为：",
-    "options": ["A. 1333", "B. 2000", "C. 3000", "D. 1000"],
-    "standard_answer": "A",
-    "explanation": "MIPS = 主频(MHz) / CPI = 2000 / 1.5 ≈ 1333 MIPS。",
-    "hints": ["MIPS 的计算公式", "注意单位换算：2GHz = 2000MHz"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "数据的表示和运算",
-<<<<<<< HEAD
     "section": "数制与编码",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -1433,22 +1111,11 @@
     "standard_answer": "B",
     "explanation": "整数除基取余，小数乘基取整；任意进制转十进制采用按权展开求和。",
     "hints": "二/八/十六进制可4位、3位分组快速转换",
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在补码表示中，-128 的 8 位二进制表示为：",
-    "options": ["A. 10000000", "B. 00000000", "C. 11111111", "D. 11111110"],
-    "standard_answer": "A",
-    "explanation": "8 位补码表示范围为 -128~127，-128 的补码为 10000000。",
-    "hints": ["补码的定义：负数补码 = 反码 + 1", "注意 -128 的特殊性"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "数据的表示和运算",
-<<<<<<< HEAD
     "section": "数制与编码",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1458,22 +1125,11 @@
     "standard_answer": "B",
     "explanation": "原码、反码范围：-(2^{n-1}-1) ~ 2^{n-1}-1；补码多出一个负数极值-2^{n-1}，消除正负0歧义。",
     "hints": "计算机内部全部使用补码运算",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在 IEEE 754 单精度浮点数格式中，阶码用（ ）表示。",
-    "options": ["A. 原码", "B. 补码", "C. 移码", "D. 反码"],
-    "standard_answer": "C",
-    "explanation": "IEEE 754 标准中，浮点数的阶码采用移码（偏移量为 127）表示，便于比较阶码的大小。尾数采用原码表示。",
-    "hints": ["浮点数各部分的编码方式", "阶码用移码的原因"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "数据的表示和运算",
-<<<<<<< HEAD
     "section": "数制与编码",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1483,73 +1139,10 @@
     "standard_answer": "D",
     "explanation": "移码为补码偏移常量，大小对比无需判断符号位，专门用于阶码存储比较。",
     "hints": "移码与补码仅最高符号位相反",
-=======
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "x = -0.1101，y = 0.1011，用补码一位乘法（Booth 算法）计算 x×y 时，需要（ ）次加法和移位操作。",
-    "options": ["A. 4 次加法、4 次移位", "B. 4 次加法、5 次移位", "C. 5 次加法、4 次移位", "D. 5 次加法、5 次移位"],
-    "standard_answer": "C",
-    "explanation": "n=4 位补码一位乘法需进行 n 次加法和 n 次移位，但 Booth 算法额外需要一次判断（最后一步可能无需移位），即需要进行 5 次加法和 4 次移位。",
-    "hints": ["Booth 算法的执行步骤", "注意最后一次的判断和移位"],
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
-    "knowledge_point": "存储系统",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "Cache 的地址映射方式中，冲突概率最低的是：",
-    "options": ["A. 直接映射", "B. 全相联映射", "C. 组相联映射", "D. 都一样"],
-    "standard_answer": "B",
-    "explanation": "全相联映射可以将内存块映射到 Cache 的任意行，灵活性最高，冲突概率最低。但相联比较电路复杂，成本高。",
-    "hints": ["比较三种映射方式的灵活性和成本", "冲突概率与灵活性的关系"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "存储系统",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "某计算机主存容量为 64KB，按字节编址，Cache 容量为 2KB，采用直接映射方式，块大小为 32B，则 Cache 共有（ ）行。",
-    "options": ["A. 64", "B. 32", "C. 2048", "D. 1024"],
-    "standard_answer": "A",
-    "explanation": "Cache 行数 = Cache 容量 / 块大小 = 2KB / 32B = 2048B / 32B = 64 行。",
-    "hints": ["Cache 行数的计算公式", "注意单位统一"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "存储系统",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于虚拟存储器的说法正确的是：",
-    "options": ["A. 虚拟存储器是为了解决 CPU 和主存速度不匹配问题", "B. 虚拟存储器利用 Cache 实现地址转换", "C. 虚拟存储器的理论基础是程序的局部性原理", "D. 虚拟存储器不需要硬件支持"],
-    "standard_answer": "C",
-    "explanation": "虚拟存储器的理论基础是程序的局部性原理，利用 TLB（快表）和页表实现虚实地址转换，需要 MMU 等硬件支持。其主要解决的是主存容量不足的问题，而非速度不匹配。",
-    "hints": ["虚拟存储器的目的和原理", "区分 Cache 和虚拟存储器的不同目的"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "指令系统",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于 RISC 和 CISC 的说法错误的是：",
-    "options": ["A. RISC 指令长度固定", "B. CISC 指令功能复杂", "C. RISC 只有 Load/Store 指令访问内存", "D. CISC 的通用寄存器数量比 RISC 多"],
-    "standard_answer": "D",
-    "explanation": "RISC 的通用寄存器数量通常比 CISC 多（RISC 通常有 32 个以上通用寄存器），RISC 采用 Load/Store 架构，指令长度固定。",
-    "hints": ["比较 RISC 和 CISC 的典型特征", "特别注意寄存器数量的差异"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-<<<<<<< HEAD
     "knowledge_point": "数据的表示和运算",
     "section": "数制与编码",
     "difficulty": "困难",
@@ -1616,22 +1209,10 @@
     "standard_answer": "A",
     "explanation": "float单精度S=1,E=8,M=23；double双精度S=1,E=11,M=52。",
     "hints": "尾数默认隐藏整数1，不占用存储位",
-=======
-    "knowledge_point": "指令系统",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "某计算机指令格式为：操作码（8位）+ 寄存器（5位）+ 地址码（19位），则该计算机最多有（ ）条不同指令。",
-    "options": ["A. 256", "B. 32", "C. 512K", "D. 128"],
-    "standard_answer": "A",
-    "explanation": "操作码 8 位，最多表示 2⁸ = 256 条不同指令。",
-    "hints": ["操作码位数决定指令条数上限", "操作码编码方式：定长 vs 变长"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
-<<<<<<< HEAD
     "knowledge_point": "数据的表示和运算",
     "section": "浮点数的表示与运算",
     "difficulty": "中等",
@@ -1880,23 +1461,11 @@
     "standard_answer": "变址",
     "explanation": "变址寄存器存放数组下标，基址存放数组首地址，循环自动修改变址值。",
     "hints": "基址寻址用于程序重定位",
-=======
-    "knowledge_point": "指令系统",
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于数据寻址方式的说法正确的是：",
-    "options": ["A. 立即寻址的指令执行速度最慢", "B. 寄存器寻址的操作数在内存中", "C. 间接寻址需要两次访存", "D. 变址寻址中，变址寄存器的内容为有效地址"],
-    "standard_answer": "C",
-    "explanation": "间接寻址：指令地址码指向内存中存放操作数地址的位置，需要先取出地址再取操作数，共两次访存。立即寻址操作数在指令中，速度最快。寄存器寻址操作数在寄存器中。",
-    "hints": ["区分不同寻址方式的访存次数", "分析每种寻址方式的操作数位置"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "中央处理器",
-<<<<<<< HEAD
     "section": "CPU的功能和基本结构",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -1906,22 +1475,11 @@
     "standard_answer": "B",
     "explanation": "PC程序计数器存指令内存地址；IR保存当前译码指令。",
     "hints": "取指周期PC自动自增",
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "CPU 中程序计数器（PC）的作用是：",
-    "options": ["A. 保存当前正在执行的指令", "B. 保存下一条要执行指令的地址", "C. 保存指令执行结果", "D. 保存 CPU 状态信息"],
-    "standard_answer": "B",
-    "explanation": "程序计数器（PC）存放当前正在执行指令的下一条指令的地址。指令执行完后，PC 自动加 1（或由转移指令修改）指向下一条指令。",
-    "hints": ["区分 PC 和 IR 的功能", "PC 指向下一条而非当前指令"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "中央处理器",
-<<<<<<< HEAD
     "section": "CPU的功能和基本结构",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1931,22 +1489,11 @@
     "standard_answer": "C",
     "explanation": "PSW存放运算状态：CF/SF/ZF/OF等；操作码存储在IR指令寄存器。",
     "hints": "条件跳转依赖PSW标志位",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "流水线 CPU 中，数据相关（数据冒险）的解决方法不包括：",
-    "options": ["A. 插入空操作（NOP）", "B. 数据转发（旁路）", "C. 代码重排", "D. 增加 Cache 容量"],
-    "standard_answer": "D",
-    "explanation": "解决数据冒险的方法有插入 NOP（软件阻塞）、数据转发（Bypass/Forwarding）、代码重排。增加 Cache 容量解决的是访存速度而非数据相关。",
-    "hints": ["数据冒险产生的原因", "区分不同类型冒险的解决方法"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "中央处理器",
-<<<<<<< HEAD
     "section": "控制器的功能和工作原理",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -1984,22 +1531,11 @@
     "standard_answer": "吞吐率",
     "explanation": "多指令重叠并行，单位时间完成指令数量提升，单条指令延迟不变。",
     "hints": "流水线气泡会降低吞吐率",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于微程序控制方式的说法正确的是：",
-    "options": ["A. 微指令存放在主存中", "B. 一条机器指令对应一个微程序", "C. 微程序控制速度比硬布线快", "D. 每条微指令包含多条机器指令"],
-    "standard_answer": "B",
-    "explanation": "微程序控制方式中，一条机器指令对应一个微程序，微程序由若干条微指令组成，微指令存放在控制存储器（CS）中。微程序控制速度比硬布线慢。",
-    "hints": ["区分微程序与硬布线的特点", "理解微指令和机器指令的关系"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "总线",
-<<<<<<< HEAD
     "section": "总线概述",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -2009,22 +1545,11 @@
     "standard_answer": "D",
     "explanation": "系统总线三类：单向地址、双向数据、双向控制总线。",
     "hints": "地址总线只能CPU向外输出地址",
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "系统总线中，用于确定数据在总线上的传输方向的是：",
-    "options": ["A. 数据总线", "B. 地址总线", "C. 控制总线", "D. 电源总线"],
-    "standard_answer": "C",
-    "explanation": "控制总线传递控制信号（如读/写信号、中断请求等），用于确定数据传输的方向和时机。数据总线传输数据，地址总线传输地址。",
-    "hints": ["区分三类总线的功能", "控制信号决定传输方向"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "总线",
-<<<<<<< HEAD
     "section": "总线仲裁",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -2034,22 +1559,11 @@
     "standard_answer": "B",
     "explanation": "总线请求信号串行传递，离仲裁器越近设备越早获得总线使用权。",
     "hints": "独立请求优先级可软件配置",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于总线仲裁的说法正确的是：",
-    "options": ["A. 链式查询的优先级可编程", "B. 计数器定时查询的优先级固定", "C. 独立请求方式的响应速度最快", "D. 链式查询对设备故障不敏感"],
-    "standard_answer": "C",
-    "explanation": "独立请求方式每个设备有独立的请求和授权线，仲裁器可灵活设置优先级，响应速度最快。链式查询优先级固定，且对设备故障敏感（一个故障影响后续设备）。",
-    "hints": ["比较三种总线仲裁方式的特点", "从物理连线和控制逻辑角度思考"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "输入输出系统",
-<<<<<<< HEAD
     "section": "IO控制方式",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -2059,22 +1573,11 @@
     "standard_answer": "C",
     "explanation": "DMA控制器完成内存外设直传，CPU仅初始化与收尾中断，批量传输开销最低。",
     "hints": "字符设备优先使用中断",
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在中断方式中，CPU 响应中断的时机是：",
-    "options": ["A. 每条指令执行结束后", "B. 每个时钟周期结束后", "C. 每个存取周期结束后", "D. 任意时刻"],
-    "standard_answer": "A",
-    "explanation": "CPU 在每条指令执行结束后、下一条指令开始前统一查询中断请求，如果有中断请求且满足条件则响应中断。",
-    "hints": ["中断响应与指令周期的关系", "CPU 在取指阶段前检查中断"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "输入输出系统",
-<<<<<<< HEAD
     "section": "中断机制",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -2084,22 +1587,11 @@
     "standard_answer": "B",
     "explanation": "多重中断服务流程开中断，高优先级中断可打断当前服务程序；单重中断全程关中断。",
     "hints": "中断向量存储服务入口地址",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "DMA 方式中，数据传送的单位是：",
-    "options": ["A. 字节", "B. 字", "C. 块", "D. 位"],
-    "standard_answer": "C",
-    "explanation": "DMA 方式以块为单位进行数据传送，由 DMA 控制器直接控制内存与外设之间的数据传输，不需要 CPU 干预。",
-    "hints": ["区分 DMA 与中断的传数单位", "DMA 适合批量的数据传送"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机组成原理",
     "knowledge_point": "输入输出系统",
-<<<<<<< HEAD
     "section": "中断机制",
     "difficulty": "困难",
     "question_type": "简答题",
@@ -2143,22 +1635,11 @@
     "standard_answer": "C",
     "explanation": "OS四大核心功能：进程管理、内存管理、文件管理、IO设备管理，数据库属于上层应用软件。",
     "hints": ["IO管理包含磁盘、显示器等外设调度"],
-=======
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "下列 I/O 控制方式中，CPU 与 I/O 设备可并行工作的是：",
-    "options": ["A. 程序查询方式", "B. 中断驱动方式", "C. DMA 方式", "D. 程序查询和中断驱动"],
-    "standard_answer": "C",
-    "explanation": "DMA 方式中 DMA 控制器直接控制数据传输，CPU 可以同时执行其他程序，实现 CPU 与 I/O 设备的高度并行。中断方式虽然比查询方式效率高，但每次中断仍需 CPU 保存和恢复现场。",
-    "hints": ["比较各 I/O 方式的 CPU 占用情况", "DMA 方式中 CPU 的参与程度最低"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
     "knowledge_point": "计算机系统概述",
-<<<<<<< HEAD
     "section": "操作系统的基本概念",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -2210,22 +1691,11 @@
     "standard_answer": "B",
     "explanation": "手工阶段程序串行执行，IO阻塞时CPU闲置，硬件资源利用率极低。",
     "hints": "单道批处理引入监督程序缓解该问题",
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "操作系统的基本特征是：",
-    "options": ["A. 并发、共享、虚拟、异步", "B. 并发、共享、虚拟、同步", "C. 并发、共享、多道、异步", "D. 并发、虚拟、多道、同步"],
-    "standard_answer": "A",
-    "explanation": "操作系统的四个基本特征是并发（宏观上多个程序同时运行）、共享（资源可被多个进程使用）、虚拟（把一个物理实体映射为多个逻辑实体）和异步（程序执行不是一贯到底，而是走走停停）。",
-    "hints": ["记忆操作系统的四大特征", "区分并发与并行的概念"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
     "knowledge_point": "计算机系统概述",
-<<<<<<< HEAD
     "section": "操作系统发展历程",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -2417,21 +1887,10 @@
     "standard_answer": "C",
     "explanation": "阻塞进程不参与CPU调度，IO完成后转为就绪态才能竞争CPU。",
     "hints": "只有就绪队列内进程可被调度执行",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "多道程序设计中，CPU 利用率与（ ）有关。",
-    "options": ["A. 内存大小", "B. I/O 设备速度", "C. 并发进程数", "D. 磁盘容量"],
-    "standard_answer": "C",
-    "explanation": "多道程序设计通过增加并发进程数来提高 CPU 利用率。当多个进程并发执行时，一个进程等待 I/O 时 CPU 可运行另一个进程，从而减少 CPU 空闲时间。",
-    "hints": ["多道程序设计的核心思想", "CPU 利用率与并发度的关系"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
-<<<<<<< HEAD
     "knowledge_point": "进程与线程",
     "section": "进程与线程简介",
     "difficulty": "中等",
@@ -2442,23 +1901,11 @@
     "standard_answer": "B",
     "explanation": "进程切换需要替换页表、刷新缓存；线程仅切换私有栈与寄存器，地址空间不变。",
     "hints": "线程共享全局变量、文件句柄等资源",
-=======
-    "knowledge_point": "计算机系统概述",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于系统调用和库函数的说法正确的是：",
-    "options": ["A. 库函数一定不涉及系统调用", "B. 系统调用运行在内核态", "C. 库函数都运行在用户态", "D. 系统调用的执行效率高于普通函数调用"],
-    "standard_answer": "B",
-    "explanation": "系统调用是操作系统提供给用户程序的接口，运行在内核态（核心态）。库函数可能封装系统调用（如 printf 封装 write），也可能不涉及（如字符串操作函数）。",
-    "hints": ["区分用户态和内核态的执行环境", "系统调用需要切换 CPU 状态"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
     "knowledge_point": "进程与线程",
-<<<<<<< HEAD
     "section": "进程与线程简介",
     "difficulty": "中等",
     "question_type": "填空题",
@@ -2496,22 +1943,11 @@
     "standard_answer": "B",
     "explanation": "RR算法将CPU均等划分为时间片，轮流分配给所有就绪进程，保证交互公平。",
     "hints": "批处理系统常用SJF提升吞吐率",
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "进程的三个基本状态是：",
-    "options": ["A. 就绪、运行、等待", "B. 就绪、运行、挂起", "C. 运行、等待、终止", "D. 新建、就绪、运行"],
-    "standard_answer": "A",
-    "explanation": "进程的三个基本状态为就绪态（已获得除 CPU 外所有资源）、运行态（正在使用 CPU）和阻塞/等待态（等待某个事件发生）。",
-    "hints": ["五状态模型中的三个基本状态", "注意挂起是补充状态"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
     "knowledge_point": "进程与线程",
-<<<<<<< HEAD
     "section": "CPU调度",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -2521,22 +1957,11 @@
     "standard_answer": "B",
     "explanation": "等待越久响应比越高，避免短作业长期抢占导致长作业饥饿。",
     "hints": "HRRN属于非抢占调度算法",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于管程（Monitor）的说法错误的是：",
-    "options": ["A. 管程能保证同一时刻只有一个进程进入", "B. 管程中的条件变量可以用于进程同步", "C. 管程中可以有多个进程同时执行 wait 操作", "D. 管程是比信号量更高级的同步机制"],
-    "standard_answer": "C",
-    "explanation": "管程保证同一时刻最多只有一个进程进入执行。条件变量用于进程同步，进程在条件不满足时执行 wait 操作进入等待队列，但同一条件变量上的 wait 只能由一个进程执行。",
-    "hints": ["管程的互斥特性", "条件变量的使用规则"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
     "knowledge_point": "进程与线程",
-<<<<<<< HEAD
     "section": "CPU调度",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -2546,21 +1971,10 @@
     "standard_answer": "B",
     "explanation": "持续短任务不断到来，长任务永久无法获得资源即饥饿。",
     "hints": "SCAN电梯算法可解决饥饿问题",
-=======
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "设有 3 个并发进程共享一个资源，如果每次只允许 2 个进程进入，则信号量的初值应设为：",
-    "options": ["A. 1", "B. 2", "C. 3", "D. 0"],
-    "standard_answer": "B",
-    "explanation": "信号量 S 表示可用资源的数量。每次允许 2 个进程进入，说明可用资源数为 2，信号量初值设为 2。当 2 个进程进入后 S=0，第 3 个进程执行 P(S) 时 S=-1，被阻塞。",
-    "hints": ["信号量初值表示可用资源数", "P 操作为减 1，V 操作为加 1"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
-<<<<<<< HEAD
     "knowledge_point": "进程与线程",
     "section": "CPU调度",
     "difficulty": "中等",
@@ -2585,22 +1999,10 @@
     "standard_answer": "B",
     "explanation": "访问临界资源的代码段称为临界区，必须满足互斥访问规则。",
     "hints": "打印机、磁带机都是典型临界资源",
-=======
-    "knowledge_point": "内存管理",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在分页系统中，以下哪个是 CPU 生成的地址？",
-    "options": ["A. 逻辑地址", "B. 物理地址", "C. 页框号", "D. 块号"],
-    "standard_answer": "A",
-    "explanation": "CPU 生成的是逻辑地址（虚拟地址），由 MMU 通过页表将其转换为物理地址。",
-    "hints": ["CPU 始终生成逻辑地址", "地址转换由 MMU 硬件完成"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "操作系统",
-<<<<<<< HEAD
     "knowledge_point": "进程与线程",
     "section": "同步与互斥",
     "difficulty": "简单",
@@ -2765,62 +2167,11 @@
     "standard_answer": "抖动",
     "explanation": "进程工作集大于分配页框数量时产生抖动。",
     "hints": "扩大页框至覆盖工作集可消除抖动",
-=======
-    "knowledge_point": "内存管理",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在采用页式存储管理的系统中，逻辑地址结构长度为 32 位，页内偏移为 12 位，则页表最多有（ ）项。",
-    "options": ["A. 2²⁰", "B. 2¹²", "C. 2³²", "D. 2¹⁰"],
-    "standard_answer": "A",
-    "explanation": "逻辑地址 32 位，页内偏移 12 位，则页号为 20 位（32-12=20），所以页表最多有 2²⁰ 项。",
-    "hints": ["逻辑地址 = 页号 + 页内偏移", "页表项数由页号位数决定"],
-    "source": "seed"
-  },
-  {
-    "subject": "操作系统",
-    "knowledge_point": "内存管理",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下页面置换算法中，可能出现 Belady 异常的是：",
-    "options": ["A. FIFO", "B. LRU", "C. OPT", "D. Clock"],
-    "standard_answer": "A",
-    "explanation": "Belady 异常指分配物理块数增加时缺页率反而上升的现象。FIFO 算法可能出现该异常，LRU、OPT 和 Clock 算法不会。",
-    "hints": ["Belady 异常的定义", "常见页面置换算法的性质"],
     "source": "seed"
   },
   {
     "subject": "操作系统",
     "knowledge_point": "文件管理",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "文件的逻辑结构可分为：",
-    "options": ["A. 有结构文件和无结构文件", "B. 顺序文件和随机文件", "C. 索引文件和链接文件", "D. 连续文件和隐式链接文件"],
-    "standard_answer": "A",
-    "explanation": "文件的逻辑结构分为有结构文件（记录式文件）和无结构文件（流式文件）。而连续、链接、索引是文件的物理结构（存储方式）。",
-    "hints": ["区分逻辑结构和物理结构的概念", "有结构文件由记录组成"],
-    "source": "seed"
-  },
-  {
-    "subject": "操作系统",
-    "knowledge_point": "文件管理",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "Unix 文件系统中，文件的物理结构采用：",
-    "options": ["A. 连续分配", "B. 隐式链接分配", "C. 显式链接分配", "D. 索引分配（混合索引）"],
-    "standard_answer": "D",
-    "explanation": "Unix 文件系统采用混合索引分配方式，包含直接地址、一次间接、二次间接和三次间接地址，兼顾了小文件的高效访问和大文件的容量需求。",
-    "hints": ["Unix inode 的结构特点", "混合索引如何兼顾大小文件"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
-    "source": "seed"
-  },
-  {
-    "subject": "操作系统",
-    "knowledge_point": "文件管理",
-<<<<<<< HEAD
     "section": "文件系统基础",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3242,100 +2593,11 @@
     "standard_answer": "A",
     "explanation": "单工仅单一固定方向传输；网线属于全双工可同时收发。",
     "hints": ["对讲机属于半双工，收发不能同步"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在索引分配中，一个索引块可存放 256 个盘块号，文件大小为 1MB（盘块大小为 1KB），则文件需要（ ）个索引块。",
-    "options": ["A. 4", "B. 8", "C. 16", "D. 1"],
-    "standard_answer": "D",
-    "explanation": "文件大小为 1MB = 1024KB，盘块大小为 1KB，所以文件共占用 1024 个盘块。一个索引块可存放 256 个盘块号，需要 1024/256 = 4 个索引块，但若采用多级索引则只需 1 个一级索引块加 4 个二级索引块。",
-    "hints": ["计算文件占用的盘块数", "确定索引块的组织方式"],
-    "source": "seed"
-  },
-  {
-    "subject": "操作系统",
-    "knowledge_point": "输入输出管理",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "I/O 控制方式中，CPU 负担最小的是：",
-    "options": ["A. 程序查询方式", "B. 中断方式", "C. DMA 方式", "D. 通道控制方式"],
-    "standard_answer": "D",
-    "explanation": "通道是一个专门的 I/O 处理机，能执行通道程序，独立完成 I/O 操作。CPU 只需发出一条 I/O 指令即可，负担最小。",
-    "hints": ["按 CPU 介入程度排序各 I/O 方式", "通道本质上是一台小型处理机"],
-    "source": "seed"
-  },
-  {
-    "subject": "操作系统",
-    "knowledge_point": "输入输出管理",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "磁盘调度算法中，可能导致磁臂黏着的算法是：",
-    "options": ["A. 先来先服务（FCFS）", "B. 最短寻道时间优先（SSTF）", "C. 扫描算法（SCAN）", "D. 循环扫描算法（C-SCAN）"],
-    "standard_answer": "B",
-    "explanation": "SSTF 算法每次选择离当前磁头最近的请求，可能导致远处的请求长时间得不到服务（磁臂黏着/饥饿现象）。SCAN 和 C-SCAN 有固定的移动方向，可避免饥饿。",
-    "hints": ["磁臂黏着/饥饿现象的原因", "比较各磁盘调度算法的公平性"],
-    "source": "seed"
-  },
-  {
-    "subject": "操作系统",
-    "knowledge_point": "输入输出管理",
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "若磁盘转速为 7200rpm，平均寻道时间为 5ms，则访问一个扇区的平均访问时间约为：",
-    "options": ["A. 9.17ms", "B. 12.5ms", "C. 5ms", "D. 7.5ms"],
-    "standard_answer": "A",
-    "explanation": "平均旋转延迟 = (60/7200) / 2 × 1000 = 4.17ms。平均访问时间 = 平均寻道时间 + 平均旋转延迟 + 传输时间 ≈ 5 + 4.17 + 0 = 9.17ms（传输时间相对很小可忽略）。",
-    "hints": ["平均访问时间 = 寻道 + 旋转延迟 + 传输", "平均旋转延迟是转半圈的时间"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机网络",
-    "knowledge_point": "计算机网络体系结构",
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "OSI 参考模型中，第 4 层是：",
-    "options": ["A. 网络层", "B. 传输层", "C. 会话层", "D. 表示层"],
-    "standard_answer": "B",
-    "explanation": "OSI 七层模型从下到上依次为：物理层（1）、数据链路层（2）、网络层（3）、传输层（4）、会话层（5）、表示层（6）、应用层（7）。",
-    "hints": ["记忆 OSI 七层模型的顺序", "与 TCP/IP 四层模型对比"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机网络",
-    "knowledge_point": "计算机网络体系结构",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在 TCP/IP 模型中，IP 协议属于哪一层？",
-    "options": ["A. 应用层", "B. 传输层", "C. 网际层", "D. 网络接口层"],
-    "standard_answer": "C",
-    "explanation": "TCP/IP 四层模型从下到上：网络接口层、网际层（IP 协议在此层）、传输层（TCP/UDP）、应用层。",
-    "hints": ["IP 协议是 TCP/IP 的核心", "区分 OSI 和 TCP/IP 的层次划分"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机网络",
-    "knowledge_point": "计算机网络体系结构",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下关于协议和服务的说法正确的是：",
-    "options": ["A. 对等实体之间通过协议进行通信", "B. 协议是垂直的，服务是水平的", "C. 下层通过协议向上层提供服务", "D. 上层通过原语调用下层的协议"],
-    "standard_answer": "A",
-    "explanation": "对等实体之间通过协议进行水平通信。协议是水平的，服务是垂直的（下层通过服务访问点向上层提供服务）。上层通过原语调用下层提供的服务。",
-    "hints": ["区分协议（水平）和服务（垂直）", "服务访问点（SAP）的概念"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "物理层",
-<<<<<<< HEAD
     "section": "编码与调制技术",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3345,22 +2607,11 @@
     "standard_answer": "B",
     "explanation": "调制：数字→模拟；解调：模拟还原数字；编码仅数字格式转换。",
     "hints": ["家用Modem核心为调制解调模块"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下哪个不是物理层的主要功能？",
-    "options": ["A. 定义接口的机械特性", "B. 定义接口的电气特性", "C. 差错控制", "D. 建立和释放连接"],
-    "standard_answer": "C",
-    "explanation": "物理层的主要功能包括定义接口的机械、电气、功能和规程特性，以及建立、维护和释放物理连接。差错控制是数据链路层的功能。",
-    "hints": ["物理层关注的是传输介质的电气和机械特性", "区分各层的主要功能"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "物理层",
-<<<<<<< HEAD
     "section": "编码与调制技术",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3370,22 +2621,11 @@
     "standard_answer": "A",
     "explanation": "曼彻斯特每个码元中间存在电平跳变，自带同步时钟，早期以太网强制标准。",
     "hints": ["百兆光纤使用4B/5B编码节省带宽"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "若信道带宽为 4kHz，信噪比为 30dB，则该信道的最大传输速率约为：",
-    "options": ["A. 40kbps", "B. 16kbps", "C. 32kbps", "D. 24kbps"],
-    "standard_answer": "A",
-    "explanation": "根据香农定理 C = B×log₂(1+S/N)。信噪比 30dB → S/N = 10³⁰⁄¹⁰ = 1000。C = 4k × log₂(1+1000) ≈ 4k × 10 = 40kbps。",
-    "hints": ["香农定理公式", "dB 与 S/N 的换算关系"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "物理层",
-<<<<<<< HEAD
     "section": "信道容量与奈奎斯特、香农公式",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3409,22 +2649,11 @@
     "standard_answer": "香农",
     "explanation": "香农公式 C=Wlog2(1+S/N)，带宽、信噪比共同决定上限。",
     "hints": ["信噪比越高，信道可承载速率越大"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下编码方式中，自带时钟信号的是：",
-    "options": ["A. 不归零码（NRZ）", "B. 曼彻斯特编码", "C. 归零码（RZ）", "D. 4B/5B 编码"],
-    "standard_answer": "B",
-    "explanation": "曼彻斯特编码在每个比特周期内都有电平跳变（高到低表示 1，低到高表示 0 或相反），接收端可从跳变中提取时钟信号。以太网使用曼彻斯特编码。",
-    "hints": ["自同步能力的含义", "比较不同编码方式的时钟提取方式"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "数据链路层",
-<<<<<<< HEAD
     "section": "数据链路层功能与帧封装",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3476,22 +2705,11 @@
     "standard_answer": "A",
     "explanation": "每发送一帧必须等待接收方ACK确认后才能发下一帧，仅缓存单帧。",
     "hints": ["GBN、选择重传依靠滑动窗口提升吞吐"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "数据链路层的三个基本功能是：",
-    "options": ["A. 封装成帧、透明传输、差错检测", "B. 组帧、路由、拥塞控制", "C. 封装成帧、路由选择、差错控制", "D. 流量控制、拥塞控制、差错控制"],
-    "standard_answer": "A",
-    "explanation": "数据链路层的三个基本功能是封装成帧（将网络层数据报封装为帧）、透明传输（保证数据中的控制字符能被正确识别）和差错检测（CRC 校验）。",
-    "hints": ["链路层关注的是相邻节点间的传输", "区别于网络层的路由功能"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "数据链路层",
-<<<<<<< HEAD
     "section": "滑动窗口GBN与选择重传",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3501,22 +2719,11 @@
     "standard_answer": "C",
     "explanation": "GBN丢失一帧会重传全部后续帧；选择重传仅重传出错单帧，带宽利用率更高。",
     "hints": ["选择重传接收窗口大小大于1"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "CSMA/CD 中，站点检测到碰撞后执行：",
-    "options": ["A. 立即重传", "B. 等待固定时间后重传", "C. 执行截断二进制指数退避算法后重传", "D. 丢弃该帧"],
-    "standard_answer": "C",
-    "explanation": "CSMA/CD 在检测到碰撞后，站点执行截断二进制指数退避算法：基本退避时间 2τ，重传次数 k = min(重传次数, 10)，退避时间 = 随机数 r × 2τ（r 在 0~2ᵏ-1 中取），重传 16 次仍失败则丢弃。",
-    "hints": ["截断二进制指数退避的要点", "退避时间的计算"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "数据链路层",
-<<<<<<< HEAD
     "section": "以太网与MAC地址",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3554,22 +2761,11 @@
     "standard_answer": "A",
     "explanation": "A类0开头；B类10；C类110；D组播1110；E保留1111。",
     "hints": ["A类默认掩码255.0.0.0"],
-=======
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以太网的最小帧长为 64B，若发送速率为 100Mbps，则最大端到端距离约为（信号传播速度为 2×10⁸m/s）：",
-    "options": ["A. 200m", "B. 400m", "C. 2000m", "D. 40m"],
-    "standard_answer": "A",
-    "explanation": "最小帧长保证站点在发送完帧前能检测到碰撞。64B = 512bit，发送时间 = 512 / 100M = 5.12μs。单程最大延时 = 5.12 / 2 = 2.56μs。最大距离 = 2.56μs × 2×10⁸m/s = 512m。但实际还要考虑中继器延迟等，一般取 200m。",
-    "hints": ["最小帧长与碰撞检测的关系", "发送时间 ≥ 2×传播时间"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "网络层",
-<<<<<<< HEAD
     "section": "IPv4地址分类与子网划分",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3607,22 +2803,11 @@
     "standard_answer": "A",
     "explanation": "同一目标存在多条路由时，掩码长度越长代表网段越精准，优先匹配。",
     "hints": ["默认路由掩码长度0，优先级最低"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "IP 地址 192.168.1.0/24 的子网掩码为：",
-    "options": ["A. 255.255.255.0", "B. 255.255.0.0", "C. 255.0.0.0", "D. 255.255.255.128"],
-    "standard_answer": "A",
-    "explanation": "/24 表示网络前缀长度为 24 位，子网掩码为 255.255.255.0。",
-    "hints": ["CIDR 表示法中 /n 的含义", "子网掩码的前 n 位为 1"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "网络层",
-<<<<<<< HEAD
     "section": "动态路由RIP协议",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3632,22 +2817,11 @@
     "standard_answer": "B",
     "explanation": "RIP仅统计路由经过设备数量，最大有效跳数15，16判定不可达。",
     "hints": ["RIP仅适配中小型园区网络"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下路由协议中，属于距离向量算法的是：",
-    "options": ["A. OSPF", "B. RIP", "C. BGP", "D. IS-IS"],
-    "standard_answer": "B",
-    "explanation": "RIP（路由信息协议）基于距离向量算法（Bellman-Ford），以跳数作为度量。OSPF 和 IS-IS 基于链路状态算法（Dijkstra），BGP 是路径向量协议。",
-    "hints": ["区分动态路由协议的分类", "距离向量 vs 链路状态"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "网络层",
-<<<<<<< HEAD
     "section": "OSPF动态路由协议",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3671,22 +2845,11 @@
     "standard_answer": "C",
     "explanation": "ping发送ICMP回送请求报文，目标主机回复应答报文检测延迟与连通性。",
     "hints": "路由不可达、超时提示均为ICMP报文类型",
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "IPv4 数据报首部中，用于防止数据报无限循环的字段是：",
-    "options": ["A. 版本", "B. 首部长度", "C. 生存时间（TTL）", "D. 协议"],
-    "standard_answer": "C",
-    "explanation": "TTL（生存时间）字段每经过一个路由器减 1，减到 0 时路由器丢弃该数据报并发送 ICMP 超时消息，防止数据报在网络中无限循环。",
-    "hints": ["IP 数据报头部的各字段功能", "TTL 字段的工作机制"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "传输层",
-<<<<<<< HEAD
     "section": "传输层端口与复用分用",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3696,22 +2859,11 @@
     "standard_answer": "B",
     "explanation": "80=HTTP；443=HTTPS加密；21=FTP控制；22=SSH远程。",
     "hints": ["知名端口范围0~1023"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "UDP 协议的特点是：",
-    "options": ["A. 面向连接、可靠", "B. 无连接、不可靠", "C. 面向连接、不可靠", "D. 无连接、可靠"],
-    "standard_answer": "B",
-    "explanation": "UDP（用户数据报协议）是无连接的，发送数据前不需要建立连接；不保证可靠交付，没有拥塞控制。适用于实时应用（如视频会议）。",
-    "hints": ["UDP 与 TCP 的核心区别", "UDP 的适用场景"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "传输层",
-<<<<<<< HEAD
     "section": "UDP协议特性",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3735,22 +2887,11 @@
     "standard_answer": "B",
     "explanation": "客户端SYN；服务端SYN同步+ACK确认；客户端单独ACK完成连接。",
     "hints": ["FIN用于断开连接"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "TCP 拥塞控制中，当收到 3 个冗余 ACK 时执行的操作是：",
-    "options": ["A. 慢开始", "B. 拥塞避免", "C. 快重传", "D. 快恢复"],
-    "standard_answer": "C",
-    "explanation": "收到 3 个冗余 ACK 表明有报文段丢失，但不一定网络拥塞。TCP 首先执行快重传（立即重传丢失的报文段），然后执行快恢复（降低拥塞窗口而非回到初始值）。",
-    "hints": ["区分快重传和快恢复的执行时机", "3 个冗余 ACK 是快重传的触发条件"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "传输层",
-<<<<<<< HEAD
     "section": "TCP四次挥手断开",
     "difficulty": "中等",
     "question_type": "选择题",
@@ -3774,22 +2915,11 @@
     "standard_answer": "B",
     "explanation": "接收端通告rwnd告知发送端本机剩余缓存，避免溢出丢包。",
     "hints": ["拥塞控制cwnd管控网络链路负载"],
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "TCP 连接建立时，三次握手的过程为：",
-    "options": ["A. SYN → SYN+ACK → ACK", "B. SYN → ACK → SYN+ACK", "C. SYN+ACK → SYN → ACK", "D. SYN → SYN → ACK"],
-    "standard_answer": "A",
-    "explanation": "TCP 三次握手：客户端发送 SYN（seq=x）→ 服务器回复 SYN+ACK（seq=y, ack=x+1）→ 客户端发送 ACK（seq=x+1, ack=y+1）。",
-    "hints": ["三次握手中各报文段的标志位", "SEQ 和 ACK 号的变化规律"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "应用层",
-<<<<<<< HEAD
     "section": "DNS域名解析系统",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3799,22 +2929,11 @@
     "standard_answer": "B",
     "explanation": "将人类可读域名转换为机器识别的IP地址。",
     "hints": ["DNS默认UDP 53端口"],
-=======
-    "difficulty": "简单",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "以下应用层协议中，基于 UDP 的是：",
-    "options": ["A. HTTP", "B. FTP", "C. DNS", "D. SMTP"],
-    "standard_answer": "C",
-    "explanation": "DNS 域名系统基于 UDP 协议（默认端口 53），因为 DNS 查询通常只包含一个请求和一个响应，使用 UDP 效率更高。HTTP、FTP、SMTP 均基于 TCP。",
-    "hints": ["常见应用层协议使用的传输层协议", "DNS 使用 UDP 的原因"],
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
     "source": "seed"
   },
   {
     "subject": "计算机网络",
     "knowledge_point": "应用层",
-<<<<<<< HEAD
     "section": "HTTP与HTTPS协议",
     "difficulty": "简单",
     "question_type": "选择题",
@@ -3845,82 +2964,3 @@
 
 
 
-=======
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "HTTP 协议默认使用的端口号是：",
-    "options": ["A. 80", "B. 443", "C. 8080", "D. 21"],
-    "standard_answer": "A",
-    "explanation": "HTTP 默认端口号为 80，HTTPS（HTTP over SSL/TLS）默认端口号为 443。8080 常用于代理。",
-    "hints": ["记忆常见应用层协议的默认端口", "区分 HTTP 和 HTTPS 的端口"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机网络",
-    "knowledge_point": "应用层",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在电子邮箱系统中，用于发送邮件的协议是：",
-    "options": ["A. POP3", "B. IMAP", "C. SMTP", "D. HTTP"],
-    "standard_answer": "C",
-    "explanation": "SMTP（简单邮件传输协议）用于将邮件从客户端发送到服务器，以及邮件服务器之间的转发。POP3 和 IMAP 用于接收邮件（从服务器下载到客户端）。",
-    "hints": ["区分邮件发送和接收协议", "SMTP → 发送，POP3/IMAP → 接收"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "图",
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "拓扑排序算法中，需要维护一个（ ）来存储入度为 0 的顶点。",
-    "options": ["A. 栈", "B. 队列", "C. 栈或队列均可", "D. 优先队列"],
-    "standard_answer": "C",
-    "explanation": "拓扑排序使用栈或队列存储入度为 0 的顶点均可，只是得到的拓扑序列可能不同。关键步骤：每次取出一个入度为 0 的顶点输出，删除其所有出边，将新产生的入度为 0 的顶点加入。",
-    "hints": ["拓扑排序的核心步骤", "栈和队列只影响输出顺序不影响正确性"],
-    "source": "seed"
-  },
-  {
-    "subject": "数据结构",
-    "knowledge_point": "树与二叉树",
-    "difficulty": "较难",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "在一棵度为 4 的树 T 中，若有 20 个度为 4 的结点、10 个度为 3 的结点、5 个度为 2 的结点、10 个度为 1 的结点，则树 T 的叶子结点个数为：",
-    "options": ["A. 82", "B. 81", "C. 95", "D. 90"],
-    "standard_answer": "A",
-    "explanation": "总结点数 n = n₀ + n₁ + n₂ + n₃ + n₄ = n₀ + 10 + 5 + 10 + 20 = n₀ + 45。总度数 = 0×n₀ + 1×10 + 2×5 + 3×10 + 4×20 = 0 + 10 + 10 + 30 + 80 = 130。树中边数 = 总度数 = n - 1 = n₀ + 44。解得 130 = n₀ + 44 → n₀ = 86。",
-    "standard_answer": "A",
-    "hints": ["利用总度数 = 边数 = 结点数 - 1", "对每个度为 i 的结点贡献 i 个度数"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "数据的表示和运算",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "某机字长 32 位，采用定点整数补码表示，能表示的最小负数为：",
-    "options": ["A. -2³¹", "B. -2³¹+1", "C. -2³²", "D. -2³⁰"],
-    "standard_answer": "A",
-    "explanation": "32 位定点整数补码的表示范围为 -2³¹ ~ 2³¹-1，最小负数为 -2³¹（二进制 1000...0000）。",
-    "hints": ["n 位补码的表示范围", "注意最小值比最大值绝对值大 1"],
-    "source": "seed"
-  },
-  {
-    "subject": "计算机组成原理",
-    "knowledge_point": "总线",
-    "difficulty": "中等",
-    "question_type": "选择题",
-    "variant_type": "choice",
-    "question_text": "某系统采用 32 位地址总线和 64 位数据总线，则其最大可寻址空间为：",
-    "options": ["A. 4GB", "B. 8GB", "C. 64GB", "D. 16GB"],
-    "standard_answer": "A",
-    "explanation": "寻址空间由地址总线宽度决定。32 位地址总线可寻址 2³² = 4GB 的地址空间。数据总线宽度为 64 位，指的是每次可传输 8 字节数据。",
-    "hints": ["地址总线宽度决定寻址能力", "数据总线宽度影响传输速率"],
-    "source": "seed"
-  }
-]
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)

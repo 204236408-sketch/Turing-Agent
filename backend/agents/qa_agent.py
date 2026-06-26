@@ -60,12 +60,6 @@ def answer_question(db: Session, user_id: int, question: str, conversation_id: i
         "subject": answer.get("subject", "408"),
         "knowledge_point": answer.get("knowledge_point", "综合"),
         "retrieved_knowledge": result.get("retrieved_knowledge", []),
-<<<<<<< HEAD
-=======
-        "retrieval": result.get("retrieval", {}),
-        "answer_sources": answer.get("sources", result.get("retrieval", {}).get("sources", [])),
-        "retrieval_confidence": answer.get("retrieval_confidence", result.get("retrieval", {}).get("confidence", "unknown")),
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
         "memories": result.get("memories_used", []),
         "llm_used": result.get("llm_used", False),
         "llm_error": result.get("llm_error", ""),

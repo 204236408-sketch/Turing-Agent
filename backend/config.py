@@ -6,10 +6,6 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-<<<<<<< HEAD
-=======
-FRONTEND_DIR = PROJECT_DIR / "frontend"
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 
 
 def _load_dotenv(path: Path) -> dict[str, str]:
@@ -69,17 +65,9 @@ class Settings:
 
     database_url: str = _database_url("DATABASE_URL", f"sqlite:///{BASE_DIR / 'turing408.db'}")
     mysql_url: str = _get("MYSQL_URL", "")
-<<<<<<< HEAD
 
     secret_key: str = _get("SECRET_KEY", "change-this-secret-in-production")
     access_token_expire_minutes: int = _int("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7)
-=======
-    auto_migrate_on_startup: bool = _bool("AUTO_MIGRATE_ON_STARTUP", False)
-
-    secret_key: str = _get("SECRET_KEY", "change-this-secret-in-production")
-    access_token_expire_minutes: int = _int("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7)
-    allow_demo_auth_fallback: bool = _bool("ALLOW_DEMO_AUTH_FALLBACK", False)
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 
     siliconflow_api_key: str = _get("SILICONFLOW_API_KEY", "")
     siliconflow_base_url: str = _get("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
@@ -100,25 +88,6 @@ class Settings:
     def llm_enabled(self) -> bool:
         return bool(self.siliconflow_api_key.strip())
 
-<<<<<<< HEAD
-=======
-    @property
-    def is_production(self) -> bool:
-        return self.app_env.lower() in {"prod", "production"}
-
-
-def validate_security_settings() -> None:
-    if not settings.is_production:
-        return
-    weak_secrets = {"", "change-this-secret-in-production", "please-change-me"}
-    if settings.secret_key in weak_secrets or len(settings.secret_key) < 32:
-        raise RuntimeError("SECRET_KEY must be set to a strong value in production")
-    if settings.allow_demo_auth_fallback:
-        raise RuntimeError("ALLOW_DEMO_AUTH_FALLBACK must be disabled in production")
-    if settings.auto_migrate_on_startup:
-        raise RuntimeError("AUTO_MIGRATE_ON_STARTUP must be disabled in production")
-
->>>>>>> 2dbf2d9 (郭晶-6.26上午-修改版)
 
 @lru_cache
 def get_settings() -> Settings:
