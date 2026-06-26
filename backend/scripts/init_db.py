@@ -1,12 +1,14 @@
-from database import init_database, SessionLocal
+from database import SessionLocal
+from services.migration_service import run_migrations
 from services.seed_service import seed_all
 
 
 def main():
-    init_database()
+    result = run_migrations()
     with SessionLocal() as db:
         seed_all(db)
-    print("数据库表和演示数据初始化完成")
+    print(f"Database migrations executed: {len(result['executed'])}")
+    print("Database tables and demo data initialized")
 
 
 if __name__ == "__main__":

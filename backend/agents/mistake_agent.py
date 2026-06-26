@@ -194,10 +194,8 @@ OCR 识别文本：{text}
         },
     )
 
-    mastery_seed = recalculate_mastery(db, user_id, resolved_subject, resolved_point)
-    mastery_seed.user_mark_status = "不会"
-    db.flush()
     mastery = recalculate_mastery(db, user_id, resolved_subject, resolved_point)
+    db.flush()
     return {
         "mistake_id": mistake.id,
         "memory_id": memory.id,

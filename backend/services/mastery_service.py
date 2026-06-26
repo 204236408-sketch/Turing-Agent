@@ -159,11 +159,10 @@ def recalculate_mastery(
     ):
         mastery.final_status = "不会"
 
-    # 等级 3: 不熟 — 答题不足 | 正确率50-80% | 用户标记不熟 | 错1-2次 | 频繁提问
+    # 等级 3: 不熟 — 答题不足 | 正确率50-80% | 错1-2次 | 频繁提问
     elif (
         (0 < total_answer_count < 3)
         or (0.5 <= correct_rate < 0.8)
-        or mastery.user_mark_status == "不熟"
         or wrong_count in (1, 2)
         or mastery.qa_count >= 2
     ):
@@ -174,7 +173,6 @@ def recalculate_mastery(
         total_answer_count >= 3
         and correct_rate >= 0.8
         and wrong_count <= 1
-        and mastery.user_mark_status not in {"不熟", "不会"}
         and weak_memories == 0
         and mastery.weak_score <= 2
     ):
@@ -272,7 +270,6 @@ def apply_manual_feedback(
     )
     if latest:
         latest.mastery_feedback = status
-    mastery.user_mark_status = status
     return recalculate_mastery(db, user_id, subject, knowledge_point)
 
 

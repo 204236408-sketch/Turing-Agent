@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 
-COLLECTIONS = ["knowledge_base_408", "user_memory_vector", "mistake_summary"]
+COLLECTIONS = ["knowledge_base_408", "user_memory_vector", "mistake_summary", "seed_questions_vector"]
 
 
 from chromadb import EmbeddingFunction, Embeddings
@@ -90,7 +90,7 @@ class ChromaService:
         if not self._enabled or self._client is None:
             return None
         try:
-            if name == "knowledge_base_408":
+            if name in ("knowledge_base_408", "seed_questions_vector"):
                 ef = _ChromaEmbeddingFunction()
                 return self._client.get_or_create_collection(name, embedding_function=ef)
             return self._client.get_or_create_collection(name)

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
 from models import KnowledgeMastery, KnowledgePoint, User
+from services.mastery_service import synchronize_user_mastery
 from services.recommendation_service import build_smart_recommendations
 from utils.response import success
 
@@ -31,24 +32,10 @@ STATUS_STYLE = {
 STATUS_ORDER = ["薄弱点", "不会", "不熟", "掌握", "未学"]
 
 
-def _normalize_status(row: KnowledgeMastery | None) -> str:
+def _safe_status(row: KnowledgeMastery | None) -> str:
     if row is None:
         return "未学"
-    total = row.total_answer_count or 0
-    wrong = row.wrong_count or 0
-    correct = row.correct_count or 0
-    weak_score = row.weak_score or 0
-    if total == 0 and weak_score <= 0:
-        return "未学"
-    if wrong >= 3 or weak_score >= 10:
-        return "薄弱点"
-    if row.unknown_count or (total >= 2 and correct == 0):
-        return "不会"
-    if row.unfamiliar_count or wrong in (1, 2):
-        return "不熟"
-    if total >= 3 and correct / max(total, 1) >= 0.8 and wrong <= 1 and weak_score <= 2:
-        return "掌握"
-    return "不熟"
+    return row.final_status or "未学"
 
 
 @router.get("/graph")
@@ -60,6 +47,8 @@ def graph(
     rows = db.query(KnowledgePoint).filter(KnowledgePoint.is_deleted == False).order_by(KnowledgePoint.subject, KnowledgePoint.id).all()
     mastery_map_data: dict[tuple[str, str], KnowledgeMastery] = {}
     if scope in ("user", "tree"):
+        synchronize_user_mastery(db, user.id, [(r.subject, r.name) for r in rows])
+        db.flush()
         mastery_rows = db.query(KnowledgeMastery).filter(KnowledgeMastery.user_id == user.id).all()
         for m in mastery_rows:
             mastery_map_data[(m.subject, m.knowledge_point)] = m
@@ -69,22 +58,29 @@ def graph(
         for row in rows:
             if row.subject not in subjects:
                 subjects[row.subject] = {"name": row.subject, "children": []}
-            parent_name = row.parent_name or row.subject
+            section_name = row.section or row.name
             parent_node = None
             for child in subjects[row.subject]["children"]:
-                if child["name"] == parent_name:
+                if child["name"] == section_name:
                     parent_node = child
                     break
             if parent_node is None:
-                parent_node = {"name": parent_name, "children": []}
+                parent_node = {"name": section_name, "children": []}
                 subjects[row.subject]["children"].append(parent_node)
             node = {"name": row.section or row.name, "knowledge_point": row.name, "content": row.content, "keywords": row.keywords}
-            if scope == "tree":
-                mastery_row = mastery_map_data.get((row.subject, row.name))
-                status = _normalize_status(mastery_row)
-                node["status"] = status
-                node["style"] = STATUS_STYLE.get(status, STATUS_STYLE["未学"])
+            mastery_row = mastery_map_data.get((row.subject, row.name))
+            status = _safe_status(mastery_row)
+            node["status"] = status
+            node["style"] = STATUS_STYLE.get(status, STATUS_STYLE["未学"])
             parent_node["children"].append(node)
+
+        for subject_data in subjects.values():
+            for parent_node in subject_data["children"]:
+                child_statuses = [c["status"] for c in parent_node.get("children", []) if c.get("status")]
+                if child_statuses:
+                    worst = min(child_statuses, key=lambda s: STATUS_ORDER.index(s) if s in STATUS_ORDER else 99)
+                    parent_node["status"] = worst
+                    parent_node["style"] = STATUS_STYLE.get(worst, STATUS_STYLE["未学"])
         return success({"subjects": list(subjects.values()), "status_style": STATUS_STYLE})
 
     SUBJECTS = ["数据结构", "计算机组成原理", "操作系统", "计算机网络"]
@@ -98,7 +94,7 @@ def graph(
         if p.subject not in grouped:
             grouped[p.subject] = []
         mastery_row = mastery_map_data.get(key)
-        status = _normalize_status(mastery_row) if scope == "user" else "未学"
+        status = _safe_status(mastery_row) if scope == "user" else "未学"
         grouped[p.subject].append({
             "id": f"{p.subject}-{p.name}",
             "subject": p.subject,

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
+import re
+
 from sqlalchemy.orm import Session
 
 from models import VideoResource
+from services.video_crawler_service import _popularity_score, _search_bilibili
 
+logger = logging.getLogger("video_service")
 
 KP_ALIASES: dict[str, set[str]] = {
     "栈、队列和数组": {"栈和队列", "栈", "队列", "数组"},
@@ -33,67 +38,97 @@ KP_ALIASES: dict[str, set[str]] = {
     "绪论": {"绪论", "算法", "算法评价"},
 }
 
-
-def expand_aliases(kp: str) -> set[str]:
-    kp_lower = kp.lower()
-    expanded = {kp_lower}
-    if kp in KP_ALIASES:
-        expanded.update(a.lower() for a in KP_ALIASES[kp])
-    for ch, aliases in KP_ALIASES.items():
-        for a in aliases:
-            if a.lower() == kp_lower:
-                expanded.add(ch.lower())
-                expanded.update(x.lower() for x in KP_ALIASES.get(ch, set()))
-    return expanded
+_STOP_ENGLISH = {"THE", "AND", "FOR", "NOT", "ARE", "ALL", "CAN", "HAS", "WILL", "MAY", "THIS", "THAT", "WITH", "FROM", "THAN", "ALSO"}
 
 
-def recommend_videos(
-    db: Session,
-    subject: str = "",
-    knowledge_point: str = "",
-    limit: int = 8,
-) -> list[dict]:
-    query = db.query(VideoResource).filter(VideoResource.is_deleted == False)
-    if subject:
-        query = query.filter(VideoResource.subject == subject)
-    all_videos = query.order_by(VideoResource.quality_score.desc()).all()
-    if not all_videos:
-        all_videos = (
-            db.query(VideoResource)
-            .filter(VideoResource.is_deleted == False)
-            .order_by(VideoResource.quality_score.desc())
-            .limit(20)
-            .all()
-        )
-    kp = knowledge_point or ""
-    expanded = expand_aliases(kp) if kp else set()
+def extract_question_keywords(text: str, knowledge_point: str = "") -> list[str]:
+    """从题目文本中提取关键术语，用于视频匹配"""
+    if not text:
+        return [kp for kp in [knowledge_point] if kp]
 
-    def match_score(v: VideoResource) -> int:
-        vkp = (v.knowledge_point or "").lower()
-        title = (v.title or "").lower()
-        if kp and vkp == kp.lower():
-            return 100
-        if expanded and vkp in expanded:
-            return 80
-        for a in expanded:
-            if a and len(a) >= 2 and a in vkp:
-                return 70
-        for a in expanded:
-            if a and len(a) >= 2 and a in title:
-                return 50
-        if kp and vkp and len(vkp) >= 2 and vkp in kp.lower():
-            return 30
-        return 10
+    keywords: set[str] = set()
+    text_lower = text.lower()
 
-    scored = [(match_score(v), v) for v in all_videos]
-    scored.sort(key=lambda x: (-x[0], -(x[1].quality_score or 0)))
-    seen: set[str] = set()
-    items: list[dict] = []
-    for score, v in scored:
-        if v.url in seen:
-            continue
-        seen.add(v.url)
-        items.append({
+    all_known_terms: set[str] = set()
+    for kp, aliases in KP_ALIASES.items():
+        all_known_terms.add(kp)
+        all_known_terms.update(aliases)
+    for term in all_known_terms:
+        if len(term) >= 2 and term.lower() in text_lower:
+            keywords.add(term)
+
+    subjects = {"数据结构", "计算机组成原理", "操作系统", "计算机网络"}
+    for s in subjects:
+        if s in text:
+            keywords.add(s)
+
+    eng_terms = re.findall(r'\b[A-Za-z][A-Za-z0-9+#.\-/]*\b', text)
+    for t in eng_terms:
+        if len(t) >= 2 and t.upper() not in _STOP_ENGLISH:
+            keywords.add(t)
+
+    if knowledge_point:
+        keywords.add(knowledge_point)
+
+    return [k for k in keywords if k]
+
+
+def _keyword_relevance(text: str, keywords: list[str]) -> float:
+    """关键词相关度 (0~1)"""
+    if not keywords or not text:
+        return 0.5
+    text_lower = text.lower()
+    matched = sum(1 for kw in keywords if kw.lower() in text_lower)
+    return min(matched / len(keywords), 1.0)
+
+
+def _score_local(v: VideoResource, keywords: list[str]) -> tuple[float, float, str]:
+    """本地视频评分: (keyword_relevance, final_score, match_label)"""
+    target = f"{v.title or ''} {v.reason or ''} {v.knowledge_point or ''}"
+    kw_rel = _keyword_relevance(target, keywords)
+    pop = (v.quality_score or 0) / 100.0
+    final = kw_rel * 0.50 + pop * 0.50
+
+    kp_match = v.knowledge_point and any(kw.lower() in v.knowledge_point.lower() for kw in keywords)
+    title_match = v.title and any(kw.lower() in v.title.lower() for kw in keywords)
+
+    if kp_match:
+        label = "exact"
+    elif title_match and kw_rel >= 0.4:
+        label = "keyword"
+    elif kw_rel >= 0.3:
+        label = "alias"
+    else:
+        label = "subject"
+
+    return kw_rel, final, label
+
+
+def _score_bili(v: dict, keywords: list[str]) -> tuple[float, float, str]:
+    """B站视频评分: (keyword_relevance, final_score, match_label)"""
+    target = f"{v.get('title', '')} {v.get('description', '')} {v.get('tag', '')}"
+    kw_rel = _keyword_relevance(target, keywords)
+    pop = _popularity_score(v)
+    final = kw_rel * 0.50 + pop * 0.50
+
+    title = v.get("title", "")
+    title_match = any(kw.lower() in title.lower() for kw in keywords)
+
+    if kw_rel >= 0.6:
+        label = "exact"
+    elif title_match and kw_rel >= 0.3:
+        label = "keyword"
+    elif kw_rel >= 0.15:
+        label = "alias"
+    else:
+        label = "subject"
+
+    return kw_rel, final, label
+
+
+def _format_item(v: VideoResource | dict, label: str, final_score: float, source: str, subject: str, knowledge_point: str) -> dict:
+    if isinstance(v, VideoResource):
+        return {
             "id": v.id,
             "title": v.title,
             "platform": v.platform or "Bilibili",
@@ -104,12 +139,91 @@ def recommend_videos(
             "reason": v.reason or "",
             "subject": v.subject,
             "knowledge_point": v.knowledge_point or "",
-            "match_level": (
-                "exact" if score >= 100
-                else ("alias" if score >= 70
-                      else ("keyword" if score >= 50 else "subject"))
-            ),
-        })
-        if len(items) >= limit:
+            "match_level": label,
+            "final_score": round(final_score, 4),
+            "source": source,
+        }
+    return {
+        "id": 0,
+        "title": v.get("title", ""),
+        "platform": "Bilibili",
+        "url": v.get("url", ""),
+        "cover_url": v.get("cover_url", ""),
+        "duration": v.get("duration", ""),
+        "author": v.get("author", ""),
+        "reason": f"实时搜索 · 匹配关键词" if source == "bilibili" else "",
+        "subject": subject,
+        "knowledge_point": knowledge_point,
+        "match_level": label,
+        "final_score": round(final_score, 4),
+        "source": source,
+    }
+
+
+def recommend_videos(
+    db: Session,
+    subject: str = "",
+    knowledge_point: str = "",
+    question_text: str = "",
+    limit: int = 8,
+) -> list[dict]:
+    keywords = extract_question_keywords(question_text, knowledge_point)
+    logger.info("Recommend videos | subject=%s kp=%s keywords=%s", subject, knowledge_point, keywords)
+
+    query = db.query(VideoResource).filter(VideoResource.is_deleted == False)
+    if subject:
+        query = query.filter(VideoResource.subject == subject)
+    local_videos = query.all()
+
+    scored_local: list[tuple[float, str, VideoResource]] = []
+    for v in local_videos:
+        _, final, label = _score_local(v, keywords)
+        scored_local.append((final, label, v))
+    scored_local.sort(key=lambda x: -x[0])
+
+    merged: list[dict] = []
+    seen_urls: set[str] = set()
+
+    good_threshold = 0.3
+    good_local = [x for x in scored_local if x[0] >= good_threshold]
+
+    for final, label, v in scored_local:
+        if len(merged) >= limit:
             break
-    return items
+        if v.url in seen_urls:
+            continue
+        seen_urls.add(v.url)
+        merged.append(_format_item(v, label, final, "local", v.subject, v.knowledge_point or ""))
+
+    need_fallback = len(good_local) < limit and keywords and any(kp for kp in keywords if len(kp) >= 2)
+
+    if need_fallback:
+        try:
+            search_q_keywords = keywords[:4]
+            search_query = f"{' '.join(search_q_keywords)} 408 考研"
+            logger.info("B站 fallback search: %s", search_query)
+
+            bili_raw = _search_bilibili(search_query, limit=20, order="click")
+            if not bili_raw:
+                bili_raw = _search_bilibili(search_query, limit=20, order="click", duration=0)
+
+            if bili_raw:
+                scored_bili: list[tuple[float, str, dict]] = []
+                for v in bili_raw:
+                    _, final, label = _score_bili(v, keywords)
+                    scored_bili.append((final, label, v))
+                scored_bili.sort(key=lambda x: -x[0])
+
+                for final, label, v in scored_bili:
+                    if len(merged) >= limit:
+                        break
+                    url = v.get("url", "")
+                    if url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    merged.append(_format_item(v, label, final, "bilibili", subject, knowledge_point))
+        except Exception as e:
+            logger.error("B站 fallback failed: %s", e)
+
+    merged.sort(key=lambda x: -x["final_score"])
+    return merged[:limit]

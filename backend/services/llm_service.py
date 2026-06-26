@@ -2,7 +2,7 @@ import json
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generator
 from urllib import error, request
 from config import settings
 
@@ -91,6 +91,60 @@ def chat_json_with_fallback_models(
         data=fallback,
     )
     return result
+
+
+def chat_completion_stream(
+    messages: list[dict],
+    fallback: str,
+    temperature: float = 0.3,
+    model: str | None = None,
+    max_tokens: int = 1600,
+) -> Generator[str, None, None]:
+    if not settings.llm_enabled:
+        yield fallback
+        return
+    try:
+        selected_model = model or settings.siliconflow_model
+        body = json.dumps(
+            {
+                "model": selected_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": True,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = request.Request(
+            f"{settings.siliconflow_base_url.rstrip('/')}/chat/completions",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {settings.siliconflow_api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        with request.urlopen(req, timeout=settings.llm_timeout_seconds) as response:
+            buffer = ""
+            for chunk in response:
+                buffer += chunk.decode("utf-8", errors="replace")
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            return
+                        try:
+                            payload = json.loads(data_str)
+                            delta = payload.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+    except Exception:
+        yield fallback
 
 
 def extract_json(text: str) -> Any:

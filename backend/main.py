@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from config import PROJECT_DIR, settings
+from config import FRONTEND_DIR, settings, validate_security_settings
 from database import SessionLocal, init_database
 from routers import (
     answer_router,
@@ -39,6 +39,7 @@ chroma: ChromaService | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global chroma
+    validate_security_settings()
     init_database()
     chroma = ChromaService(settings.chroma_path)
     app.state.chroma = chroma
@@ -125,4 +126,4 @@ app.include_router(memory_router.router)
 app.include_router(report_router.router)
 
 
-app.mount("/", StaticFiles(directory=PROJECT_DIR, html=True), name="frontend")
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

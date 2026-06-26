@@ -92,7 +92,7 @@ def videos(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise AppError("QUESTION_NOT_FOUND", "题目不存在", status_code=404)
-    items = recommend_videos(db, question.subject, question.knowledge_point or "", limit=8)
+    items = recommend_videos(db, subject=question.subject, knowledge_point=question.knowledge_point or "", question_text=question.question_text, limit=8)
     return success({"items": items, "subject": question.subject, "knowledge_point": question.knowledge_point or ""})
 
 
