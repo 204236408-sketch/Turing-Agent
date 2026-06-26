@@ -30,6 +30,35 @@ BILIBILI_HEADERS = {
     "Connection": "keep-alive",
 }
 
+_bili_session: requests.Session | None = None
+_bili_session_ready: float = 0
+
+
+def _get_bili_session() -> requests.Session:
+    global _bili_session, _bili_session_ready
+    now = time.time()
+    if _bili_session is not None and (now - _bili_session_ready) < 600:
+        return _bili_session
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": BILIBILI_HEADERS["User-Agent"],
+        "Accept-Language": BILIBILI_HEADERS["Accept-Language"],
+    })
+    try:
+        s.get("https://www.bilibili.com/", timeout=15)
+        time.sleep(0.5)
+    except requests.RequestException:
+        pass
+    s.headers.update({
+        "Referer": BILIBILI_HEADERS["Referer"],
+        "Origin": BILIBILI_HEADERS["Origin"],
+        "Accept": BILIBILI_HEADERS["Accept"],
+    })
+    _bili_session = s
+    _bili_session_ready = now
+    return s
+
+
 PLATFORM_WEIGHTS = {"Bilibili": 1.0, "YouTube": 0.7, "其他": 0.5}
 DEFAULT_PLATFORM_WEIGHT = 0.5
 
@@ -48,26 +77,64 @@ def _subject_search_keywords(subject: str) -> list[str]:
     return [mapping.get(subject, subject), "408", "考研"]
 
 
-def _search_bilibili(keyword: str, page: int = 1, limit: int = 10) -> list[dict]:
+def _parse_play_count(val: Any) -> int:
+    if isinstance(val, int):
+        return val
+    if isinstance(val, str):
+        s = val.strip()
+        try:
+            if s.endswith("万"):
+                return int(float(s[:-1]) * 10000)
+            if s.endswith("亿"):
+                return int(float(s[:-1]) * 100000000)
+            return int(s.replace(",", ""))
+        except (ValueError, TypeError):
+            return 0
+    return 0
+
+
+def _search_bilibili(keyword: str, page: int = 1, limit: int = 10, order: str = "click", duration: int = 0) -> list[dict]:
     try:
-        params = {"search_type": "video", "keyword": keyword, "page": page, "page_size": limit}
-        resp = requests.get(BILIBILI_SEARCH_URL, params=params, headers=BILIBILI_HEADERS, timeout=15)
+        s = _get_bili_session()
+        params = {
+            "search_type": "video",
+            "keyword": keyword,
+            "page": page,
+            "page_size": limit,
+            "order": order,
+        }
+        if duration:
+            params["duration"] = duration
+        resp = s.get(BILIBILI_SEARCH_URL, params=params, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
             logger.warning("Bilibili API error: code=%s, msg=%s", data.get("code"), data.get("message", ""))
+            if data.get("code") == -412:
+                global _bili_session_ready
+                _bili_session_ready = 0
             return []
         result = data.get("data", {})
         videos = []
         for item in (result.get("result", []) or []):
+            bvid = item.get("bvid", "")
+            aid = item.get("aid", "")
+            url = f"https://www.bilibili.com/video/{bvid}" if bvid else item.get("arcurl", "")
+            if not url and aid:
+                url = f"https://www.bilibili.com/video/av{aid}"
+            play = _parse_play_count(item.get("play", 0))
+            pic = item.get("pic", "")
+            if pic and pic.startswith("//"):
+                pic = "https:" + pic
             videos.append({
                 "platform": "Bilibili",
                 "title": item.get("title", "").replace("<em class=\"keyword\">", "").replace("</em>", ""),
-                "url": item.get("arcurl", ""),
-                "cover_url": item.get("pic", ""),
+                "url": url,
+                "bvid": bvid,
+                "cover_url": pic,
                 "duration": _format_duration(item.get("duration", "")),
                 "author": item.get("author", ""),
-                "play_count": item.get("play", 0) or 0,
+                "play_count": play,
                 "danmaku_count": item.get("video_review", 0) or 0,
                 "like_count": item.get("like", 0) or 0,
                 "publish_time": item.get("pubdate", 0),
@@ -237,7 +304,10 @@ def crawl_for_point(db: Session, subject: str, knowledge_point: str) -> list[dic
 
     keywords = _subject_search_keywords(subject)
     keyword = f"{' '.join(keywords)} {knowledge_point}"
-    raw = _search_bilibili(keyword, limit=20)
+    raw = _search_bilibili(keyword, limit=20, order="click", duration=3)
+    if not raw:
+        raw = _search_bilibili(keyword, limit=20, order="click", duration=0)
+        time.sleep(1)
     if not raw:
         logger.warning("Bilibili returned no results for %s", keyword)
         return []

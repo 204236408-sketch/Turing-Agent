@@ -17,6 +17,7 @@ def confirm_cause(
     error_types: list[str],
     user_note: str,
     evidence_source: str,
+    agent_suggested_types: list[str] | None = None,
 ) -> dict:
     """确认错因，写入错题本、长期记忆并更新掌握度。
 
@@ -27,6 +28,7 @@ def confirm_cause(
         error_types: 错因类型列表。
         user_note: 用户备注。
         evidence_source: 证据来源。
+        agent_suggested_types: Agent 建议的错因类型（可选）。
 
     Returns:
         dict: 包含 mistake_id, mastery_status, agent_steps, llm_used, llm_error。
@@ -35,9 +37,10 @@ def confirm_cause(
     initial_state = {
         "user_id": user_id,
         "answer_record_id": answer_record_id,
-        "error_types": error_types,
+        "error_types": error_types or agent_suggested_types or [],
         "user_note": user_note,
-        "_evidence_source": evidence_source,
+        "evidence_source": evidence_source,
+        "agent_suggested_types": agent_suggested_types or [],
         "mistake_id": None,
         "memory_id": None,
         "similar_mistakes": [],

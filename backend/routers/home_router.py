@@ -53,8 +53,32 @@ KNOWLEDGE_FALLBACK = {
     "计算机网络": ["体系结构", "数据链路层", "网络层", "传输层", "应用层"],
 }
 GRAPH_ALIASES = {
-    ("数据结构", "查找与排序"): ["查找与排序", "查找", "排序"],
-    ("操作系统", "内存管理"): ["内存管理", "页面置换算法", "分页管理", "虚拟内存"],
+    ("数据结构", "绪论"): ["绪论"],
+    ("数据结构", "线性表"): ["线性表"],
+    ("数据结构", "栈、队列和数组"): ["栈、队列和数组", "栈和队列", "栈", "队列", "数组"],
+    ("数据结构", "串"): ["串", "字符串"],
+    ("数据结构", "树与二叉树"): ["树与二叉树", "树", "二叉树", "树、森林"],
+    ("数据结构", "图"): ["图"],
+    ("数据结构", "查找"): ["查找", "查找与排序"],
+    ("数据结构", "排序"): ["排序", "查找与排序"],
+    ("计算机组成原理", "计算机系统概述"): ["计算机系统概述", "概述"],
+    ("计算机组成原理", "数据的表示和运算"): ["数据的表示和运算", "数据表示与运算", "数据表示", "运算"],
+    ("计算机组成原理", "存储系统"): ["存储系统"],
+    ("计算机组成原理", "指令系统"): ["指令系统"],
+    ("计算机组成原理", "中央处理器"): ["中央处理器", "CPU"],
+    ("计算机组成原理", "总线"): ["总线", "总线与 I/O", "总线与IO"],
+    ("计算机组成原理", "输入输出系统"): ["输入输出系统", "I/O", "输入输出", "IO系统"],
+    ("操作系统", "计算机系统概述"): ["计算机系统概述", "OS概述"],
+    ("操作系统", "进程与线程"): ["进程与线程", "进程", "线程", "同步与互斥", "进程同步", "同步互斥", "死锁"],
+    ("操作系统", "内存管理"): ["内存管理", "分页管理", "虚拟内存", "页面置换算法", "页面置换", "LRU", "FIFO"],
+    ("操作系统", "文件管理"): ["文件管理", "文件系统"],
+    ("操作系统", "输入输出管理"): ["输入输出管理", "I/O管理", "IO管理"],
+    ("计算机网络", "计算机网络体系结构"): ["计算机网络体系结构", "体系结构", "网络体系结构"],
+    ("计算机网络", "物理层"): ["物理层"],
+    ("计算机网络", "数据链路层"): ["数据链路层"],
+    ("计算机网络", "网络层"): ["网络层"],
+    ("计算机网络", "传输层"): ["传输层", "TCP", "UDP"],
+    ("计算机网络", "应用层"): ["应用层"],
 }
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -320,7 +344,13 @@ def build_stats(rows: list[KnowledgeMastery], memories: list[UserMemory], all_an
         weak_trend = f"-{(prev_weak - weak_count)}" if prev_weak > weak_count else (f"+{(weak_count - prev_weak)}" if weak_count > prev_weak else "")
     memory_trend = ""
     if len(memories) > 0:
-        memory_trend = "新增" if any(m for m in memories if (datetime.now(SHANGHAI_TZ) - m.update_time).days <= 1) else ""
+        now_naive = datetime.now()
+        def _days_since(dt):
+            if dt is None:
+                return 999
+            dt_naive = dt.replace(tzinfo=None) if dt.tzinfo else dt
+            return (now_naive - dt_naive).days
+        memory_trend = "新增" if any(_days_since(m.update_time) <= 1 for m in memories) else ""
     return {
         "weekly_answers": total_answers,
         "weekly_correct": weekly_correct,
@@ -370,30 +400,47 @@ def build_memory_list(memories: list[UserMemory], rows: list[KnowledgeMastery]) 
 def build_graph(points: list[KnowledgePoint], rows: list[KnowledgeMastery]) -> dict:
     by_mastery = mastery_map(rows)
     grouped: dict[str, list[dict]] = {subject: [] for subject in SUBJECTS}
-    for subject, fallback_points in KNOWLEDGE_FALLBACK.items():
-        for idx, name in enumerate(fallback_points):
-            aliases = GRAPH_ALIASES.get((subject, name), [name])
-            alias_rows = [by_mastery[(subject, alias)] for alias in aliases if (subject, alias) in by_mastery]
-            row = min(
-                alias_rows,
-                key=lambda item: STATUS_ORDER.index(normalize_status(item.final_status, item)),
-                default=None,
-            )
-            status = normalize_status(row.final_status if row else None, row)
-            grouped[subject].append(
-                {
-                    "id": f"{subject}-{idx}",
-                    "subject": subject,
-                    "name": name,
-                    "parent_name": subject,
-                    "level": 2,
-                    "is_high_frequency": idx in {1, 2, 3},
-                    "status": status,
-                    "weak_score": row.weak_score if row else 0,
-                    "total_answer_count": row.total_answer_count if row else 0,
-                    "style": STATUS_STYLE[status],
-                }
-            )
+    seen: dict[tuple[str, str], bool] = {}
+    chapter_order: dict[tuple[str, str], int] = {}
+    for idx, p in enumerate(points):
+        key = (p.subject, p.name)
+        if key not in seen:
+            seen[key] = True
+            chapter_order[key] = p.id
+    for (subject, name), _ in sorted(chapter_order.items(), key=lambda x: x[1]):
+        if subject not in grouped:
+            grouped[subject] = []
+        if len(grouped[subject]) >= 8:
+            continue
+        aliases = GRAPH_ALIASES.get((subject, name), [name])
+        alias_rows = [by_mastery[(subject, alias)] for alias in aliases if (subject, alias) in by_mastery]
+        row = min(
+            alias_rows,
+            key=lambda item: STATUS_ORDER.index(normalize_status(item.final_status, item)),
+            default=None,
+        )
+        status = normalize_status(row.final_status if row else None, row)
+        is_hf = False
+        for p in points:
+            if p.subject == subject and p.name == name:
+                is_hf = p.is_high_frequency or is_hf
+        grouped[subject].append(
+            {
+                "id": f"{subject}-{name}",
+                "subject": subject,
+                "name": name,
+                "parent_name": subject,
+                "level": 2,
+                "is_high_frequency": is_hf,
+                "status": status,
+                "weak_score": row.weak_score if row else 0,
+                "total_answer_count": row.total_answer_count if row else 0,
+                "style": STATUS_STYLE[status],
+            }
+        )
+    for subject in SUBJECTS:
+        if subject not in grouped:
+            grouped[subject] = []
     summary = {status: 0 for status in STATUS_STYLE}
     for items in grouped.values():
         for item in items:

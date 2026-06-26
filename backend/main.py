@@ -33,11 +33,15 @@ from services.chroma_service import ChromaService
 from services.seed_service import seed_all
 from utils.response import AppError, failure, success
 
+chroma: ChromaService | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    global chroma
     init_database()
-    app.state.chroma = ChromaService(settings.chroma_path)
+    chroma = ChromaService(settings.chroma_path)
+    app.state.chroma = chroma
     with SessionLocal() as db:
         seed_all(db)
     yield
@@ -85,13 +89,6 @@ async def unknown_error_handler(request: Request, exc: Exception):
         status_code=500,
         content=failure("INTERNAL_ERROR", "服务器内部异常，请查看日志", request.state.request_id, str(exc)),
     )
-
-
-@app.on_event("startup")
-def startup():
-    init_database()
-    with SessionLocal() as db:
-        seed_all(db)
 
 
 @app.get("/api/health")

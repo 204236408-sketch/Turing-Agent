@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Literal
 
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, END
 from sqlalchemy.orm import Session
 
 from agents.graph_state import MistakeState
@@ -50,12 +50,13 @@ def load_answer_record(state: MistakeState) -> dict:
     meta = f"subject={record.subject}, kp={record.knowledge_point}, correct={record.is_correct}"
     step = _make_step("load_answer_record", f"record_id={answer_record_id}", meta, "success", start)
     return {
-        "_record": record,
-        "_record_subject": record.subject,
-        "_record_kp": record.knowledge_point,
-        "_record_user_answer": record.user_answer,
-        "_record_std_answer": record.standard_answer,
-        "_record_feedback": record.feedback,
+        "record_id": record.id,
+        "record_subject": record.subject,
+        "record_kp": record.knowledge_point,
+        "record_user_answer": record.user_answer,
+        "record_std_answer": record.standard_answer,
+        "record_feedback": record.feedback,
+        "record_question_id": record.question_id,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -64,10 +65,14 @@ def analyze_error(state: MistakeState) -> dict:
     start = time.time()
     error_types = state.get("error_types", [])
     user_note = state.get("user_note", "")
-    record = state.get("_record")
-    evidence_source = state.get("_evidence_source", "系统出题")
+    record_subject = state.get("record_subject", "")
+    record_kp = state.get("record_kp", "")
+    record_user_answer = state.get("record_user_answer", "")
+    record_std_answer = state.get("record_std_answer", "")
+    record_feedback = state.get("record_feedback", "")
+    evidence_source = state.get("evidence_source", "系统出题")
 
-    if not record:
+    if not record_subject:
         step = _make_step("analyze_error", "no record", "error: record not loaded", "failed", start)
         return {"agent_steps": state.get("agent_steps", []) + [step]}
 
@@ -76,16 +81,16 @@ def analyze_error(state: MistakeState) -> dict:
 
     fallback = {
         "error_reason": reason,
-        "suggestion": f"围绕 {record.knowledge_point} 做 3 道同类题，并复述解题规则。",
-        "memory_content": f"{record.knowledge_point} 反复出现 {error_type}，复习时要先列规则再计算。",
+        "suggestion": f"围绕 {record_kp} 做 3 道同类题，并复述解题规则。",
+        "memory_content": f"{record_kp} 反复出现 {error_type}，复习时要先列规则再计算。",
     }
 
     prompt = f"""
-科目：{record.subject}
-知识点：{record.knowledge_point}
-用户答案：{record.user_answer}
-标准答案：{record.standard_answer}
-批改反馈：{record.feedback}
+科目：{record_subject}
+知识点：{record_kp}
+用户答案：{record_user_answer}
+标准答案：{record_std_answer}
+批改反馈：{record_feedback}
 用户确认错因：{error_type}
 用户补充说明：{user_note}
 
@@ -111,11 +116,11 @@ def analyze_error(state: MistakeState) -> dict:
     step_status = "success" if llm.used_llm else "degraded"
     step = _make_step("analyze_error", f"error_types={error_type}", f"analysis done", step_status, start)
     return {
-        "_error_type": error_type,
-        "_error_reason": data.get("error_reason") or reason,
-        "_suggestion": data.get("suggestion") or fallback["suggestion"],
-        "_memory_content": data.get("memory_content") or fallback["memory_content"],
-        "_llm": llm,
+        "error_type": error_type,
+        "error_reason": data.get("error_reason") or reason,
+        "suggestion": data.get("suggestion") or fallback["suggestion"],
+        "memory_content": data.get("memory_content") or fallback["memory_content"],
+        "llm_result": llm,
         "llm_used": llm.used_llm,
         "llm_error": llm.error,
         "agent_steps": state.get("agent_steps", []) + [step],
@@ -125,23 +130,26 @@ def analyze_error(state: MistakeState) -> dict:
 def write_mistake(state: MistakeState) -> dict:
     db = _get_db()
     start = time.time()
-    record = state.get("_record")
     user_id = state.get("user_id", 0)
-    error_type = state.get("_error_type", "未确认")
-    error_reason = state.get("_error_reason", "")
-    suggestion = state.get("_suggestion", "")
-    evidence_source = state.get("_evidence_source", "系统出题")
+    error_type = state.get("error_type", "未确认")
+    error_reason = state.get("error_reason", "")
+    suggestion = state.get("suggestion", "")
+    evidence_source = state.get("evidence_source", "系统出题")
+    record_id = state.get("record_id", 0)
+    record_subject = state.get("record_subject", "")
+    record_kp = state.get("record_kp", "")
+    record_question_id = state.get("record_question_id", 0)
 
-    if not record:
+    if not record_subject:
         step = _make_step("write_mistake", "no record", "error", "failed", start)
         return {"agent_steps": state.get("agent_steps", []) + [step]}
 
     mistake = Mistake(
         user_id=user_id,
-        answer_record_id=record.id,
-        question_id=record.question_id,
-        subject=record.subject,
-        knowledge_point=record.knowledge_point,
+        answer_record_id=record_id,
+        question_id=record_question_id,
+        subject=record_subject,
+        knowledge_point=record_kp,
         error_type=error_type,
         error_reason=error_reason,
         suggestion=suggestion,
@@ -150,7 +158,7 @@ def write_mistake(state: MistakeState) -> dict:
     db.add(mistake)
     db.flush()
 
-    out = f"mistake_id={mistake.id}, kp={record.knowledge_point}"
+    out = f"mistake_id={mistake.id}, kp={record_kp}"
     step = _make_step("write_mistake", f"error_type={error_type}", out, "success", start)
     return {
         "mistake_id": mistake.id,
@@ -161,22 +169,24 @@ def write_mistake(state: MistakeState) -> dict:
 def write_memory(state: MistakeState) -> dict:
     db = _get_db()
     start = time.time()
-    record = state.get("_record")
     user_id = state.get("user_id", 0)
-    memory_content = state.get("_memory_content", "")
+    memory_content = state.get("memory_content", "")
     mistake_id = state.get("mistake_id", 0)
+    record_id = state.get("record_id", 0)
+    record_subject = state.get("record_subject", "")
+    record_kp = state.get("record_kp", "")
 
-    if not record:
+    if not record_subject:
         step = _make_step("write_memory", "no record", "error", "failed", start)
         return {"agent_steps": state.get("agent_steps", []) + [step]}
 
     memory = UserMemory(
         user_id=user_id,
         memory_type="weak_point",
-        subject=record.subject,
-        knowledge_point=record.knowledge_point,
+        subject=record_subject,
+        knowledge_point=record_kp,
         content=memory_content,
-        evidence=f"answer_record:{record.id};mistake:{mistake_id}",
+        evidence=f"answer_record:{record_id};mistake:{mistake_id}",
     )
     db.add(memory)
     db.flush()
@@ -191,24 +201,25 @@ def write_memory(state: MistakeState) -> dict:
 
 def write_chroma_summary(state: MistakeState) -> dict:
     start = time.time()
-    record = state.get("_record")
-    error_type = state.get("_error_type", "")
-    error_reason = state.get("_error_reason", "")
-    suggestion = state.get("_suggestion", "")
+    error_type = state.get("error_type", "")
+    error_reason = state.get("error_reason", "")
+    suggestion = state.get("suggestion", "")
     mistake_id = state.get("mistake_id", 0)
+    record_subject = state.get("record_subject", "")
+    record_kp = state.get("record_kp", "")
 
-    if not record:
+    if not record_subject:
         step = _make_step("write_chroma_summary", "no record", "error", "failed", start)
         return {"agent_steps": state.get("agent_steps", []) + [step]}
 
-    summary_text = f"[{record.subject}/{record.knowledge_point}] 错因：{error_type}。分析：{error_reason}。建议：{suggestion}"
+    summary_text = f"[{record_subject}/{record_kp}] 错因：{error_type}。分析：{error_reason}。建议：{suggestion}"
     chroma_result = upsert_document(
         "mistake_summary",
         f"mistake_{mistake_id}",
         summary_text,
         {
-            "subject": record.subject,
-            "knowledge_point": record.knowledge_point,
+            "subject": record_subject,
+            "knowledge_point": record_kp,
             "error_type": error_type,
             "mistake_id": mistake_id,
         },
@@ -218,7 +229,7 @@ def write_chroma_summary(state: MistakeState) -> dict:
     status = "success" if stored else "degraded"
     step = _make_step("write_chroma_summary", f"mistake_id={mistake_id}", f"chroma_stored={stored}", status, start)
     return {
-        "_chroma_stored": stored,
+        "chroma_stored": stored,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -226,17 +237,18 @@ def write_chroma_summary(state: MistakeState) -> dict:
 def recommend_retrain(state: MistakeState) -> dict:
     db = _get_db()
     start = time.time()
-    record = state.get("_record")
     user_id = state.get("user_id", 0)
+    record_subject = state.get("record_subject", "")
+    record_kp = state.get("record_kp", "")
 
-    if not record:
+    if not record_subject:
         step = _make_step("recommend_retrain", "no record", "error", "failed", start)
         return {"agent_steps": state.get("agent_steps", []) + [step]}
 
-    mastery = recalculate_mastery(db, user_id, record.subject, record.knowledge_point) if db else None
+    mastery = recalculate_mastery(db, user_id, record_subject, record_kp) if db else None
     status_info = f"mastery={mastery.final_status}, weak_score={mastery.weak_score}" if mastery else "no mastery"
 
-    step = _make_step("recommend_retrain", f"kp={record.knowledge_point}", status_info, "success", start)
+    step = _make_step("recommend_retrain", f"kp={record_kp}", status_info, "success", start)
     return {
         "mastery_status": mastery.final_status if mastery else "",
         "weak_score": mastery.weak_score if mastery else 0,
@@ -263,7 +275,7 @@ def _build_mistake_graph() -> StateGraph:
     workflow.add_edge("write_mistake", "write_memory")
     workflow.add_edge("write_memory", "write_chroma_summary")
     workflow.add_edge("write_chroma_summary", "recommend_retrain")
-    workflow.add_edge("recommend_retrain", "__end__")
+    workflow.add_edge("recommend_retrain", END)
 
     return workflow.compile()
 

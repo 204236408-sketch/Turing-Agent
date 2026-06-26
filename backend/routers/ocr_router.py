@@ -8,7 +8,7 @@ OCR 识别接口（Mock/占位接口）
 状态：Mock/占位接口。upload 依赖外部 OCR 服务（save_and_recognize_upload 需第三方 API），
       analyze 复用 mistake_agent 逻辑。本地开发环境需要至少一个可用 OCR API 才能正常工作。
 """
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 from agents.mistake_agent import analyze_ocr_text
 from database import get_db
@@ -24,18 +24,26 @@ router = APIRouter(prefix="/api/ocr", tags=["ocr"])
 
 @router.post("/upload")
 async def upload(file: UploadFile = File(...)):
-    return success(await save_and_recognize_upload(file))
+    try:
+        result = await save_and_recognize_upload(file)
+        return success(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OCR 识别失败：{str(e)}")
 
 
 @router.post("/analyze")
 def analyze(payload: OcrAnalyzeRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = analyze_ocr_text(
-        db,
-        user.id,
-        payload.text,
-        payload.subject,
-        payload.knowledge_point,
-        payload.user_answer,
-    )
-    db.commit()
-    return success(data)
+    try:
+        data = analyze_ocr_text(
+            db,
+            user.id,
+            payload.text,
+            payload.subject,
+            payload.knowledge_point,
+            payload.user_answer,
+        )
+        db.commit()
+        return success(data)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"OCR 分析失败：{str(e)}")

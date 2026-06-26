@@ -36,7 +36,7 @@ def chat(payload: QaChatRequest, db: Session = Depends(get_db), user: User = Dep
     conversation_id = conversation.id
 
     try:
-        result = answer_question(db, user.id, payload.question)
+        result = answer_question(db, user.id, payload.question, conversation_id=conversation_id)
     except Exception:
         result = {
             "answer": "系统暂时无法处理该问题，请稍后重试。",

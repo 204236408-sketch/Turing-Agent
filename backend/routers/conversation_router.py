@@ -11,6 +11,7 @@
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from agents.summary_agent import generate_conversation_summary
 from database import get_db
 from dependencies import get_current_user
 from models import Conversation, ConversationMessage, KnowledgeMastery, User
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/api/conversation", tags=["conversation"])
 @router.get("/list")
 def list_conversations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.query(Conversation).filter(Conversation.user_id == user.id).order_by(Conversation.update_time.desc()).all()
-    return success({"items": [{"id": row.id, "title": row.title, "summary": row.summary} for row in rows]})
+    return success({"items": [{"id": row.id, "title": row.title, "summary": row.summary, "update_time": row.update_time.isoformat() if row.update_time else None} for row in rows]})
 
 
 @router.get("/detail/{conversation_id}")
@@ -32,7 +33,7 @@ def detail(conversation_id: int, db: Session = Depends(get_db), user: User = Dep
     if not row:
         raise AppError("CONVERSATION_NOT_FOUND", "会话不存在", status_code=404)
     messages = db.query(ConversationMessage).filter(ConversationMessage.conversation_id == row.id).all()
-    return success({"conversation": {"id": row.id, "title": row.title, "summary": row.summary}, "messages": [{"role": m.role, "content": m.content} for m in messages]})
+    return success({"conversation": {"id": row.id, "title": row.title, "summary": row.summary}, "messages": [{"id": m.id, "role": m.role, "content": m.content} for m in messages]})
 
 
 @router.get("/{conversation_id}/context")
@@ -71,7 +72,7 @@ def context(conversation_id: int, db: Session = Depends(get_db), user: User = De
     return success({
         "conversation_id": row.id,
         "title": row.title,
-        "messages": [{"role": m.role, "content": m.content} for m in messages],
+        "messages": [{"id": m.id, "role": m.role, "content": m.content} for m in messages],
         "knowledge_points": knowledge_points,
         "message_count": len(messages),
     })
@@ -82,7 +83,20 @@ def summarize(conversation_id: int, db: Session = Depends(get_db), user: User = 
     row = db.query(Conversation).filter(Conversation.id == conversation_id, Conversation.user_id == user.id).first()
     if not row:
         raise AppError("CONVERSATION_NOT_FOUND", "会话不存在", status_code=404)
-    messages = db.query(ConversationMessage).filter(ConversationMessage.conversation_id == row.id).order_by(ConversationMessage.id.desc()).limit(8).all()
-    row.summary = "；".join([m.content[:30] for m in messages[::-1]]) or "暂无摘要"
+    messages = (
+        db.query(ConversationMessage)
+        .filter(ConversationMessage.conversation_id == row.id)
+        .order_by(ConversationMessage.id.asc())
+        .all()
+    )
+    result = generate_conversation_summary([{"role": m.role, "content": m.content} for m in messages])
+    row.title = result["title"]
+    row.summary = result["summary"]
     db.commit()
-    return success({"summary": row.summary})
+    return success({
+        "title": result["title"],
+        "summary": result["summary"],
+        "followup_suggestions": result["followup_suggestions"],
+        "llm_used": result["llm_used"],
+        "agent_steps": result.get("agent_steps", []),
+    })

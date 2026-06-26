@@ -49,7 +49,7 @@ def check_answer(db: Session, user_id: int, question_id: int, user_answer: str) 
     return {
         "answer_record_id": result.get("answer_record_id"),
         "is_correct": result.get("is_correct", False),
-        "feedback": result.get("_feedback", ""),
+        "feedback": result.get("feedback", ""),
         "mastery": result.get("mastery", {}),
         "suggested_error_types": result.get("recommended_causes", []),
         "llm_used": result.get("llm_used", False),

@@ -1333,12 +1333,51 @@ async function loadHint(questionId){
 async function loadVideo(questionId){
  const el=document.getElementById("videoContent");
  if(!el)return;
+ el.innerHTML=`<div style="padding:12px 0;color:var(--muted);text-align:center">正在匹配相关视频…</div>`;
  try{
   const data=await apiRequest(`/api/questions/${questionId}/videos`);
   const items=data.items||[];
-  el.innerHTML=items.length?items.map(v=>`<div style="margin:8px 0"><a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:block"><b>▶ ${escapeHtml(v.title)}</b><p style="font-size:10px;color:var(--muted);margin:2px 0 0">${escapeHtml(v.reason||"")}</p></a></div>`).join(""):`<div class="conversation-empty">暂无推荐视频</div>`;
+  if(!items.length){
+   el.innerHTML=`<div class="conversation-empty">暂无「${escapeHtml(data.knowledge_point||'')}」相关推荐视频<br><small style="color:var(--muted)">可前往B站搜索王道408对应章节</small></div>`;
+   return;
+  }
+  const matchLabel={exact:"<span style='color:#27a978;font-weight:600'>● 精确匹配</span>",alias:"<span style='color:#2f80ed;font-weight:600'>● 章节相关</span>",keyword:"<span style='color:#f7b500;font-weight:600'>● 关键词命中</span>",subject:"<span style='color:#9aa5b1;font-weight:600'>● 同科目推荐</span>"};
+  el.innerHTML=`
+    <div style="margin-bottom:10px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+      <span>为「${escapeHtml(data.subject||'')} · ${escapeHtml(data.knowledge_point||'')}」匹配到 ${items.length} 个讲解视频</span>
+      <span style="background:var(--good);color:#fff;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700">BV直链</span>
+    </div>
+    ${items.map(v=>`
+      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="video-card" style="display:block;text-decoration:none;padding:12px 14px;margin:9px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--brand) 15%,var(--panel2));color:var(--brand);font-size:12px;flex-shrink:0">▶</span>
+              <div style="font-weight:700;font-size:13px;line-height:1.4;color:var(--brand);overflow:hidden;text-overflow:ellipsis" class="video-title">
+                ${escapeHtml(v.title)}
+              </div>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;font-size:10px;align-items:center;margin-left:33px">
+              <span style="background:linear-gradient(135deg,#00a1d6,#fb7299);color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:9px">▶ B站</span>
+              ${v.author?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">👤 ${escapeHtml(v.author)}</span>`:""}
+              ${v.duration?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">⏱ ${escapeHtml(v.duration)}</span>`:""}
+              <span style="font-size:9px;margin-left:3px">${matchLabel[v.match_level]||""}</span>
+            </div>
+            ${v.reason?`<p style="font-size:10px;color:var(--muted);margin:6px 0 0 33px;line-height:1.5">${escapeHtml(v.reason)}</p>`:""}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
+            <span class="video-go" style="color:var(--brand);font-size:11px;font-weight:800;white-space:nowrap">去观看</span>
+            <span style="font-size:14px;color:var(--brand);font-weight:900">↗</span>
+          </div>
+        </div>
+      </a>
+    `).join("")}
+    <div style="margin-top:14px;font-size:10px;color:var(--muted);text-align:center;line-height:1.6;padding:8px;background:var(--panel2);border-radius:8px">
+      🔗 点击卡片将直接在新标签页打开 B 站视频播放页
+    </div>
+  `;
  }catch(error){
-  el.innerHTML=`<div class="conversation-empty">视频加载失败</div>`;
+  el.innerHTML=`<div class="conversation-empty">视频加载失败<br><small style="color:var(--muted)">${escapeHtml(error.message||"")}</small></div>`;
  }
 }
 

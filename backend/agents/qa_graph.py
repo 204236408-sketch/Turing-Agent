@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Literal
 
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, END
 from sqlalchemy.orm import Session
 
 from agents.graph_state import QAState
@@ -51,9 +51,6 @@ def set_db(db: Session | None) -> None:
 
 def _get_db() -> Session | None:
     return _db_context.get()
-
-
-
 
 
 def detect_intent(state: QAState) -> dict:
@@ -113,7 +110,7 @@ def load_history(state: QAState) -> dict:
     }
 
 
-def retrieve_knowledge(state: QAState) -> dict:
+def retrieve_knowledge_node(state: QAState) -> dict:
     question = state.get("question", "")
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
@@ -126,34 +123,44 @@ def retrieve_knowledge(state: QAState) -> dict:
         where["knowledge_point"] = knowledge_point
 
     result = query_documents("knowledge_base_408", question, limit=3, where=where if where else None)
-    items = result.get("items", [])
+    chroma_items = result.get("items", [])
     fallback = result.get("fallback", False)
 
     retrieved = []
     chroma_score_max = 0.0
-    if items:
-        for item in items:
+    if chroma_items:
+        for item in chroma_items:
+            if not isinstance(item, dict):
+                continue
             score = item.get("score", 0)
             chroma_score_max = max(chroma_score_max, score)
-            meta = item.get("metadata", {})
+            meta = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
             retrieved.append({
                 "subject": meta.get("subject", subject),
                 "knowledge_point": meta.get("knowledge_point", knowledge_point),
                 "content": item.get("text", ""),
                 "score": score,
+                "source": "chromadb",
             })
 
-    needs_mysql = not items or chroma_score_max < _CHROMA_SCORE_THRESHOLD
+    needs_mysql = not chroma_items or chroma_score_max < _CHROMA_SCORE_THRESHOLD
+    mysql_count = 0
     if needs_mysql and db:
-        mysql_items = mysql_retrieve_knowledge(db, question, limit=3)
+        mysql_result = mysql_retrieve_knowledge(db, question, limit=3)
+        mysql_items = mysql_result.get("items", []) if isinstance(mysql_result, dict) else []
         if mysql_items:
-            existing_ids = {r["content"][:80] for r in retrieved}
+            existing_ids = {r.get("content", "")[:80] for r in retrieved}
             for m in mysql_items:
-                if m.get("content", "")[:80] not in existing_ids:
+                if not isinstance(m, dict):
+                    continue
+                content = m.get("content", "")
+                if content[:80] not in existing_ids:
+                    m["source"] = m.get("source", "mysql")
                     retrieved.append(m)
-                    existing_ids.add(m.get("content", "")[:80])
+                    existing_ids.add(content[:80])
+                    mysql_count += 1
 
-    out = f"ChromaDB: {len(items)} items, max_score={chroma_score_max:.2f}" + (f", MySQL: {len([r for r in retrieved if r.get('source','chromadb')!='chromadb'])}" if db else "")
+    out = f"ChromaDB: {len(chroma_items)} items, max_score={chroma_score_max:.2f}" + (f", MySQL: {mysql_count}" if db else "")
     step = _make_step("retrieve_knowledge", f"query={question[:40]}", out, "success", time.time())
     return {
         "retrieved_knowledge": retrieved,
@@ -201,7 +208,7 @@ def load_mastery(state: QAState) -> dict:
     }
 
 
-def generate_answer(state: QAState) -> dict:
+def generate_answer_node(state: QAState) -> dict:
     question = state.get("question", "")
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
@@ -287,7 +294,7 @@ def validate_answer(state: QAState) -> dict:
     reason = "valid" if valid else "invalid content, triggering fallback"
     step = _make_step("validate_answer", f"content_len={len(content)}", reason, "success" if valid else "warning", time.time())
     return {
-        "_answer_valid": valid,
+        "answer_valid": valid,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -314,7 +321,7 @@ def fallback_answer(state: QAState) -> dict:
 
 
 def should_fallback(state: QAState) -> Literal["fallback_answer", "end"]:
-    if not state.get("_answer_valid", True):
+    if not state.get("answer_valid", True):
         return "fallback_answer"
     return "end"
 
@@ -325,10 +332,10 @@ def _build_qa_graph() -> StateGraph:
     for name, fn in [
         ("detect_intent", detect_intent),
         ("load_history", load_history),
-        ("retrieve_knowledge", retrieve_knowledge),
+        ("retrieve_knowledge", retrieve_knowledge_node),
         ("retrieve_memory", retrieve_memory),
         ("load_mastery", load_mastery),
-        ("generate_answer", _with_timeout(generate_answer)),
+        ("generate_answer", _with_timeout(generate_answer_node)),
         ("validate_answer", validate_answer),
         ("fallback_answer", fallback_answer),
     ]:
@@ -341,7 +348,8 @@ def _build_qa_graph() -> StateGraph:
     workflow.add_edge("retrieve_memory", "load_mastery")
     workflow.add_edge("load_mastery", "generate_answer")
     workflow.add_edge("generate_answer", "validate_answer")
-    workflow.add_conditional_edges("validate_answer", should_fallback, {"fallback_answer": "fallback_answer", "end": "__end__"})
+    workflow.add_conditional_edges("validate_answer", should_fallback, {"fallback_answer": "fallback_answer", "end": END})
+    workflow.add_edge("fallback_answer", END)
 
     return workflow.compile()
 

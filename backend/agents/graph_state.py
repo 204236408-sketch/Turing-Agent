@@ -24,6 +24,7 @@ class QAState(TypedDict, total=False):
     agent_steps: list[AgentStep]
     llm_used: bool
     llm_error: str
+    answer_valid: bool
 
 
 class QuestionState(TypedDict, total=False):
@@ -37,9 +38,15 @@ class QuestionState(TypedDict, total=False):
     context: list[dict]
     questions: list[dict]
     session_id: int
+    config: str
     agent_steps: list[AgentStep]
     llm_used: bool
     llm_error: str
+    mastery_text: str
+    raw_questions: list[dict]
+    variant_type: str
+    llm_result: Any
+    questions_valid: bool
 
 
 class AnswerCheckState(TypedDict, total=False):
@@ -49,10 +56,14 @@ class AnswerCheckState(TypedDict, total=False):
     question: dict
     is_correct: bool
     score: float
-    feedback: dict
+    feedback: str
+    feedback_value: str
     recommended_causes: list[str]
     answer_record_id: int
     mastery: dict
+    normalized_answer: str
+    suggested_error_types: list[str]
+    llm_result: Any
     agent_steps: list[AgentStep]
     llm_used: bool
     llm_error: str
@@ -63,9 +74,26 @@ class MistakeState(TypedDict, total=False):
     answer_record_id: int
     error_types: list[str]
     user_note: str
+    evidence_source: str
+    agent_suggested_types: list[str]
     mistake_id: int
     memory_id: int
     similar_mistakes: list[dict]
+    record_id: int
+    record_subject: str
+    record_kp: str
+    record_user_answer: str
+    record_std_answer: str
+    record_feedback: str
+    record_question_id: int
+    error_type: str
+    error_reason: str
+    suggestion: str
+    memory_content: str
+    llm_result: Any
+    chroma_stored: bool
+    mastery_status: str
+    weak_score: float
     agent_steps: list[AgentStep]
     llm_used: bool
     llm_error: str
