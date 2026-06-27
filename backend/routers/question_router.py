@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from agents.question_agent import generate_questions
 from database import get_db
 from dependencies import get_current_user, get_current_user_optional
-from models import Question, QuestionFeedback, QuestionGenerationSession, User
+from models import AnswerRecord, KnowledgePoint, Question, QuestionFeedback, QuestionGenerationSession, User
 from schemas import MasteryFeedbackRequest, QuestionFeedbackRequest, QuestionGenerateRequest, SmartQuestionGenerateRequest
 from services.mastery_service import apply_manual_feedback
 from services.recommendation_service import build_smart_recommendations, resolve_smart_recommendation
@@ -43,6 +43,42 @@ def generate(payload: QuestionGenerateRequest, db: Session = Depends(get_db), us
 @router.get("/recommendations")
 def recommendations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return success({"items": build_smart_recommendations(db, user.id)})
+
+
+@router.get("/history")
+def history(
+    knowledge_point_id: int | None = None,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    query = db.query(AnswerRecord).filter(AnswerRecord.user_id == user.id)
+    if knowledge_point_id:
+        point = db.query(KnowledgePoint).filter(KnowledgePoint.id == knowledge_point_id).first()
+        if point:
+            point_name = point.section or point.name
+            query = query.filter(AnswerRecord.subject == point.subject, AnswerRecord.knowledge_point.in_([point_name, point.name]))
+    rows = query.order_by(AnswerRecord.create_time.desc()).limit(max(1, min(limit, 50))).all()
+    q_ids = [row.question_id for row in rows if row.question_id]
+    questions = {q.id: q for q in db.query(Question).filter(Question.id.in_(q_ids)).all()} if q_ids else {}
+    return success({
+        "items": [
+            {
+                "id": row.id,
+                "question_id": row.question_id,
+                "question_text": (questions.get(row.question_id).question_text if questions.get(row.question_id) else "")[:220],
+                "question_type": questions.get(row.question_id).question_type if questions.get(row.question_id) else "",
+                "difficulty": questions.get(row.question_id).difficulty if questions.get(row.question_id) else "",
+                "knowledge_point": row.knowledge_point,
+                "user_answer": row.user_answer,
+                "standard_answer": row.standard_answer,
+                "is_correct": row.is_correct,
+                "feedback": row.feedback,
+                "create_time": row.create_time.isoformat(sep=" ", timespec="minutes") if row.create_time else "",
+            }
+            for row in rows
+        ]
+    })
 
 
 @router.post("/generate-smart")

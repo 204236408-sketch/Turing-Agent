@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from dependencies import get_current_user
-from models import User, VideoViewLog
+from models import KnowledgePoint, User, VideoViewLog
 from services.video_service import recommend_videos, recommend_videos_v2
 from utils.response import success
 
@@ -28,6 +28,8 @@ router = APIRouter(prefix="/api/videos", tags=["videos"])
 def recommend(
     subject: str = Query("", description="科目"),
     knowledge_point: str = Query("", description="知识点"),
+    knowledge_point_id: int | None = Query(default=None, description="知识点ID"),
+    scene: str = Query("", description="推荐场景"),
     question_text: str = Query("", description="题目原文，用于LLM提取关键词"),
     limit: int = Query(8, ge=1, le=20),
     db: Session = Depends(get_db),
@@ -37,6 +39,31 @@ def recommend(
     - 有 question_text → 使用 LLM 提取关键词 + 融合评分
     - 无 question_text → 退化为规则匹配
     """
+    # 通过 knowledge_point_id 查出完整信息
+    point_keywords = ""
+    point_content = ""
+    point_mistakes = ""
+    if knowledge_point_id:
+        point = db.query(KnowledgePoint).filter(KnowledgePoint.id == knowledge_point_id).first()
+        if point:
+            subject = subject or point.subject
+            knowledge_point = knowledge_point or (point.section or point.name)
+            point_keywords = point.keywords or ""
+            point_content = point.content or ""
+            point_mistakes = point.common_mistakes or ""
+
+    # 知识点详情页场景：用知识点名称+关键词+正文+易错点拼接为搜索文本，走 v2 接口
+    kp_search_text = ""
+    if knowledge_point and not question_text:
+        parts = [knowledge_point]
+        if point_keywords:
+            parts.append(point_keywords)
+        if point_content:
+            parts.append(point_content[:300])  # 取正文前300字，避免过长
+        if point_mistakes:
+            parts.append(point_mistakes[:200])
+        kp_search_text = " ".join(parts)
+
     if question_text and len(question_text) > 10:
         # 有题目文本，使用增强版 LLM 关键词提取
         result = recommend_videos_v2(
@@ -57,6 +84,28 @@ def recommend(
             "local_count": result.get("local_count", 0),
             "crawl_count": result.get("crawl_count", 0),
             "cache_hit": result.get("cache_hit", False),
+        })
+    elif kp_search_text:
+        # 知识点详情页场景：使用知识点名称+关键词作为搜索文本
+        result = recommend_videos_v2(
+            db,
+            subject=subject,
+            knowledge_point=knowledge_point,
+            question_text=kp_search_text,
+            limit=limit,
+            use_llm=True,
+        )
+        return success({
+            "items": result.get("items", []),
+            "subject": subject,
+            "knowledge_point": knowledge_point,
+            "llm_keywords": result.get("llm_keywords", []),
+            "keyword_extract_method": result.get("keyword_extract_method", "unknown"),
+            "total_candidates": result.get("total_candidates", 0),
+            "local_count": result.get("local_count", 0),
+            "crawl_count": result.get("crawl_count", 0),
+            "cache_hit": result.get("cache_hit", False),
+            "scene": "knowledge_point",
         })
     else:
         # 无题目文本，退化为规则匹配

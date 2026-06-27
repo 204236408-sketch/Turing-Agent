@@ -18,7 +18,7 @@ from agents.mistake_agent import confirm_cause
 from agents.question_agent import generate_questions
 from database import get_db
 from dependencies import get_current_user
-from models import AnswerRecord, Mistake, Question, User
+from models import AnswerRecord, KnowledgePoint, Mistake, Question, User
 from schemas import CauseConfirmRequest, MasteryFeedbackRequest, RetrainRequest
 from services.mastery_service import apply_manual_feedback
 from utils.response import AppError, success
@@ -44,18 +44,30 @@ def _ocr_question_text(error_reason: str) -> str:
 def list_mistakes(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    knowledge_point_id: int | None = Query(default=None),
+    chapter_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    total = db.query(Mistake).filter(Mistake.user_id == user.id).count()
-    rows = (
-        db.query(Mistake)
-        .filter(Mistake.user_id == user.id)
-        .order_by(Mistake.create_time.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    query = db.query(Mistake).filter(Mistake.user_id == user.id)
+    if knowledge_point_id:
+        point = db.query(KnowledgePoint).filter(KnowledgePoint.id == knowledge_point_id).first()
+        if point:
+            query = query.filter(Mistake.subject == point.subject, Mistake.knowledge_point.in_([point.section or point.name, point.name]))
+    elif chapter_id:
+        chapter = db.query(KnowledgePoint).filter(KnowledgePoint.id == chapter_id).first()
+        if chapter:
+            child_names = [
+                row.section or row.name
+                for row in db.query(KnowledgePoint).filter(
+                    KnowledgePoint.subject_id == chapter.subject_id,
+                    KnowledgePoint.name == chapter.name,
+                    KnowledgePoint.is_deleted == False,
+                ).all()
+            ]
+            query = query.filter(Mistake.subject == chapter.subject, Mistake.knowledge_point.in_(child_names + [chapter.name]))
+    total = query.count()
+    rows = query.order_by(Mistake.create_time.desc()).offset((page - 1) * page_size).limit(page_size).all()
     q_ids = [r.question_id for r in rows if r.question_id]
     questions = {q.id: q for q in db.query(Question).filter(Question.id.in_(q_ids)).all()} if q_ids else {}
     items = []
