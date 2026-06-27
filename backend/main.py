@@ -24,6 +24,7 @@ from routers import (
     mastery_router,
     memory_router,
     mistake_router,
+    notes_router,
     ocr_router,
     profile_router,
     qa_router,
@@ -149,6 +150,7 @@ app.include_router(conversation_router.router)
 app.include_router(question_router.router)
 app.include_router(answer_router.router)
 app.include_router(mistake_router.router)
+app.include_router(notes_router.router)
 app.include_router(ocr_router.router)
 app.include_router(video_router.router)
 app.include_router(forum_router.router)

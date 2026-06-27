@@ -14,8 +14,15 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
 from models import KnowledgeMastery, KnowledgePoint, User
+from services.knowledge_graph_service import (
+    build_knowledge_overview,
+    build_subject_graph,
+    find_chapter_detail,
+    find_point_detail,
+)
 from services.mastery_service import synchronize_user_mastery
 from services.recommendation_service import build_smart_recommendations
+from utils.response import AppError
 from utils.response import success
 
 
@@ -36,6 +43,111 @@ def _safe_status(row: KnowledgeMastery | None) -> str:
     if row is None:
         return "未学"
     return row.final_status or "未学"
+
+
+@router.get("/overview")
+def overview(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return success(build_knowledge_overview(db, user.id))
+
+
+@router.get("/subject/{subject_id}/graph")
+def subject_graph(subject_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    payload = build_subject_graph(db, user.id, subject_id)
+    if not payload:
+        raise AppError("SUBJECT_NOT_FOUND", "科目不存在", status_code=404)
+    return success(payload)
+
+
+@router.get("/chapter/{chapter_id}")
+def chapter_detail(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    payload = find_chapter_detail(db, user.id, chapter_id)
+    if not payload:
+        raise AppError("CHAPTER_NOT_FOUND", "章节不存在", status_code=404)
+    return success(payload)
+
+
+@router.get("/point/{knowledge_id}")
+def point_detail(knowledge_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    payload = find_point_detail(db, user.id, knowledge_id)
+    if not payload:
+        raise AppError("KNOWLEDGE_POINT_NOT_FOUND", "知识点不存在", status_code=404)
+    return success(payload)
+
+
+@router.get("/point/{knowledge_id}/related")
+def point_related(knowledge_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    detail_payload = find_point_detail(db, user.id, knowledge_id)
+    if not detail_payload:
+        raise AppError("KNOWLEDGE_POINT_NOT_FOUND", "知识点不存在", status_code=404)
+    point = detail_payload["point"]
+    graph = build_subject_graph(db, user.id, point["subject_id"])
+    items = []
+    for chapter in graph.get("chapters", []):
+        if chapter["name"] != point["chapter_name"]:
+            continue
+        for child in chapter.get("children", []):
+            if child["id"] != knowledge_id:
+                items.append({
+                    "id": child["id"],
+                    "name": child["name"],
+                    "mastery_score": child.get("mastery_score", 0),
+                    "status": child["status"],
+                    "status_label": child["status_label"],
+                    "style": child["style"],
+                })
+    return success({"items": items[:8]})
+
+
+@router.get("/chapter/{chapter_id}/points")
+def chapter_points(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    payload = find_chapter_detail(db, user.id, chapter_id)
+    if not payload:
+        raise AppError("CHAPTER_NOT_FOUND", "章节不存在", status_code=404)
+    return success({"items": payload["chapter"].get("children", [])})
+
+
+@router.get("/chapter/{chapter_id}/stats")
+def chapter_stats(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    payload = find_chapter_detail(db, user.id, chapter_id)
+    if not payload:
+        raise AppError("CHAPTER_NOT_FOUND", "章节不存在", status_code=404)
+    chapter = payload["chapter"]
+    children = chapter.get("children", [])
+    learned = [item for item in children if item.get("status") != "unlearned"]
+    last = learned[0] if learned else (children[0] if children else None)
+    return success(
+        {
+            "mastery_percent": chapter["mastery_percent"],
+            "status": chapter["status"],
+            "status_distribution": chapter["status_distribution"],
+            "status_distribution_percent": chapter["status_distribution_percent"],
+            "last_study": {
+                "knowledge_point_id": last["id"] if last else None,
+                "knowledge_point_name": last["name"] if last else "",
+                "study_time": "",
+            },
+        }
+    )
+
+
+@router.get("/chapter/{chapter_id}/related")
+def chapter_related(chapter_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    payload = find_chapter_detail(db, user.id, chapter_id)
+    if not payload:
+        raise AppError("CHAPTER_NOT_FOUND", "章节不存在", status_code=404)
+    graph = build_subject_graph(db, user.id, payload["subject"]["id"])
+    items = [
+        {
+            "id": chapter["id"],
+            "name": chapter["name"],
+            "mastery_percent": chapter["mastery_percent"],
+            "status": chapter["status"],
+            "style": chapter["style"],
+        }
+        for chapter in graph.get("chapters", [])
+        if chapter["id"] != chapter_id
+    ]
+    return success({"items": items[:5]})
 
 
 @router.get("/graph")

@@ -262,9 +262,20 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
                 "quality_flag": "deprecated",
             } for _ in range(count)
         ]
-    # choice 的最后兜底：返回空列表，让上层走 LLM 拒答路径（前端可显示"暂无可用题"）
-    logger.warning("fallback 池无题且无通用模板：subject=%s kp=%s vt=%s count=%d", subject, knowledge_point, vt, count)
-    return []
+    # choice 的兜底：使用选择题通用模板（避免返回空列表导致前端无可用题）
+    kp_label = (knowledge_point or "该知识点").strip() or "该知识点"
+    sub_label = (subject or "408 考研").strip() or "408 考研"
+    choice_options = ["A. 概念辨析方向", "B. 过程推导方向", "C. 边界条件方向", "D. 综合应用方向"]
+    return [
+        {
+            "question_text": f"【{sub_label} · {kp_label}】下列关于 {kp_label} 的说法中，最准确的一项是？",
+            "options": choice_options,
+            "standard_answer": "D",
+            "explanation": f"本题考查 {kp_label} 的综合理解。{kp_label} 属于 {sub_label} 的重要考点，复习时建议从概念、推导、边界条件三个维度展开。",
+            "hints": [f"先回忆 {kp_label} 的核心定义。", "结合一道典型真题对比四个选项。"],
+            "quality_flag": "deprecated",
+        } for _ in range(count)
+    ]
 
 
 def _with_target_prefix(text: str, subject: str, knowledge_point: str) -> str:
@@ -548,6 +559,14 @@ def generate_questions_node(state: QuestionState) -> dict:
 
     raw_questions = (llm.data or fallback_data).get("questions") or fallback_data["questions"]
     raw_questions = raw_questions[:count]
+
+    # 最终兜底：如果 LLM 和 fallback 加起来都不足 count 道，用 _build_fallback 补齐（choice 类型已有通用模板）
+    if len(raw_questions) < count:
+        need = count - len(raw_questions)
+        supplemental = _build_fallback(vt, subject, knowledge_point, need)
+        if supplemental:
+            raw_questions = list(raw_questions) + supplemental
+            logger.info("LLM+seed 不足 %d 道，已用通用模板补足 %d 道", count, len(supplemental))
 
     # 检测 LLM 主动拒答（知识库无内容时按 prompt 规则应输出 __REFUSAL__）
     refused_count = sum(1 for it in raw_questions if "__REFUSAL__" in str(it.get("question_text", "")))

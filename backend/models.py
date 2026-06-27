@@ -568,3 +568,49 @@ class QuestionFeedback(Base):
         Index("idx_qfb_del", "is_deleted"),
     )
 
+
+# -------------------------- 28. 瀛︿範绗旇 Note --------------------------
+class Note(Base):
+    """用户绑定到章节/知识点的学习笔记。"""
+    __tablename__ = "note"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subject.id", ondelete="SET NULL"), nullable=True)
+    knowledge_point_id = Column(Integer, ForeignKey("knowledge_point.id", ondelete="SET NULL"), nullable=True)
+    subject = Column(String(64), default="")
+    chapter = Column(String(128), default="")
+    knowledge_point = Column(String(128), default="")
+    title = Column(String(100), nullable=False)
+    content = Column(Text, nullable=False)
+    is_deleted = Column(Boolean, default=False)
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_note_uid", "user_id"),
+        Index("idx_note_kp_id", "knowledge_point_id"),
+        Index("idx_note_scope", "subject", "chapter", "knowledge_point"),
+        Index("idx_note_del", "is_deleted"),
+    )
+
+
+# -------------------------- 29. 绗旇鍒嗕韩 NoteShare --------------------------
+class NoteShare(Base):
+    """笔记分享卡片。"""
+    __tablename__ = "note_share"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    note_id = Column(Integer, ForeignKey("note.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    share_id = Column(String(64), nullable=False, unique=True)
+    share_title = Column(String(100), default="")
+    share_summary = Column(Text, default="")
+    is_public = Column(Boolean, default=True)
+    create_time = Column(DateTime, default=datetime.utcnow)
+    expired_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_note_share_id", "share_id"),
+        Index("idx_note_share_note", "note_id"),
+        Index("idx_note_share_user", "user_id"),
+    )
+
