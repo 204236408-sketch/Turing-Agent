@@ -369,16 +369,34 @@ function forumPostCardHTML(p){
       <div class="forum-ai-answer" id="forumAi${p.id}">
         <div class="forum-ai-head">
           <span class="forum-ai-mark">AI</span>
-          <div><b>图灵 AI 小助手</b><small>结合 408 考纲与帖子内容生成</small></div>
-          <button data-close-ai>收起</button>
+          <div><b>图灵 AI 小助手</b><small>结合 408 考纲、用户薄弱点与 RAG 检索生成</small></div>
+          <div class="forum-ai-head-actions">
+            <span class="forum-ai-confidence" id="forumAiConf${p.id}" data-confidence="unknown"></span>
+            <button data-toggle-ai-steps="${p.id}" title="查看思维链">⚙</button>
+            <button data-close-ai>收起</button>
+          </div>
         </div>
         <div class="forum-ai-content" id="forumAiContent${p.id}">
           <p style="color:var(--muted)">点击「小助手解答」生成 AI 回答…</p>
         </div>
+        <div class="forum-ai-actions" id="forumAiActions${p.id}" style="display:none">
+          <button data-ai-action="question" data-post-id="${p.id}">🎯 生成专项题</button>
+          <button data-ai-action="video" data-post-id="${p.id}">🎬 看视频讲解</button>
+          <button data-ai-action="mistake" data-post-id="${p.id}">📒 加入错题本</button>
+          <button data-ai-action="qa" data-post-id="${p.id}">💬 深入问答</button>
+        </div>
+        <div class="forum-ai-feedback" id="forumAiFeedback${p.id}" style="display:none">
+          <span>对回答有帮助：</span>
+          <button data-ai-like="${p.id}">👍 有用</button>
+          <button data-ai-dislike="${p.id}">👎 不准确</button>
+          <span class="forum-ai-likes" id="forumAiLikes${p.id}"></span>
+        </div>
+        <div class="forum-ai-steps" id="forumAiSteps${p.id}" style="display:none"></div>
         <div class="forum-ai-followup">
           <input placeholder="继续追问这个问题…">
           <button data-ai-followup="${p.id}">发送</button>
         </div>
+        <div class="forum-ai-followup-hint" id="forumAiHint${p.id}" style="display:none"></div>
       </div>
       <div class="forum-comment-box" id="forumComment${p.id}">
         <input placeholder="写下你的回复…">
@@ -455,39 +473,318 @@ let kpNavSubjects=[];
 let kpNavActiveSubjectId=null;
 
 function knowledgeHTML(){
- return `<section class="page" id="knowledge"><div class="home-knowledge-layout" id="knKnowledgeLayout"><div class="home-empty-state">正在加载 408 知识目录…</div></div></section>`;
+ return `<section class="page" id="knowledge">
+  <div class="home-knowledge-layout" id="knKnowledgeLayout">
+    <div class="home-empty-state">正在加载知识详情页…</div>
+  </div>
+</section>`;
+}
+
+let knActiveTab="graph";
+
+function switchKnowledgeTab(tabName){
+ knActiveTab=tabName;
+ document.querySelectorAll("#knPageTabs .kn-page-tab").forEach(btn=>{
+  btn.classList.toggle("active",btn.dataset.knTab===tabName);
+ });
+ renderKnowledgeTab(tabName);
+}
+
+async function renderKnowledgeTab(tabName){
+ const body=document.getElementById("knPageBody");
+ if(!body)return;
+ if(tabName==="graph"){
+  await renderKnGraphTab(body);
+ }else if(tabName==="detail"){
+  await renderKnDetailTab(body);
+ }else if(tabName==="video"){
+  await renderKnVideoTab(body);
+ }
 }
 
 async function loadKnowledgeNavPage(){
- const layout=document.getElementById("knKnowledgeLayout");
- if(!layout)return;
- layout.innerHTML=`<article class="card knowledge-tree-page"><div class="head"><div><h3>408 知识目录</h3><p>浏览所有科目的二级章节与三级知识点，点击章节查看详情、点击知识点进入学习页。</p></div><div class="knowledge-tree-meta" id="knTreeMeta"></div></div><div class="knowledge-tree-body" id="knTreeBody"><div class="kn-loading">正在加载 408 知识目录…</div></div></article>`;
+ const main=document.getElementById("knKnowledgeLayout");
+ if(!main)return;
+ main.innerHTML='<div class="home-empty-state">正在加载知识详情页…</div>';
+ try{
+  const overview=await apiRequest("/api/knowledge/overview");
+  const firstSubject=(overview.subjects||[])[0];
+  if(!firstSubject){main.innerHTML='<div class="kn-empty">暂无科目数据</div>';return}
+  await loadDefaultSubjectDetail(firstSubject.subject_id,overview.subjects);
+ }catch(error){
+  main.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(error.message||"")}</div>`;
+ }
+}
+
+async function loadDefaultSubjectDetail(subjectId,cachedSubjects){
+ const graph=await apiRequest(`/api/knowledge/subject/${subjectId}/graph`);
+ const chapters=graph.chapters||[];
+ const preferred=chapters.find(ch=>String(ch.name||"").includes("栈"))||chapters[0];
+ if(!preferred){
+  const main=document.getElementById("knKnowledgeLayout");
+  if(main)main.innerHTML='<div class="kn-empty">该科目暂无章节数据</div>';
+  return;
+ }
+ window.knSubjectCardsCache=cachedSubjects||window.knSubjectCardsCache||null;
+ await loadKnChapterDetail(preferred.id);
+}
+
+function knowledgeSubjectCardsHTML(subjects,activeSubjectId){
+ return `<div class="kn-detail-subjects"><span class="kn-detail-label">选择科目</span><div class="kn-detail-subject-grid">${(subjects||[]).map(subject=>{
+  const color=subject.style?.color||statusPalette(subject.status);
+  const active=String(subject.subject_id)===String(activeSubjectId);
+  return `<button class="kn-detail-subject-card ${active?"active":""}" data-kn-detail-subject="${subject.subject_id}" style="--subject-color:${color}">
+   <i></i><b>${escapeHtml(subject.subject_name)}</b><span>掌握度 ${subject.mastery_percent||0}%</span>
+  </button>`;
+ }).join("")}</div></div>`;
+}
+
+function knowledgeDetailFrameHTML(subjects,activeSubjectId,contentHTML){
+ return `${knowledgeSubjectCardsHTML(subjects,activeSubjectId)}<div class="kn-detail-page">${contentHTML}</div>`;
+}
+
+function bindKnowledgeDetailSubjectCards(){
+ document.querySelectorAll("[data-kn-detail-subject]").forEach(button=>{
+  button.onclick=()=>loadDefaultSubjectDetail(button.dataset.knDetailSubject,window.knSubjectCardsCache);
+ });
+}
+
+async function renderKnGraphTab(body){
+ body.innerHTML='<div class="kn-loading">正在加载 408 知识目录…</div>';
  try{
   const overview=await apiRequest("/api/knowledge/overview");
   const subjects=overview.subjects||[];
-  if(!subjects.length){document.getElementById("knTreeBody").innerHTML='<div class="kn-empty">暂无科目数据</div>';return}
-  // 并行请求每个科目的图（含 chapter 与其下的三级知识点）
+  if(!subjects.length){body.innerHTML='<div class="kn-empty">暂无科目数据</div>';return}
   const graphs=await Promise.all(subjects.map(async s=>{
    try{return await apiRequest(`/api/knowledge/subject/${s.subject_id}/graph`)}catch(e){return null}
   }));
-  const body=document.getElementById("knTreeBody");
-  const meta=document.getElementById("knTreeMeta");
-  meta.innerHTML=`<span>共 ${subjects.length} 个科目</span>·<span>${subjects.reduce((a,s)=>a+(s.knowledge_count||0),0)} 个知识点</span>`;
-  body.innerHTML=`<div class="kn-tree-list">${subjects.map((s,idx)=>{const g=graphs[idx];const chapters=(g?.chapters)||[];return`<div class="kn-tree-subject" style="--subject-color:${s.style?.color||statusPalette(s.status)}"><div class="kn-tree-subject-head"><i></i><div class="kn-tree-subject-info"><b>${escapeHtml(s.subject_name)}</b><span>${chapters.length} 个二级章节 · 掌握度 ${s.mastery_percent||0}%</span></div><div class="kn-tree-subject-bar"><div class="kn-tree-bar" style="width:${s.mastery_percent||0}%"></div></div></div><div class="kn-tree-chapters">${chapters.map(ch=>`<div class="kn-tree-chapter" data-kn-load-chapter="${ch.id}" data-kn-practice-subject="${escapeHtml(s.subject_name)}" data-kn-practice-point="${escapeHtml(ch.name)}"><div class="kn-tree-chapter-head"><i style="background:${ch.style?.color||statusPalette(ch.status)}"></i><div class="kn-tree-chapter-info"><b>${escapeHtml(ch.name)}</b><span>${ch.knowledge_count||0} 个三级知识点 · 掌握度 ${ch.mastery_percent||0}% · ${escapeHtml(ch.status_label||statusLabel(ch.status))}</span></div><div class="kn-tree-chapter-actions"><button class="kn-btn-start" data-kd-start-practice-chapter="${ch.id}" data-kd-practice-subject="${escapeHtml(s.subject_name)}" data-kd-practice-point="${escapeHtml(ch.name)}">开始训练</button><span class="kn-arrow">→</span></div></div>${(ch.children&&ch.children.length)?`<div class="kn-tree-points">${ch.children.map(pt=>`<button class="kn-tree-point" data-kn-load-point="${pt.id}" data-kn-practice-subject="${escapeHtml(s.subject_name)}" data-kn-practice-point="${escapeHtml(pt.name)}" title="${escapeHtml(pt.status_label||statusLabel(pt.status))} · ${pt.mastery_score||0}分"><i style="background:${pt.style?.color||statusPalette(pt.status)}"></i><span>${escapeHtml(pt.name)}</span><b>${pt.mastery_score||0}</b></button>`).join("")}</div>`:""}</div>`).join("")}</div></div>`}).join("")}</div>`;
+  const totalKp=subjects.reduce((a,s)=>a+(s.knowledge_count||0),0);
+  const masteredCount=subjects.reduce((a,s)=>a+(s.mastered_count||0),0);
+  body.innerHTML=`
+   <div class="kn-overview-banner">
+     <div class="kn-overview-item"><span class="kn-overview-num">${subjects.length}</span><small>个科目</small></div>
+     <div class="kn-overview-item"><span class="kn-overview-num">${totalKp}</span><small>个知识点</small></div>
+     <div class="kn-overview-item"><span class="kn-overview-num">${masteredCount}</span><small>已掌握</small></div>
+     <div class="kn-overview-item"><span class="kn-overview-num">${totalKp-masteredCount}</span><small>待学习</small></div>
+   </div>
+   <div class="kn-subject-grid">${subjects.map((s,idx)=>{const g=graphs[idx];const chapters=(g?.chapters)||[];return`
+    <div class="kn-subject-card" data-kn-subject-id="${s.subject_id}" style="--subject-color:${s.style?.color||statusPalette(s.status)}">
+      <div class="kn-subject-card-head">
+        <i class="kn-subject-dot"></i>
+        <div class="kn-subject-card-title">
+          <b>${escapeHtml(s.subject_name)}</b>
+          <span>${chapters.length} 章节 · ${s.knowledge_count||0} 知识点</span>
+        </div>
+      </div>
+      <div class="kn-subject-card-meta">
+        <div class="kn-mastery-row">
+          <small>掌握度</small>
+          <b>${s.mastery_percent||0}%</b>
+        </div>
+        <div class="kn-subject-bar"><div class="kn-subject-bar-fill" style="width:${s.mastery_percent||0}%"></div></div>
+      </div>
+      <div class="kn-subject-card-chapters">
+        ${chapters.slice(0,3).map(ch=>`<span class="kn-subject-chapter-tag" title="${escapeHtml(ch.name)}"><i style="background:${ch.style?.color||statusPalette(ch.status)}"></i>${escapeHtml(ch.name)}</span>`).join("")}
+        ${chapters.length>3?`<span class="kn-subject-chapter-tag more">+${chapters.length-3} 更多</span>`:""}
+      </div>
+      <div class="kn-subject-card-actions">
+        <button class="kn-btn-open" data-kn-open-subject="${s.subject_id}">查看章节</button>
+        <button class="kn-btn-graph" data-kn-open-graph="${s.subject_id}">知识图谱</button>
+      </div>
+    </div>`}).join("")}
+   </div>`;
+  body.querySelectorAll("[data-kn-open-subject]").forEach(btn=>{
+   btn.onclick=()=>openSubjectChapters(btn.dataset.knOpenSubject);
+  });
+  body.querySelectorAll("[data-kn-open-graph]").forEach(btn=>{
+   btn.onclick=()=>openSubjectGraph(btn.dataset.knOpenGraph);
+  });
+ }catch(e){
+  body.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(e.message||"")}，请刷新重试</div>`;
+ }
+}
+
+async function openSubjectChapters(subjectId){
+ const body=document.getElementById("knPageBody");
+ if(!body)return;
+ body.innerHTML='<div class="kn-loading">加载章节中…</div>';
+ try{
+  const graph=await apiRequest(`/api/knowledge/subject/${subjectId}/graph`);
+  const subjectName=graph.subject_name||graph.subject||"";
+  const subjectColor=graph.style?.color||"#5b8def";
+  const chapters=graph.chapters||[];
+  if(!chapters.length){body.innerHTML='<div class="kn-empty">暂无章节数据</div>';return}
+  body.innerHTML=`
+   <div class="kn-back-bar">
+     <button class="kn-back-btn" data-kn-back-graph>← 返回知识图谱</button>
+     <span class="kn-back-title" style="color:${subjectColor}">${escapeHtml(subjectName)}</span>
+   </div>
+   <div class="kn-chapter-list">${chapters.map(ch=>`
+    <div class="kn-chapter-row" data-kn-load-chapter="${ch.id}" data-kn-practice-subject="${escapeHtml(subjectName)}" data-kn-practice-point="${escapeHtml(ch.name)}">
+      <div class="kn-chapter-row-head">
+        <i class="kn-chapter-dot" style="background:${ch.style?.color||statusPalette(ch.status)}"></i>
+        <div class="kn-chapter-row-info">
+          <b>${escapeHtml(ch.name)}</b>
+          <span>${ch.knowledge_count||0} 个三级知识点 · 掌握度 ${ch.mastery_percent||0}% · ${escapeHtml(ch.status_label||statusLabel(ch.status))}</span>
+        </div>
+        <div class="kn-chapter-row-bar"><div class="kn-bar-fill" style="width:${ch.mastery_percent||0}%;background:${ch.style?.color||statusPalette(ch.status)}"></div></div>
+        <div class="kn-chapter-row-actions">
+          <button class="kn-btn-start" data-kd-start-practice-chapter="${ch.id}" data-kd-practice-subject="${escapeHtml(subjectName)}" data-kd-practice-point="${escapeHtml(ch.name)}">开始训练</button>
+          <span class="kn-arrow">→</span>
+        </div>
+      </div>
+      ${(ch.children&&ch.children.length)?`<div class="kn-chapter-row-points">${ch.children.map(pt=>`<button class="kn-point-chip" data-kn-load-point="${pt.id}" data-kn-practice-subject="${escapeHtml(subjectName)}" data-kn-practice-point="${escapeHtml(pt.name)}" title="${escapeHtml(pt.status_label||statusLabel(pt.status))} · ${pt.mastery_score||0}分"><i style="background:${pt.style?.color||statusPalette(pt.status)}"></i><span>${escapeHtml(pt.name)}</span></button>`).join("")}</div>`:""}
+    </div>`).join("")}
+   </div>`;
+  body.querySelector("[data-kn-back-graph]").onclick=()=>renderKnGraphTab(body);
   body.querySelectorAll("[data-kn-load-chapter]").forEach(div=>{
    const chapterId=div.dataset.knLoadChapter;
    const openChapter=()=>loadKnChapterDetail(chapterId);
-   div.querySelector(".kn-tree-chapter-head")?.addEventListener("click",e=>{
+   div.querySelector(".kn-chapter-row-head")?.addEventListener("click",e=>{
     if(e.target.closest(".kn-btn-start"))return;
     openChapter();
    });
    div.querySelector(".kn-arrow")?.addEventListener("click",e=>{e.stopPropagation();openChapter()});
   });
-  body.querySelectorAll("[data-kn-load-point]").forEach(btn=>{btn.onclick=()=>loadKnPointDetail(btn.dataset.knLoadPoint)});
+  body.querySelectorAll("[data-kn-load-point]").forEach(btn=>{btn.onclick=e=>{e.stopPropagation();loadKnPointDetail(btn.dataset.knLoadPoint)}});
   body.querySelectorAll("[data-kd-start-practice-chapter]").forEach(btn=>{btn.onclick=e=>{e.stopPropagation();autoStartPractice(btn)}});
  }catch(e){
-  const body=document.getElementById("knTreeBody");
-  if(body)body.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(e.message||"")}，请刷新重试</div>`;
+  body.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(e.message||"")}</div>`;
+ }
+}
+
+function openSubjectGraph(subjectId){
+ toast("即将打开"+(subjectId||"")+"的完整图谱视图");
+}
+
+async function renderKnDetailTab(body){
+ body.innerHTML='<div class="kn-loading">正在加载所有知识点…</div>';
+ try{
+  const overview=await apiRequest("/api/knowledge/overview");
+  const subjects=overview.subjects||[];
+  const graphs=await Promise.all(subjects.map(async s=>{
+   try{return {subject:s,graph:await apiRequest(`/api/knowledge/subject/${s.subject_id}/graph`)};}catch(e){return {subject:s,graph:null}}
+  }));
+  let allPoints=[];
+  graphs.forEach(({subject,graph})=>{
+   if(!graph)return;
+   (graph.chapters||[]).forEach(ch=>{
+    (ch.children||[]).forEach(pt=>{
+     allPoints.push({
+      id:pt.id,
+      name:pt.name,
+      subject:subject.subject_name,
+      subject_id:subject.subject_id,
+      chapter:ch.name,
+      chapter_id:ch.id,
+      status:pt.status,
+      status_label:pt.status_label||statusLabel(pt.status),
+      mastery_score:pt.mastery_score||0,
+      style:pt.style||{color:statusPalette(pt.status)},
+     });
+    });
+   });
+  });
+  body.innerHTML=`
+   <div class="kn-detail-toolbar">
+     <input class="kn-detail-search" id="knDetailSearch" placeholder="🔍 搜索知识点名称…">
+     <div class="kn-detail-filter" id="knDetailFilter">
+       <button class="kn-filter-btn active" data-filter-subject="all">全部</button>
+       ${subjects.map(s=>`<button class="kn-filter-btn" data-filter-subject="${escapeHtml(s.subject_name)}">${escapeHtml(s.subject_name)}</button>`).join("")}
+     </div>
+   </div>
+   <div class="kn-detail-meta" id="knDetailMeta">共 ${allPoints.length} 个知识点</div>
+   <div class="kn-detail-grid" id="knDetailGrid">${allPoints.map(pt=>`
+    <div class="kn-point-card" data-kn-point-id="${pt.id}" data-kn-point-name="${escapeHtml(pt.name)}" data-kn-point-subject="${escapeHtml(pt.subject)}" data-kn-point-chapter="${escapeHtml(pt.chapter)}">
+      <div class="kn-point-card-head">
+        <span class="kn-point-card-status" style="background:${pt.style.color||statusPalette(pt.status)}">${escapeHtml(pt.status_label)}</span>
+        <span class="kn-point-card-score">${pt.mastery_score} 分</span>
+      </div>
+      <b class="kn-point-card-name">${escapeHtml(pt.name)}</b>
+      <div class="kn-point-card-meta">
+        <span class="kn-point-card-subject" style="--subject-color:${pt.style.color||statusPalette(pt.status)}">${escapeHtml(pt.subject)}</span>
+        <span class="kn-point-card-chapter">${escapeHtml(pt.chapter)}</span>
+      </div>
+      <button class="kn-point-card-btn">查看详情 →</button>
+    </div>`).join("")}
+   </div>`;
+  const searchInput=document.getElementById("knDetailSearch");
+  const filterBtns=document.querySelectorAll("#knDetailFilter .kn-filter-btn");
+  const applyFilter=()=>{
+   const kw=(searchInput.value||"").trim().toLowerCase();
+   const activeBtn=document.querySelector("#knDetailFilter .kn-filter-btn.active");
+   const subject=activeBtn?activeBtn.dataset.filterSubject:"all";
+   let visible=0;
+   document.querySelectorAll("#knDetailGrid .kn-point-card").forEach(card=>{
+    const name=(card.dataset.knPointName||"").toLowerCase();
+    const cardSubj=card.dataset.knPointSubject||"";
+    const matchKw=!kw||name.includes(kw);
+    const matchSubj=subject==="all"||cardSubj===subject;
+    const show=matchKw&&matchSubj;
+    card.style.display=show?"":"none";
+    if(show)visible++;
+   });
+   document.getElementById("knDetailMeta").textContent=`显示 ${visible} / ${allPoints.length} 个知识点`;
+  };
+  searchInput.oninput=applyFilter;
+  filterBtns.forEach(btn=>{
+   btn.onclick=()=>{filterBtns.forEach(b=>b.classList.remove("active"));btn.classList.add("active");applyFilter();};
+  });
+  document.querySelectorAll(".kn-point-card").forEach(card=>{
+   card.onclick=()=>{
+    const id=card.dataset.knPointId;
+    const name=card.dataset.knPointName;
+    const subject=card.dataset.knPointSubject;
+    const chapter=card.dataset.knPointChapter;
+    window.currentGraphPointName=name;
+    window.currentGraphPointSubject=subject;
+    window.currentGraphChapterName=chapter;
+    window.currentGraphChapterSubject=subject;
+    loadKnPointDetail(id);
+   };
+  });
+ }catch(e){
+  body.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(e.message||"")}</div>`;
+ }
+}
+
+async function renderKnVideoTab(body){
+ body.innerHTML='<div class="kn-loading">正在加载视频库…</div>';
+ try{
+  const overview=await apiRequest("/api/knowledge/overview");
+  const subjects=overview.subjects||[];
+  const videoLists=await Promise.all(subjects.map(async s=>{
+   try{
+    const data=await apiRequest(`/api/videos/recommend?subject=${encodeURIComponent(s.subject_name)}&limit=8`);
+    return {subject:s,items:data.items||[]};
+   }catch(e){return {subject:s,items:[]}}
+  }));
+  const totalVideos=videoLists.reduce((a,v)=>a+v.items.length,0);
+  body.innerHTML=`
+   <div class="kn-video-meta">共 ${totalVideos} 个视频，按科目分类</div>
+   <div class="kn-video-by-subject">${videoLists.map(({subject,items})=>`
+    <div class="kn-video-section">
+      <div class="kn-video-section-head">
+        <h4>${escapeHtml(subject.subject_name)}</h4>
+        <span>${items.length} 个视频</span>
+      </div>
+      <div class="kn-video-grid">${items.length?items.map(v=>`
+       <a class="kn-video-card" href="${escapeHtml(v.url||"#")}" target="_blank" rel="noopener">
+        <div class="kn-video-cover">
+          ${v.cover_url?`<img src="${escapeHtml(v.cover_url)}" alt="${escapeHtml(v.title||"")}" loading="lazy" onerror="this.style.display='none'">`:""}
+          <span class="kn-video-play">▶</span>
+          ${v.duration?`<span class="kn-video-duration">${escapeHtml(v.duration)}</span>`:""}
+        </div>
+        <div class="kn-video-info">
+          <b>${escapeHtml(v.title||"")}</b>
+          <small>${escapeHtml(v.author||"")}</small>
+        </div>
+       </a>`).join(""):'<div class="kn-empty">暂无视频</div>'}
+      </div>
+    </div>`).join("")}
+   </div>`;
+ }catch(e){
+  body.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(e.message||"")}</div>`;
  }
 }
 
@@ -510,38 +807,37 @@ async function autoStartPractice(btn){
  }catch(e){toast("生成题目失败: "+e.message,"error")}
 }
 
-async function loadKnSubjectChapters(subjectId){
- const main=document.getElementById("knMain");
- if(!main)return;
- main.innerHTML='<div class="kn-loading">加载章节中...</div>';
- try{
-  const graph=await apiRequest(`/api/knowledge/subject/${subjectId}/graph`);
-  const chapters=graph.chapters||[];
-  if(!chapters.length){main.innerHTML='<div class="kn-empty">暂无章节数据</div>';return}
-  main.innerHTML=`<div class="kn-chapters">${chapters.map(ch=>`<div class="kn-chapter-card"><div class="kn-chapter-header"><i style="background:${ch.style?.color||statusPalette(ch.status)}"></i><div class="kn-chapter-info"><b>${escapeHtml(ch.name)}</b><span>${ch.knowledge_count||0} 个知识点 · 掌握度 ${ch.mastery_percent||0}% · ${escapeHtml(ch.status_label||statusLabel(ch.status))}</span></div><div class="kn-chapter-actions"><button class="kn-btn-chapter" data-kn-load-chapter="${ch.id}">查看章节详情</button></div></div><div class="kn-chapter-points">${(ch.children||[]).map(pt=>`<button class="kn-point-btn" data-kn-load-point="${pt.id}"><i style="background:${pt.style?.color||statusPalette(pt.status)}"></i><div class="kn-point-info"><b>${escapeHtml(pt.name)}</b><span>${escapeHtml(pt.status_label||statusLabel(pt.status))} · ${pt.mastery_score||0}分</span></div><span class="kn-point-arrow">→</span></button>`).join("")}</div></div>`).join("")}</div>`;
-  main.querySelectorAll("[data-kn-load-chapter]").forEach(btn=>btn.onclick=()=>loadKnChapterDetail(btn.dataset.knLoadChapter));
-  main.querySelectorAll("[data-kn-load-point]").forEach(btn=>btn.onclick=()=>loadKnPointDetail(btn.dataset.knLoadPoint));
- }catch(e){main.innerHTML='<div class="kn-empty">加载失败，请重试</div>'}
-}
-
 async function loadKnChapterDetail(chapterId){
  const main=document.getElementById("knKnowledgeLayout");
  if(!main)return;
+ window.knDetailActive=true;
  main.innerHTML='<div class="home-empty-state">加载章节详情中…</div>';
  try{
   const detail=await apiRequest(`/api/knowledge/chapter/${chapterId}`);
   if(!detail?.chapter){main.innerHTML='<div class="kn-empty">章节不存在</div>';return}
-  const graph=await apiRequest(`/api/knowledge/subject/${detail.chapter.subject_id}/graph`);
+  const subjectId=detail.chapter.subject_id||detail.subject?.id||detail.subject?.subject_id;
+  const graph=await apiRequest(`/api/knowledge/subject/${subjectId}/graph`);
+  const overview=window.knSubjectCardsCache?{subjects:window.knSubjectCardsCache}:await apiRequest("/api/knowledge/overview");
+  window.knSubjectCardsCache=overview.subjects||[];
   activeSubjectGraph=graph;
-  const html=renderChapterDetailPage(detail,graph);
-  main.innerHTML=`<div class="kd-canvas-wrap">${html}</div>`;
-  bindKnowledgeDetailInteractions();
+  const chapter=detail.chapter;
+  const subject=detail.subject||graph.subject||{};
+  window.currentGraphChapterId=chapter.id;
+  window.currentGraphChapterName=chapter.name||"";
+  window.currentGraphChapterSubject=subject.name||chapter.subject_name||"";
+  window.currentKnowledgeChapterId=chapter.id;
+  window.currentKnowledgeChapterName=chapter.name||"";
+  const content=`<div class="kd-canvas-wrap"><div class="kd-3col-page" data-chapter-id="${chapter.id}">${chapterPage3ColHTML(subject,chapter,graph)}</div></div>`;
+  main.innerHTML=knowledgeDetailFrameHTML(window.knSubjectCardsCache,subjectId,content);
+  bindKnowledgeDetailSubjectCards();
+  bindChapterPage3ColInteractions();
  }catch(e){main.innerHTML='<div class="kn-empty">加载失败，请重试</div>'}
 }
 
 async function loadKnPointDetail(pointId){
  const main=document.getElementById("knKnowledgeLayout");
  if(!main)return;
+ window.knDetailActive=true;
  main.innerHTML='<div class="home-empty-state">加载知识点详情中…</div>';
  try{
   const [detail,related,videos,history,mistakes,notes]=await Promise.all([
@@ -554,11 +850,43 @@ async function loadKnPointDetail(pointId){
   ]);
   if(!detail?.point){main.innerHTML='<div class="kn-empty">知识点不存在</div>';return}
   const graph=await apiRequest(`/api/knowledge/subject/${detail.point.subject_id}/graph`);
+  const overview=window.knSubjectCardsCache?{subjects:window.knSubjectCardsCache}:await apiRequest("/api/knowledge/overview");
+  window.knSubjectCardsCache=overview.subjects||[];
   activeSubjectGraph=graph;
-  const html=renderKnowledgePointDetailPage(detail.point,related.items||[],videos.items||[],history.items||[],mistakes.items||[],notes.items||[]);
-  main.innerHTML=`<div class="kd-canvas-wrap">${html}</div>`;
+  const point=detail.point;
+  window.currentKnowledgePointId=point.id;
+  window.currentGraphPointName=point.name||"";
+  window.currentGraphPointSubject=point.subject_name||"";
+  window.currentKnowledgeVideos=videos.items||[];
+  window.currentKnowledgeNotes=notes.items||[];
+  const content=`<div class="kd-canvas-wrap">${knowledgePointNavDetailHTML(point,graph,related.items||[],videos.items||[],history.items||[],mistakes.items||[],notes.items||[])}</div>`;
+  main.innerHTML=knowledgeDetailFrameHTML(window.knSubjectCardsCache,point.subject_id,content);
+  bindKnowledgeDetailSubjectCards();
   bindKnowledgeDetailInteractions();
  }catch(e){main.innerHTML='<div class="kn-empty">加载失败：${escapeHtml(e.message||"")}</div>'}
+}
+
+function knowledgePointNavDetailHTML(point,graph,related,videos,history,mistakes,notes){
+ return `<div class="kd-layout kd-point-nav-layout">
+  ${knowledgeTreeHTML(graph,null,point.id)}
+  <main class="kd-main">
+   <div class="kd-breadcrumb"><button data-kg-back>返回知识目录</button><span>${escapeHtml(point.subject_name)} / ${escapeHtml(point.chapter_name)} / ${escapeHtml(point.name)}</span></div>
+   <section class="kd-point-head">
+    <div><span class="kd-badge">${escapeHtml(point.status_label||statusLabel(point.status))}</span><h2>${escapeHtml(point.name)}</h2><p>${escapeHtml(point.subject_name)} / ${escapeHtml(point.chapter_name)}</p></div>
+    <div class="kd-head-actions"><button class="ghost">收藏</button><button class="primary" data-open-note="${point.id}">添加笔记</button><button class="ghost" data-kd-start-practice="${point.id}" data-kd-practice-subject="${escapeHtml(point.subject_name||"")}" data-kd-practice-point="${escapeHtml(point.name||"")}">开始练习</button></div>
+   </section>
+   <section class="kd-section"><h3>知识点正文</h3>${knowledgeBodyHTML(point)}</section>
+   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${related.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name)}</b><span>${item.mastery_score||0} · ${escapeHtml(item.status_label||statusLabel(item.status))}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
+   <section class="kd-section kd-tabs-section">
+    <div class="kd-tab-bar"><button class="kd-tab active" data-kd-tab="videos">学习资源 Top3</button><button class="kd-tab" data-kd-tab="history">练习题记录</button><button class="kd-tab" data-kd-tab="mistakes">错题记录</button><button class="kd-tab" data-kd-tab="notes">学习笔记</button></div>
+    <div class="kd-tab-content" id="kdTabVideos">${videos.map(videoCardHTML).join("")||"<p>暂无匹配视频资源</p>"}</div>
+    <div class="kd-tab-content" id="kdTabHistory" style="display:none"><div class="kd-record-list">${history.map(practiceRecordHTML).join("")||"<p>暂无练习记录</p>"}</div></div>
+    <div class="kd-tab-content" id="kdTabMistakes" style="display:none"><div class="kd-record-list">${mistakes.map(mistakeRecordHTML).join("")||"<p>暂无错题记录</p>"}</div></div>
+    <div class="kd-tab-content" id="kdTabNotes" style="display:none"><div class="kd-note-list" id="kdNoteList">${notes.map(noteCardHTML).join("")||"<p>暂无笔记，点击右上角添加。</p>"}</div></div>
+   </section>
+  </main>
+  ${pointSideHTML(point,history,mistakes,notes)}
+ </div>${noteModalHTML(point)}`;
 }
 function qaHTML(){
   return `<section class="page" id="qa">
@@ -1270,6 +1598,24 @@ function bindForumDynamic(post){
     ai.lastChild.textContent=" 小助手解答";
   };
   if(followup)followup.onclick=()=>submitAiFollowup(postId,followup);
+
+  // P1-10: 思维链折叠
+  const stepsBtn=post.querySelector(`[data-toggle-ai-steps="${postId}"]`);
+  if(stepsBtn)stepsBtn.onclick=()=>{
+    const box=document.getElementById(`forumAiSteps${postId}`);
+    if(box)box.style.display=box.style.display==="block"?"none":"block";
+  };
+
+  // P2-12: 点赞/采纳
+  const likeBtn=post.querySelector(`[data-ai-like="${postId}"]`);
+  const disBtn=post.querySelector(`[data-ai-dislike="${postId}"]`);
+  if(likeBtn)likeBtn.onclick=()=>likeAiAnswer(postId,true,likeBtn);
+  if(disBtn)disBtn.onclick=()=>likeAiAnswer(postId,false,disBtn);
+
+  // P2-13: 模块联动
+  post.querySelectorAll("[data-ai-action]").forEach(btn=>{
+    btn.onclick=()=>triggerAiAction(btn.dataset.aiAction,postId);
+  });
 }
 async function loadForum(){
   try{
@@ -1407,26 +1753,228 @@ async function loadAiAnswer(postId,post){
   content.innerHTML="<p style='color:var(--muted)'>AI 小助手正在分析题目…</p>";
   try{
     const data=await apiRequest(`/api/forum/posts/${postId}/ai-answer`,{method:"POST"});
-    content.innerHTML=data.answer||"<p>AI 小助手暂时无法回答，请稍后重试。</p>";
+    renderForumAiAnswer(postId,data,content);
   }catch(err){
     content.innerHTML=`<p style='color:var(--danger)'>AI 小助手暂时不可用：${escapeHtml(err.message)}</p>`;
   }
 }
+
+/* 渲染结构化 AI 回答（P0-4 + P1-10） */
+function renderForumAiAnswer(postId,data,content){
+  const structured=data.structured||data.answer||{};
+  const retrieval=data.retrieval||{};
+  const profile=data.user_profile||{};
+  const agentSteps=data.agent_steps||[];
+  const shouldFollowup=!!data.should_followup;
+  const followupHint=data.followup_hint||"";
+  const answerId=data.answer_id;
+
+  /* 1) 置信度标签 */
+  const conf=retrieval.confidence||"unknown";
+  const confLabels={high:"高置信",medium:"中置信",low:"低置信",none:"无证据",unknown:"检测中"};
+  const confEl=document.getElementById(`forumAiConf${postId}`);
+  if(confEl){
+    confEl.textContent="● "+confLabels[conf]||conf;
+    confEl.dataset.confidence=conf;
+  }
+
+  /* 2) 用户画像摘要 */
+  let profileHtml="";
+  if(profile&&(profile.mastery_status||profile.common_errors||profile.recent_memories)){
+    const memories=(profile.recent_memories||[]).slice(0,2).map(m=>escapeHtml(m.content||"")).filter(Boolean);
+    const errors=(profile.common_errors||[]).slice(0,2).map(e=>escapeHtml(String(e))).filter(Boolean);
+    profileHtml=`
+      <div class="ai-card ai-card-profile">
+        <div class="ai-card-head"><span>👤</span><b>结合你的学习画像</b></div>
+        <div class="ai-card-body">
+          <div class="ai-meta-row"><span>掌握度</span><b>${escapeHtml(profile.mastery_status||"未学")}</b></div>
+          <div class="ai-meta-row"><span>正确率</span><b>${(profile.correct_rate||0)*100}%</b></div>
+          ${memories.length?`<div class="ai-meta-block"><small>近期记忆</small><ul>${memories.map(m=>`<li>${m}</li>`).join("")}</ul></div>`:""}
+          ${errors.length?`<div class="ai-meta-block"><small>常见错因</small><ul>${errors.map(e=>`<li>${e}</li>`).join("")}</ul></div>`:""}
+        </div>
+      </div>`;
+  }
+
+  /* 3) 5 张主卡片 */
+  const cards=[
+    {icon:"📍",title:"问题定位",body:structured.subject_kp||structured.analysis,key:"subject_kp"},
+    {icon:"🔍",title:"详细解析",body:structured.analysis,key:"analysis"},
+    {icon:"⚠️",title:"易错陷阱",body:structured.easy_trap,key:"easy_trap"},
+    {icon:"🎯",title:"举一反三",body:structured.extend_exercise,key:"extend_exercise"},
+    {icon:"📅",title:"3天复习计划",body:structured.review_plan,key:"review_plan"},
+  ];
+  const cardHtml=cards.map(c=>{
+    const text=c.body||"暂无";
+    return `<div class="ai-card">
+      <div class="ai-card-head"><span>${c.icon}</span><b>${c.title}</b></div>
+      <div class="ai-card-body">${escapeHtml(text).replace(/\n/g,"<br>")}</div>
+    </div>`;
+  }).join("");
+
+  /* 4) 视频 + 出题推荐 + 记忆要点 */
+  const videoLink=structured.recommend_video||"";
+  const recommendQuestions=structured.recommend_questions||"";
+  const memoryTip=structured.memory_tip||"";
+  const actionHtml=`
+    <div class="ai-card ai-card-action">
+      <div class="ai-card-head"><span>🎬</span><b>推荐视频</b></div>
+      <div class="ai-card-body">
+        ${videoLink?`<a href="${escapeAttr(videoLink)}" target="_blank" class="ai-link">${escapeHtml(videoLink)}</a>`:"<span style='color:var(--muted)'>暂无</span>"}
+      </div>
+    </div>
+    ${recommendQuestions?`<div class="ai-card">
+      <div class="ai-card-head"><span>📝</span><b>推荐专项题方向</b></div>
+      <div class="ai-card-body">${escapeHtml(recommendQuestions).replace(/\n/g,"<br>")}</div>
+    </div>`:""}
+    ${memoryTip?`<div class="ai-card ai-card-tip">
+      <div class="ai-card-head"><span>💾</span><b>记忆要点</b></div>
+      <div class="ai-card-body">${escapeHtml(memoryTip).replace(/\n/g,"<br>")}</div>
+    </div>`:""}
+  `;
+
+  /* 5) 来源证据 */
+  let sourcesHtml="";
+  const sources=(retrieval.sources||[]).slice(0,4);
+  if(sources.length){
+    sourcesHtml=`<div class="ai-card ai-card-source">
+      <div class="ai-card-head"><span>📚</span><b>知识库证据（点击编号查看）</b></div>
+      <div class="ai-card-body">
+        <ol class="ai-source-list">
+          ${sources.map(s=>`<li><b>[${escapeHtml(s.source_id||"")}]</b> ${escapeHtml(s.subject||"")} / ${escapeHtml(s.knowledge_point||"")} <small>(${Number(s.score||0).toFixed(3)})</small><div class="ai-source-preview">${escapeHtml(s.preview||"")}</div></li>`).join("")}
+        </ol>
+      </div>
+    </div>`;
+  } else if(retrieval.grounded===false){
+    sourcesHtml=`<div class="ai-card ai-card-warn">
+      <div class="ai-card-head"><span>⚠</span><b>证据不足</b></div>
+      <div class="ai-card-body">${escapeHtml(retrieval.warning||"未检索到强相关证据，建议补充完整题干。")}</div>
+    </div>`;
+  }
+
+  /* 6) 追问提示 */
+  const hintEl=document.getElementById(`forumAiHint${postId}`);
+  if(hintEl){
+    if(shouldFollowup&&followupHint){
+      hintEl.style.display="block";
+      hintEl.innerHTML=`<b>💡 AI 追问：</b>${escapeHtml(followupHint)}`;
+    }else{
+      hintEl.style.display="none";
+    }
+  }
+
+  /* 7) 思维链 */
+  const stepsEl=document.getElementById(`forumAiSteps${postId}`);
+  if(stepsEl){
+    stepsEl.innerHTML=agentSteps.length?`<b>⚙ 思维链（Agent Steps）</b><ol>${agentSteps.map(s=>`<li><b>${escapeHtml(s.name||"")}</b> <small>${escapeHtml(s.status||"")} · ${s.duration_ms||0}ms</small><div>${escapeHtml(s.output_summary||"")}</div></li>`).join("")}</ol>`:"";
+  }
+
+  content.innerHTML=profileHtml+cardHtml+actionHtml+sourcesHtml;
+
+  /* 8) 行动按钮 + 反馈 */
+  const actionsEl=document.getElementById(`forumAiActions${postId}`);
+  if(actionsEl)actionsEl.style.display="flex";
+  const fbEl=document.getElementById(`forumAiFeedback${postId}`);
+  if(fbEl)fbEl.style.display="flex";
+  if(answerId){
+    const likesEl=document.getElementById(`forumAiLikes${postId}`);
+    if(likesEl)likesEl.dataset.answerId=answerId;
+  }
+}
+
+/* 提交 AI 追问（P0-5 + P1-6 + P2-14） */
 async function submitAiFollowup(postId,button){
   const input=button.previousElementSibling;
   const question=input.value.trim();
   if(!question)return toast("请输入想继续追问的问题");
   const content=document.getElementById(`forumAiContent${postId}`);
-  if(content)content.insertAdjacentHTML("beforeend",`<div class="ai-followup-question"><b>你的追问</b><p>${escapeHtml(question)}</p></div><div class="ai-followup-reply"><b>AI 小助手补充</b><p>正在思考…</p></div>`);
+  const followupBlock=`<div class="ai-followup-question"><b>你的追问</b><p>${escapeHtml(question)}</p></div><div class="ai-followup-reply"><b>AI 小助手补充</b><div class="ai-followup-reply-body"><p style='color:var(--muted)'>正在思考…</p></div></div>`;
+  if(content)content.insertAdjacentHTML("beforeend",followupBlock);
   input.value="";
   try{
     const data=await apiRequest(`/api/forum/posts/${postId}/ai-followup`,{method:"POST",body:JSON.stringify({content:question})});
-    const reply=content?.querySelector(".ai-followup-reply:last-child p");
-    if(reply)reply.innerHTML=data.answer||"暂无更多回答";
+    const lastReply=content?.querySelector(".ai-followup-reply:last-child .ai-followup-reply-body");
+    if(data&&data.structured){
+      const html=renderStructuredAnswer(data.structured);
+      if(lastReply)lastReply.innerHTML=html;
+    }else if(lastReply){
+      lastReply.innerHTML="<p>暂无更多回答</p>";
+    }
+    /* 追问提示 */
+    if(data&&data.should_followup&&data.followup_hint){
+      if(content)content.insertAdjacentHTML("beforeend",`<div class="ai-followup-hint">💡 ${escapeHtml(data.followup_hint)}</div>`);
+    }
   }catch(err){
-    const reply=content?.querySelector(".ai-followup-reply:last-child p");
-    if(reply)reply.textContent="追问失败："+err.message;
+    const lastReply=content?.querySelector(".ai-followup-reply:last-child .ai-followup-reply-body");
+    if(lastReply)lastReply.innerHTML=`<p style='color:var(--danger)'>追问失败：${escapeHtml(err.message)}</p>`;
     toast(err.message,"error");
+  }
+}
+
+/* 把结构化 JSON 渲染为卡片 HTML（追问回复用） */
+function renderStructuredAnswer(s){
+  const order=[
+    ["subject_kp","📍","问题定位"],
+    ["analysis","🔍","详细解析"],
+    ["easy_trap","⚠️","易错陷阱"],
+    ["extend_exercise","🎯","举一反三"],
+    ["recommend_questions","📝","推荐出题方向"],
+    ["review_plan","📅","复习计划"],
+    ["recommend_video","🎬","推荐视频"],
+    ["memory_tip","💾","记忆要点"],
+  ];
+  return order.map(([k,icon,title])=>{
+    const v=s[k];
+    if(!v)return "";
+    let body=escapeHtml(String(v)).replace(/\n/g,"<br>");
+    if(k==="recommend_video"&&/^https?:/.test(v)){
+      body=`<a href="${escapeAttr(v)}" target="_blank" class="ai-link">${escapeHtml(v)}</a>`;
+    }
+    return `<div class="ai-card"><div class="ai-card-head"><span>${icon}</span><b>${title}</b></div><div class="ai-card-body">${body}</div></div>`;
+  }).join("");
+}
+
+/* 点赞/采纳 AI 回答（P2-12） */
+async function likeAiAnswer(postId,helpful,btn){
+  const likesEl=document.getElementById(`forumAiLikes${postId}`);
+  const answerId=likesEl?.dataset.answerId;
+  if(!answerId){return toast("暂未生成 AI 回答，无法反馈");}
+  try{
+    const data=await apiRequest("/api/forum/ai-answer/like",{method:"POST",body:JSON.stringify({answer_id:Number(answerId),is_helpful:!!helpful})});
+    if(likesEl)likesEl.textContent=`已采纳 · 👍 ${data.like_count||0}`;
+    toast(helpful?"已采纳为有用回答":"已标记为不准确");
+  }catch(err){
+    toast(err.message||"反馈失败","error");
+  }
+}
+
+/* 模块联动跳转（P2-13） */
+async function triggerAiAction(action,postId){
+  try{
+    const data=await apiRequest(`/api/forum/posts/${postId}/ai-actions`);
+    const item=(data.items||[]).find(x=>x.type===action);
+    if(!item)return toast("未找到对应模块");
+    const url=new URL(item.url,location.origin);
+    Object.entries(item.params||{}).forEach(([k,v])=>{if(v)url.searchParams.set(k,v);});
+    if(action==="question"){
+      /* 触发智能出题：把参数塞到全局 */
+      window._aiActionParams={mode:"knowledge_point",subject:item.params.subject,knowledge_point:item.params.knowledge_point,from:"forum_ai"};
+      showPage("question");
+      toast("已带参跳转到智能出题…");
+    } else if(action==="video"){
+      window._aiActionParams={subject:item.params.subject,knowledge_point:item.params.knowledge_point};
+      showPage("knowledge");
+      toast("已跳转到知识点详情");
+    } else if(action==="mistake"){
+      window._aiActionParams={subject:item.params.subject,knowledge_point:item.params.knowledge_point};
+      showPage("mistake");
+      toast("已跳转错题本，可手动添加此知识点错题");
+    } else if(action==="qa"){
+      window._aiActionParams={subject:item.params.subject,knowledge_point:item.params.knowledge_point};
+      showPage("qa");
+      toast("已跳转 AI 问答，可直接针对该知识点提问");
+    }
+  }catch(err){
+    toast(err.message||"跳转失败","error");
   }
 }
 function startExamCountdown(){const target=new Date("2026-12-19T00:00:00+08:00").getTime();const update=()=>{const diff=Math.max(0,target-Date.now()),days=Math.floor(diff/86400000),hours=Math.floor(diff%86400000/3600000),minutes=Math.floor(diff%3600000/60000),seconds=Math.floor(diff%60000/1000);const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=String(value).padStart(2,"0")};set("countdownDays",days);set("countdownHours",hours);set("countdownMinutes",minutes);set("countdownSeconds",seconds);const subtitle=document.getElementById("pageSub");if(subtitle&&["qa","question","mistake","forum","report"].some(id=>document.getElementById(id)?.classList.contains("active")))subtitle.textContent=`距离 408 初试还有 ${days} 天 · 今日计划完成 3 / 5`};update();if(countdownTimer)clearInterval(countdownTimer);countdownTimer=setInterval(update,1000)}
@@ -1458,7 +2006,7 @@ function selectedValue(group){const selected=document.querySelector(`[data-choic
 
 function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report","knowledge"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent="早上好，继续向目标前进 👋";const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天 · 今日计划完成 3 / 5`}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="knowledge"&&!window.knDetailActive)loadKnowledgeNavPage();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();renderMapping(id);window.scrollTo(0,0);if(id!=="knowledge")window.knDetailActive=false;}
 function renderMapping(id){const panel=document.getElementById("devContent");if(!panel)return;const m=mapping[id];panel.innerHTML=`<div class="mapping"><h4>建议接口</h4><code>${m[0]}</code></div><div class="mapping"><h4>核心数据实体</h4><code>${m[1]}</code></div><div class="mapping"><h4>Agent / LangGraph 节点</h4><code>${m[2]}</code></div>`}
-function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){if(s===null||s===undefined)return"";return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){if(s===null||s===undefined)return"";return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}function escapeAttr(s){return escapeHtml(s).replace(/`/g,"&#96;")}
 
 /* ========= 可运行后端接口接入 + 统一报错机制 ========= */
 const API_BASE=location.protocol==="file:"?"http://127.0.0.1:8000":location.origin;
@@ -1685,31 +2233,28 @@ async function loadVideo(questionId){
       <span>为「${escapeHtml(data.knowledge_point||'')}」匹配到 ${items.length} 个讲解视频</span>
       <span style="background:var(--good);color:#fff;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700">BV直链</span>
     </div>
-    ${items.map((v,i)=>`
-      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="video-card" data-vid="${escapeHtml(v.id||'')}" data-pos="${i}" style="display:block;text-decoration:none;padding:12px 14px;margin:9px 0;border:1.5px solid var(--line);border-radius:11px;background:var(--panel);cursor:pointer">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:7px">
-              <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--brand) 15%,var(--panel2));color:var(--brand);font-size:12px;flex-shrink:0">▶</span>
-              <div style="font-weight:700;font-size:13px;line-height:1.4;color:var(--brand);overflow:hidden;text-overflow:ellipsis" class="video-title">
-                ${escapeHtml(v.title)}
-              </div>
-            </div>
-            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;font-size:10px;align-items:center;margin-left:33px">
-              <span style="background:linear-gradient(135deg,#00a1d6,#fb7299);color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:9px">▶ B站</span>
-              ${v.author?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">👤 ${escapeHtml(v.author)}</span>`:""}
-              ${v.duration?`<span style="background:var(--panel2);color:var(--muted);padding:2px 7px;border-radius:4px">⏱ ${escapeHtml(v.duration)}</span>`:""}
-              <span style="font-size:9px;margin-left:3px">${matchLabel[v.match_level]||""}</span>
-            </div>
-            ${v.reason?`<p style="font-size:10px;color:var(--muted);margin:6px 0 0 33px;line-height:1.5">${escapeHtml(v.reason)}</p>`:""}
+    ${items.map((v,i)=>{
+      const coverUrl=v.cover_url||"";
+      const coverHtml=coverUrl
+        ? `<div class="video-cover"><img src="${escapeAttr(coverUrl)}" alt="${escapeAttr(v.title||"视频封面")}" loading="lazy" onerror="this.onerror=null;this.parentElement.classList.add('video-cover-fallback');this.remove();"><span class="video-cover-play">▶</span><span class="video-cover-duration">${escapeHtml(v.duration||"")}</span></div>`
+        : `<div class="video-cover video-cover-fallback"><span class="video-cover-play">▶</span><span class="video-cover-duration">${escapeHtml(v.duration||"")}</span><div class="video-cover-fallback-text">B站视频</div></div>`;
+      return `
+      <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener noreferrer" class="kd-video-card" data-vid="${escapeHtml(v.id||'')}" data-pos="${i}">
+        ${coverHtml}
+        <div class="video-info">
+          <div class="video-info-top">
+            <div class="video-title">${escapeHtml(v.title)}</div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0">
-            <span class="video-go" style="color:var(--brand);font-size:11px;font-weight:800;white-space:nowrap">去观看</span>
-            <span style="font-size:14px;color:var(--brand);font-weight:900">↗</span>
+          <div class="video-meta">
+            <span class="video-platform">▶ B站</span>
+            ${v.author?`<span class="video-tag">👤 ${escapeHtml(v.author)}</span>`:""}
+            <span class="video-match">${matchLabel[v.match_level]||""}</span>
           </div>
+          ${v.reason?`<p class="video-reason">${escapeHtml(v.reason)}</p>`:""}
+          <div class="video-action">去观看 <span>↗</span></div>
         </div>
       </a>
-    `).join("")}
+    `;}).join("")}
     <div style="margin-top:14px;font-size:10px;color:var(--muted);text-align:center;line-height:1.6;padding:8px;background:var(--panel2);border-radius:8px">
       🔗 点击卡片将直接在新标签页打开 B 站视频播放页
     </div>
@@ -2932,33 +3477,385 @@ async function loadChapterDetailPage(chapterId){
  await loadKnChapterDetail(chapterId);
 }
 
+/* 三栏布局的二级章节详情页（P0-4 三栏重制版） */
 async function renderChapterDetailPage(detail){
- const activePage=document.querySelector(".page.active")||document;
- const canvas=activePage.querySelector("#knowledgeGraphCanvas"),legend=activePage.querySelector("#kgLegend");
- if(!canvas||!detail?.chapter)return;
+ if(!detail?.chapter)return;
  const graph=await apiRequest(`/api/knowledge/subject/${detail.subject.id}/graph`);
  activeSubjectGraph=graph;
  const chapter=detail.chapter;
+ const subject=detail.subject;
  window.currentGraphChapterId=chapter.id;
  window.currentGraphChapterName=chapter.name||"";
- window.currentGraphChapterSubject=detail.subject?.name||"";
- setKnowledgeToolbar(`408 章节概况 - ${chapter.name}`,"二级章节页只展示章节整体概况、统计、建议和跳转入口，不展示单个三级知识点正文。");
- canvas.className="kg-canvas kd-canvas";
- canvas.innerHTML=`<div class="kd-layout">
-  ${knowledgeTreeHTML(graph,chapter.id,null)}
-  <main class="kd-main">
-   <div class="kd-breadcrumb"><button data-kg-back>返回知识图谱</button><span>${escapeHtml(detail.subject.name)} / ${escapeHtml(chapter.name)}</span></div>
+ window.currentGraphChapterSubject=subject.name||"";
+ window.currentKnowledgeChapterId=chapter.id;
+ window.currentKnowledgeChapterName=chapter.name||"";
+ const layout=document.getElementById("knKnowledgeLayout");
+ if(!layout)return;
+ layout.innerHTML=`<div class="kd-3col-page" data-chapter-id="${chapter.id}">${chapterPage3ColHTML(subject,chapter,graph)}</div>`;
+ bindChapterPage3ColInteractions();
+}
+
+/* 三栏布局的二级章节页 HTML */
+function chapterPage3ColHTML(subject,chapter,graph){
+ const children=graph.chapters?.find(c=>Number(c.id)===Number(chapter.id))?.children||chapter.children||[];
+ const stats=computeChapterStats(children);
+ const dist=stats.distribution;
+ return `<div class="kd-3col-layout">
+  <!-- 左侧：知识点目录树 -->
+  <aside class="kd-tree kd-tree-left">
+   <div class="kd-tree-header"><span>408 知识目录</span><small>${escapeHtml(subject.name)}</small></div>
+   <div class="kd-tree-legend">${["mastered","unfamiliar","unknown","weak","unlearned"].map(k=>`<span><i style="background:${statusPalette(k)}"></i>${statusLabel(k)}</span>`).join("")}</div>
+   <div class="kd-tree-body">
+    <button class="kd-tree-subject" data-kd-subject="${subject.id}"><b>${escapeHtml(subject.name)}</b><span>${subject.mastery_percent||0}%</span></button>
+    ${(graph.chapters||[]).map(ch=>`<div class="kd-tree-chapter ${Number(ch.id)===Number(chapter.id)?"active expanded":""}" data-chapter-id="${ch.id}">
+      <button class="kd-tree-chapter-row" data-kd-chapter="${ch.id}"><span class="kd-tree-arrow">${Number(ch.id)===Number(chapter.id)?"▾":"▸"}</span><b>${escapeHtml(ch.name)}</b><i class="kd-tree-pct">${ch.mastery_percent||0}%</i></button>
+      <div class="kd-tree-points ${Number(ch.id)===Number(chapter.id)?"":"kd-tree-points-collapsed"}">
+       ${(ch.children||[]).map(pt=>`<button class="kd-tree-point" data-kd-point="${pt.id}" title="${escapeHtml(pt.status_label||statusLabel(pt.status))} · ${pt.mastery_score||0}分"><i style="background:${pt.style?.color||statusPalette(pt.status)}"></i><span>${escapeHtml(pt.name)}</span><b>${pt.mastery_score||0}</b></button>`).join("")}
+      </div>
+     </div>`).join("")}
+   </div>
+  </aside>
+
+  <!-- 中间：主内容区 -->
+  <main class="kd-main kd-main-center">
+   <div class="kd-breadcrumb"><button data-kg-back class="kd-back">‹ 返回知识目录</button><span>${escapeHtml(subject.name)} / <b>${escapeHtml(chapter.name)}</b></span></div>
    <section class="kd-hero">
-    <div><span class="kd-badge">二级知识点（章节）</span><h2>${escapeHtml(chapter.name)}</h2><p>${chapterOverviewText(chapter)}</p>
-    <div class="kd-meta"><b>所属科目：${escapeHtml(detail.subject.name)}</b><b>包含知识点：${chapter.knowledge_count} 个</b><b>总体掌握度：${chapter.mastery_percent}%</b><b>${escapeHtml(chapter.status_label)}</b></div></div>
+    <div class="kd-hero-left">
+     <div class="kd-hero-tags"><span class="kd-badge kd-badge-type">二级知识（章节）</span><span class="kd-badge kd-badge-status" style="--badge-color:${statusPalette(chapter.status)}">${escapeHtml(chapter.status_label||statusLabel(chapter.status))}</span><span class="kd-badge kd-badge-difficulty">难度 ${chapter.difficulty||"中"}</span></div>
+     <h2>${escapeHtml(chapter.name)}</h2>
+     <p class="kd-hero-desc">${escapeHtml(chapter.definition||chapter.description||chapterOverviewText(chapter))}</p>
+     <div class="kd-hero-meta">
+      <div><small>所属科目</small><b>${escapeHtml(subject.name)}</b></div>
+      <div><small>包含知识点</small><b>${chapter.knowledge_count} 个</b></div>
+      <div><small>总体掌握度</small><b style="color:${statusPalette(chapter.status)}">${chapter.mastery_percent||0}%</b></div>
+      <div><small>更新于</small><b>${escapeHtml(chapter.last_study_time||chapter.update_time||"——")}</b></div>
+     </div>
+    </div>
+    <div class="kd-hero-actions">
+     <button class="kd-btn kd-btn-fav" data-kd-fav="${chapter.id}">★ 收藏</button>
+     <button class="kd-btn kd-btn-primary" data-kd-start-practice-chapter="${chapter.id}" data-kd-practice-subject="${escapeHtml(subject.name)}" data-kd-practice-point="${escapeHtml(chapter.name)}">▶ 开始学习</button>
+    </div>
    </section>
-   <section class="kd-section"><h3>章节概述</h3>${chapterOverviewHTML(chapter)}</section>
-   <section class="kd-section"><h3>应用场景</h3>${chapterApplicationHTML(chapter)}</section>
+   <div class="kd-tab-bar">
+    <button class="kd-tab active" data-kd-tab="overview">📖 章节概览</button>
+    <button class="kd-tab" data-kd-tab="points">📚 知识点列表</button>
+    <button class="kd-tab" data-kd-tab="stats">📊 学习统计</button>
+    <button class="kd-tab" data-kd-tab="practice">✎ 练习与错题</button>
+    <button class="kd-tab" data-kd-tab="notes">📝 学习笔记</button>
+   </div>
+   <!-- Tab 1: 章节概览 -->
+   <section class="kd-tab-panel active" data-kd-panel="overview">
+    <div class="kd-overview-grid">
+     <div class="kd-overview-card">
+      <h4>📖 章节定义</h4>
+      <p>${escapeHtml(chapter.definition||chapter.content||chapterOverviewText(chapter))}</p>
+      <ul class="kd-overview-list">
+       <li><b>核心特性：</b>${escapeHtml(chapter.core_feature||"后进先出（LIFO）")}</li>
+       <li><b>主要操作：</b>${escapeHtml(chapter.main_operations||"push（入栈）、pop（出栈）、getTop（取栈顶）")}</li>
+       <li><b>时间复杂度：</b>${escapeHtml(chapter.complexity||"所有操作平均 O(1)")}</li>
+       <li><b>考试重点：</b>${escapeHtml(chapter.exam_focus||"基本操作、应用场景、复杂度分析")}</li>
+      </ul>
+     </div>
+     <div class="kd-overview-card kd-diagram-card">
+      <h4>🎨 章节示意图</h4>
+      ${chapterDiagramHTML(chapter)}
+     </div>
+    </div>
+    <h4 class="kd-h4">💡 应用场景</h4>
+    <div class="kd-application-grid">
+     ${chapterApplicationCardsHTML(chapter)}
+    </div>
+   </section>
+   <!-- Tab 2: 知识点列表 -->
+   <section class="kd-tab-panel" data-kd-panel="points" style="display:none">
+    <div class="kd-points-grid">
+     ${(children||[]).map((pt,i)=>`<button class="kd-point-card" data-kd-point="${pt.id}" style="--status-color:${pt.style?.color||statusPalette(pt.status)}">
+      <i class="kd-point-index">${i+1}</i>
+      <div class="kd-point-info">
+       <b>${escapeHtml(pt.name)}</b>
+       <span>${escapeHtml(pt.status_label||statusLabel(pt.status))} · ${pt.mastery_score||0} 分</span>
+      </div>
+      <div class="kd-point-bar"><div style="width:${pt.mastery_percent||0}%"></div></div>
+      <span class="kd-point-arrow">→</span>
+     </button>`).join("") || `<p class="kd-empty">该章节暂无知识点数据</p>`}
+    </div>
+   </section>
+   <!-- Tab 3: 学习统计 -->
+   <section class="kd-tab-panel" data-kd-panel="stats" style="display:none">
+    ${chapterStatsPanelHTML(chapter,children,dist)}
+   </section>
+   <!-- Tab 4: 练习与错题 -->
+   <section class="kd-tab-panel" data-kd-panel="practice" style="display:none">
+    <div class="kd-practice-grid">
+     <div class="kd-practice-card">
+      <h4>✎ 智能出题</h4>
+      <p>为该章节生成 3 道专项练习题</p>
+      <button class="kd-btn kd-btn-primary" data-kd-start-practice-chapter="${chapter.id}" data-kd-practice-subject="${escapeHtml(subject.name)}" data-kd-practice-point="${escapeHtml(chapter.name)}">▶ 开始训练</button>
+     </div>
+     <div class="kd-practice-card">
+      <h4>📒 错题本</h4>
+      <p>查看该章节下所有错题</p>
+      <button class="kd-btn kd-btn-ghost" onclick="triggerChapterAction('mistake')">查看错题</button>
+     </div>
+     <div class="kd-practice-card">
+      <h4>📅 学习记录</h4>
+      <div class="kd-practice-record">
+       <p><b>最近学习：</b>${escapeHtml(chapter.last_study_point||chapter.children?.[0]?.name||"暂无记录")}</p>
+       <p><b>学习时间：</b>${escapeHtml(chapter.last_study_time||"——")}</p>
+      </div>
+     </div>
+    </div>
+   </section>
+   <!-- Tab 5: 学习笔记 -->
+   <section class="kd-tab-panel" data-kd-panel="notes" style="display:none">
+    <div class="kd-note-toolbar">
+     <button class="kd-btn kd-btn-primary" data-kd-add-note-chapter="${chapter.id}">+ 添加笔记</button>
+     <span class="kd-note-count" id="kdChapterNoteCount">0 条笔记</span>
+    </div>
+    <div class="kd-note-list" id="kdChapterNoteList"><p class="kd-empty">点击右上角添加第一条笔记</p></div>
+   </section>
   </main>
-  ${chapterSideHTML(detail.subject,chapter,graph)}
+
+  <!-- 右侧：学习统计/最近学习/快捷操作 -->
+  <aside class="kd-sidebar kd-sidebar-right">
+   <div class="kd-side-card kd-side-mastery">
+    <h4>📊 章节掌握度</h4>
+    <div class="kd-ring-wrap">
+     <div class="kd-ring" style="${ringStyle(chapter.mastery_percent||0,statusPalette(chapter.status))}">
+      <div class="kd-ring-inner">
+       <b>${chapter.mastery_percent||0}%</b>
+       <small>总体掌握度</small>
+      </div>
+     </div>
+    </div>
+    <ul class="kd-status-list">
+     ${["mastered","unfamiliar","unknown","weak","unlearned"].map(k=>`<li><i style="background:${statusPalette(k)}"></i><span>${statusLabel(k)}</span><b>${dist[k]?.count||0} 个</b><small>${dist[k]?.percent||0}%</small></li>`).join("")}
+    </ul>
+   </div>
+   <div class="kd-side-card kd-side-recent">
+    <h4>🕐 最近学习</h4>
+    <p class="kd-side-recent-kp">${escapeHtml(chapter.last_study_point||chapter.children?.[0]?.name||"暂无")}</p>
+    <p class="kd-side-recent-time">${escapeHtml(chapter.last_study_time||"——")}</p>
+   </div>
+   <div class="kd-side-card kd-side-advice">
+    <h4>💡 学习建议</h4>
+    <p>${escapeHtml(generateChapterAdvice(chapter,dist))}</p>
+   </div>
+   <div class="kd-side-card kd-side-actions">
+    <h4>⚡ 快捷操作</h4>
+    <div class="kd-side-action-grid">
+     <button data-kd-side-action="question">🎯<span>智能出题</span></button>
+     <button data-kd-side-action="mistake">📒<span>错题本</span></button>
+     <button data-kd-side-action="notes">📝<span>学习笔记</span></button>
+     <button data-kd-side-action="video">🎬<span>看视频</span></button>
+    </div>
+   </div>
+  </aside>
  </div>`;
- if(legend)legend.innerHTML=masteryLegendHTML(false);
- bindKnowledgeDetailInteractions();
+}
+
+/* 章节统计数据 */
+function computeChapterStats(children){
+ const dist={mastered:{count:0,percent:0},unfamiliar:{count:0,percent:0},unknown:{count:0,percent:0},weak:{count:0,percent:0},unlearned:{count:0,percent:0}};
+ const total=children?.length||0;
+ (children||[]).forEach(pt=>{
+  const k=pt.status||"unlearned";
+  if(dist[k])dist[k].count++;
+ });
+ Object.keys(dist).forEach(k=>{
+  dist[k].percent=total?Math.round(dist[k].count*100/total):0;
+ });
+ return {distribution:dist,total};
+}
+
+/* 章节示意图 */
+function chapterDiagramHTML(chapter){
+ const name=chapter.name||"";
+ if(name.includes("栈")){
+  return `<div class="kd-stack-diagram">
+   <div class="kd-stack-arrow kd-stack-arrow-down">↓ 入栈</div>
+   <div class="kd-stack-box">
+    <div class="kd-stack-cell kd-stack-top">a<sub>n</sub><span>栈顶 top</span></div>
+    <div class="kd-stack-cell">a<sub>n-1</sub></div>
+    <div class="kd-stack-cell">a<sub>n-2</sub></div>
+    <div class="kd-stack-cell">···</div>
+    <div class="kd-stack-cell kd-stack-bottom">a<sub>1</sub><span>栈底 bottom</span></div>
+   </div>
+   <div class="kd-stack-arrow kd-stack-arrow-up">↑ 出栈</div>
+  </div>`;
+ }
+ if(name.includes("队列")){
+  return `<div class="kd-queue-diagram">
+   <div class="kd-queue-arrow">← 出队 dequeue</div>
+   <div class="kd-queue-box">
+    <div class="kd-queue-cell kd-queue-front">a<sub>1</sub><span>队首 front</span></div>
+    <div class="kd-queue-cell">a<sub>2</sub></div>
+    <div class="kd-queue-cell">a<sub>3</sub></div>
+    <div class="kd-queue-cell kd-queue-rear">a<sub>n</sub><span>队尾 rear</span></div>
+   </div>
+   <div class="kd-queue-arrow">入队 enqueue →</div>
+  </div>`;
+ }
+ if(name.includes("树")||name.includes("二叉")){
+  return `<div class="kd-tree-diagram">
+   <div class="kd-tree-node kd-tree-root">A<span>根</span></div>
+   <div class="kd-tree-line"></div>
+   <div class="kd-tree-row"><div class="kd-tree-node">B<span>左</span></div><div class="kd-tree-node">C<span>右</span></div></div>
+   <div class="kd-tree-line"></div>
+   <div class="kd-tree-row"><div class="kd-tree-node">D</div><div class="kd-tree-node">E</div><div class="kd-tree-node">F</div><div class="kd-tree-node">G</div></div>
+  </div>`;
+ }
+ return `<div class="kd-default-diagram">📐 ${escapeHtml(name)} 章节示意图</div>`;
+}
+
+/* 应用场景卡片 */
+function chapterApplicationCardsHTML(chapter){
+ const name=chapter.name||"";
+ const defaults={
+  栈:[["函数调用","📞"],["表达式求值","🔢"],["括号匹配","🔗"],["递归调用","🔁"],["回溯算法","↩️"]],
+  队列:[["CPU 调度","⚙️"],["磁盘寻道","💾"],["消息队列","📨"],["广度优先","🌐"],["缓冲池","🔄"]],
+  树:[["文件系统","📁"],["决策树","🎯"],["表达式解析","🔢"],["路由算法","🌐"],["索引结构","📊"]],
+  图:[["社交网络","👥"],["路径规划","🗺️"],["依赖分析","📦"],["网络拓扑","🌐"],["任务调度","⚙️"]],
+  串:[["文本编辑","📝"],["模式匹配","🔍"],["DNA 序列","🧬"],["压缩算法","📦"],["搜索引擎","🔎"]],
+  链表:[["内存管理","💾"],["哈希冲突","🔗"],["LRU 缓存","📦"],["多项式加法","➕"],["大数运算","🔢"]],
+ };
+ let apps=null;
+ Object.keys(defaults).forEach(k=>{if(name.includes(k))apps=defaults[k]});
+ if(!apps)apps=[["理论建模","📐"],["算法实现","⚙️"],["工程应用","🏗️"],["考试常考","📝"],["边界情况","⚠️"]];
+ return apps.map(([label,icon])=>`<div class="kd-app-card"><span class="kd-app-icon">${icon}</span><b>${escapeHtml(label)}</b></div>`).join("");
+}
+
+/* 学习统计面板 */
+function chapterStatsPanelHTML(chapter,children,dist){
+ const total=children?.length||0;
+ const avgScore=total?Math.round((children.reduce((s,pt)=>s+Number(pt.mastery_score||0),0))/total):0;
+ const weakList=(children||[]).filter(pt=>pt.status==="weak"||pt.status==="unknown").slice(0,5);
+ return `<div class="kd-stats-grid">
+   <div class="kd-stat-tile"><small>章节掌握度</small><b style="color:${statusPalette(chapter.status)}">${chapter.mastery_percent||0}%</b></div>
+   <div class="kd-stat-tile"><small>三级知识点</small><b>${total} 个</b></div>
+   <div class="kd-stat-tile"><small>平均掌握分</small><b>${avgScore}</b></div>
+   <div class="kd-stat-tile"><small>未掌握数</small><b>${dist.weak.count+dist.unknown.count+dist.unlearned.count}</b></div>
+  </div>
+  <h4 class="kd-h4">📊 掌握状态分布</h4>
+  <div class="kd-status-bar">${Object.keys(dist).map(k=>`<div class="kd-status-seg" style="width:${dist[k].percent}%;background:${statusPalette(k)}" title="${statusLabel(k)}: ${dist[k].count}个 (${dist[k].percent}%)">${dist[k].count?`<span>${dist[k].count}</span>`:""}</div>`).join("")}</div>
+  <h4 class="kd-h4">⚠️ 薄弱知识点</h4>
+  <div class="kd-weak-list">${weakList.length?weakList.map(pt=>`<div class="kd-weak-item" data-kd-point="${pt.id}"><i style="background:${statusPalette(pt.status)}"></i><span>${escapeHtml(pt.name)}</span><b>${pt.mastery_score||0}</b><span class="kd-weak-go">→</span></div>`).join(""):`<p class="kd-empty">暂无薄弱知识点</p>`}</div>`;
+}
+
+/* 章节学习建议生成 */
+function generateChapterAdvice(chapter,dist){
+ const p=Number(chapter.mastery_percent||0);
+ if(p>=80)return "该章节掌握较好，建议做综合题巩固，可以进入下一章节学习。";
+ if(p>=60)return "该章节掌握中等，建议查漏补缺，重点复习薄弱知识点。";
+ if(p>=40)return "该章节掌握较弱，建议先学习薄弱知识点，再做练习题巩固。";
+ return "该章节基础薄弱，建议重新学习章节基础内容，配合视频讲解。";
+}
+
+/* 三栏交互绑定 */
+function bindChapterPage3ColInteractions(){
+ /* 左侧目录树：点击章节行展开/折叠（同时跳转） */
+ document.querySelectorAll(".kd-tree-chapter-row").forEach(row=>{
+  row.onclick=e=>{
+   if(e.target.closest("[data-kd-chapter]")||!row.dataset.kdChapter)return;
+   const chapterId=Number(row.dataset.kdChapter);
+   const div=row.closest(".kd-tree-chapter");
+   if(!div)return;
+   const isExpanded=div.classList.contains("expanded");
+   /* 全部折叠其他 */
+   document.querySelectorAll(".kd-tree-chapter").forEach(c=>{
+    c.classList.remove("expanded");
+    const pts=c.querySelector(".kd-tree-points");
+    if(pts)pts.classList.add("kd-tree-points-collapsed");
+    const ar=c.querySelector(".kd-tree-arrow");
+    if(ar)ar.textContent="▸";
+   });
+   if(!isExpanded){
+    div.classList.add("expanded");
+    const pts=div.querySelector(".kd-tree-points");
+    if(pts)pts.classList.remove("kd-tree-points-collapsed");
+    const ar=div.querySelector(".kd-tree-arrow");
+    if(ar)ar.textContent="▾";
+   }
+   /* 跳转详情页 */
+   loadKnChapterDetail(chapterId);
+  };
+ });
+ /* 兼容单独的 data-kd-chapter 按钮 */
+ document.querySelectorAll("[data-kd-chapter]").forEach(btn=>{
+  if(btn.classList.contains("kd-tree-chapter-row"))return;
+  btn.onclick=()=>loadKnChapterDetail(Number(btn.dataset.kdChapter));
+ });
+ /* 三级知识点点击 */
+ document.querySelectorAll("[data-kd-point]").forEach(btn=>{
+  btn.onclick=e=>{e.stopPropagation();loadKnPointDetail(Number(btn.dataset.kdPoint))};
+ });
+ /* 中间 Tab 切换 */
+ document.querySelectorAll("[data-kd-tab]").forEach(btn=>{
+  btn.onclick=()=>{
+   const tab=btn.dataset.kdTab;
+   document.querySelectorAll("[data-kd-tab]").forEach(b=>b.classList.toggle("active",b===btn));
+   document.querySelectorAll("[data-kd-panel]").forEach(p=>{
+    p.classList.toggle("active",p.dataset.kdPanel===tab);
+    p.style.display=p.dataset.kdPanel===tab?"block":"none";
+   });
+   if(tab==="notes")loadChapterNotes();
+  };
+ });
+ /* 收藏 */
+ document.querySelectorAll("[data-kd-fav]").forEach(btn=>{btn.onclick=()=>{btn.classList.toggle("active");toast(btn.classList.contains("active")?"已收藏章节":"已取消收藏")}});
+ /* 右侧快捷操作 */
+ document.querySelectorAll("[data-kd-side-action]").forEach(btn=>{btn.onclick=()=>triggerChapterAction(btn.dataset.kdSideAction)});
+ /* 返回按钮 */
+ document.querySelectorAll("[data-kg-back]").forEach(btn=>{btn.onclick=()=>{
+  if(document.getElementById("knowledge")?.classList.contains("active")){
+   window.knDetailActive=false;
+   loadKnowledgeNavPage();
+  }
+ }});
+ /* 添加笔记按钮 */
+ document.querySelectorAll("[data-kd-add-note-chapter]").forEach(btn=>{btn.onclick=()=>openNoteModal("chapter",window.currentGraphChapterId,window.currentGraphChapterName,window.currentGraphChapterSubject)});
+ /* 薄弱项点击 */
+ document.querySelectorAll(".kd-weak-item").forEach(div=>{div.onclick=()=>{const id=div.dataset.kdPoint;if(id)loadKnPointDetail(Number(id))}});
+ /* 知识点卡片点击 */
+ document.querySelectorAll(".kd-point-card").forEach(btn=>{btn.onclick=()=>{const id=btn.dataset.kdPoint;if(id)loadKnPointDetail(Number(id))}});
+}
+
+/* 章节统计 Tab 详细渲染 */
+function renderChapterStatsDetail(){
+ /* 已通过 innerHTML 静态渲染 */
+}
+
+/* 章节练习 Tab 渲染 */
+function renderChapterPractice(){
+ /* 已通过 innerHTML 静态渲染 */
+}
+
+/* 章节笔记 Tab 加载 */
+async function loadChapterNotes(){
+ const list=document.getElementById("kdChapterNoteList");
+ const count=document.getElementById("kdChapterNoteCount");
+ if(!list)return;
+ const chapterId=window.currentGraphChapterId;
+ if(!chapterId)return;
+ list.innerHTML='<p class="kd-empty">加载中…</p>';
+ try{
+  const data=await apiRequest(`/api/notes?chapter_id=${chapterId}&page_size=20`);
+  const items=data.items||data.notes||data.records||[];
+  count.textContent=`${items.length} 条笔记`;
+  if(!items.length){list.innerHTML='<p class="kd-empty">该章节暂无笔记，点击右上角添加</p>';return}
+  list.innerHTML=items.map(noteCardHTML).join("");
+  bindNoteCardInteractions();
+ }catch(e){
+  list.innerHTML=`<p class="kd-empty">加载失败：${escapeHtml(e.message)}</p>`;
+ }
+}
+
+/* 章节快捷操作 */
+function triggerChapterAction(action){
+ if(action==="question"){showPage("question");toast("已跳转到智能出题，可手动输入章节名");}
+ else if(action==="mistake"){showPage("mistake");toast("已跳转到错题本")}
+ else if(action==="notes"){showPage("note");toast("已跳转到学习笔记")}
+ else if(action==="video"){showPage("knowledge");toast("已跳转到知识详情，可看视频")}
 }
 
 async function loadKnowledgePointDetailPage(pointId){
@@ -3102,7 +3999,26 @@ function videoCardHTML(video){
  const matchLabel={exact:"<span style='color:#27a978;font-weight:700'>● 精确匹配</span>",alias:"<span style='color:#2f80ed;font-weight:700'>● 章节相关</span>",keyword:"<span style='color:#f7b500;font-weight:700'>● 关键词命中</span>",subject:"<span style='color:#9aa5b1;font-weight:700'>● 同科目推荐</span>"};
  const matchLevel=video.match_level||"subject";
  const score=Math.round(Number(video.keyword_match_score||video.score||0)*100);
- return `<a href="${escapeHtml(video.url||'#')}" target="_blank" rel="noopener noreferrer" class="kd-video-card" data-vid="${escapeHtml(video.id||'')}" style="display:block;text-decoration:none;border:1.5px solid #dfe7f3;border-radius:11px;background:#fbfdff;padding:12px 14px;cursor:pointer;transition:border-color .2s"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:7px"><span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:#eaf2ff;color:#0f63df;font-size:12px;flex-shrink:0">▶</span><div style="font-weight:700;font-size:13px;line-height:1.4;color:#0f63df;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(video.title||"视频资源")}</div></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;font-size:10px;align-items:center;margin-left:33px"><span style="background:linear-gradient(135deg,#00a1d6,#fb7299);color:#fff;padding:2px 8px;border-radius:4px;font-weight:700;font-size:9px">▶ ${escapeHtml(video.platform||"B站")}</span>${video.author?`<span style="background:#f0f4fa;color:#526481;padding:2px 7px;border-radius:4px">👤 ${escapeHtml(video.author)}</span>`:""}${video.duration?`<span style="background:#f0f4fa;color:#526481;padding:2px 7px;border-radius:4px">⏱ ${escapeHtml(video.duration)}</span>`:""}<span style="font-size:9px">${matchLabel[matchLevel]||""}</span></div>${video.match_explanation||video.reason?`<p style="font-size:10px;color:#526481;margin:6px 0 0 33px;line-height:1.5">${escapeHtml(video.match_explanation||video.reason)}</p>`:""}</div><div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0"><span style="color:#0f63df;font-size:11px;font-weight:800;white-space:nowrap">${score>0?score+"%":""}</span><span style="color:#0f63df;font-size:14px;font-weight:900">↗</span></div></div></a>`;
+ const coverUrl=video.cover_url||"";
+ const coverHtml=coverUrl
+  ? `<div class="video-cover"><img src="${escapeAttr(coverUrl)}" alt="${escapeAttr(video.title||"视频封面")}" loading="lazy" onerror="this.onerror=null;this.parentElement.classList.add('video-cover-fallback');this.remove();"><span class="video-cover-play">▶</span><span class="video-cover-duration">${escapeHtml(video.duration||"")}</span></div>`
+  : `<div class="video-cover video-cover-fallback"><span class="video-cover-play">▶</span><span class="video-cover-duration">${escapeHtml(video.duration||"")}</span><div class="video-cover-fallback-text">${escapeHtml(video.platform||"B站")} 视频</div></div>`;
+ return `<a href="${escapeHtml(video.url||'#')}" target="_blank" rel="noopener noreferrer" class="kd-video-card" data-vid="${escapeHtml(video.id||'')}">
+  ${coverHtml}
+  <div class="video-info">
+    <div class="video-info-top">
+      <div class="video-title">${escapeHtml(video.title||"视频资源")}</div>
+      ${score>0?`<span class="video-score">${score}%</span>`:""}
+    </div>
+    <div class="video-meta">
+      <span class="video-platform">▶ ${escapeHtml(video.platform||"B站")}</span>
+      ${video.author?`<span class="video-tag">👤 ${escapeHtml(video.author)}</span>`:""}
+      <span class="video-match">${matchLabel[matchLevel]||""}</span>
+    </div>
+    ${video.match_explanation||video.reason?`<p class="video-reason">${escapeHtml(video.match_explanation||video.reason)}</p>`:""}
+    <div class="video-action">去观看 <span>↗</span></div>
+  </div>
+</a>`;
 }
 
 function practiceRecordHTML(item){
@@ -3154,7 +4070,7 @@ function bindKnowledgeDetailInteractions(){
   if(!tabSection)return;
   tabSection.querySelectorAll(".kd-tab").forEach(t=>t.classList.remove("active"));
   button.classList.add("active");
-  const tabMap={videos:"kdTabVideos",history:"kdTabHistory",notes:"kdTabNotes"};
+  const tabMap={videos:"kdTabVideos",history:"kdTabHistory",mistakes:"kdTabMistakes",notes:"kdTabNotes"};
   tabSection.querySelectorAll(".kd-tab-content").forEach(c=>c.style.display="none");
   const target=document.getElementById(tabMap[tabName]);
   if(target)target.style.display="grid";

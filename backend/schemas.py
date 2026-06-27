@@ -87,6 +87,13 @@ class ForumCommentRequest(BaseModel):
     parent_id: int | None = None
 
 
+class ForumAiFeedbackRequest(BaseModel):
+    """AI 回答点赞/采纳反馈（P2-12）"""
+    answer_id: int
+    is_helpful: bool = True
+    feedback: str = ""
+
+
 class MemoryUpdateRequest(BaseModel):
     memory_type: str = "weak_point"
     subject: str

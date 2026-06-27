@@ -1,39 +1,47 @@
-"""
-论坛社区接口（半成品需要深化）
+"""论坛社区接口（深化版）
 
-功能：
-- GET    /api/forum/categories               — 获取论坛分类列表
-- GET    /api/forum/posts                    — 搜索/筛选帖子列表
-- POST   /api/forum/posts                    — 创建帖子
-- GET    /api/forum/posts/{id}               — 帖子详情
-- PUT    /api/forum/posts/{id}               — 更新帖子（仅作者）
-- DELETE /api/forum/posts/{id}               — 删除帖子（软删除）
-- POST   /api/forum/posts/{id}/like          — 点赞
-- POST   /api/forum/posts/{id}/unlike        — 取消点赞
-- GET    /api/forum/posts/{id}/comments      — 获取评论列表
-- POST   /api/forum/posts/{id}/comments      — 添加评论
-- POST   /api/forum/comments/{id}/reply      — 回复评论
-- POST   /api/forum/posts/{id}/ai-answer     — AI 回答帖子
-- POST   /api/forum/posts/{id}/ai-followup   — AI 追问回答
-- GET    /api/forum/hot                      — 热门帖子（按热度排序）
-- GET    /api/forum/checkin/status           — 打卡状态
-- POST   /api/forum/checkin                  — 执行打卡
-- GET    /api/forum/my-posts                 — 我的帖子列表
-
-状态：半成品需要深化。CRUD 完整，AI 回答/追问有基本实现；无分页，AI 追问仅用简单提示词 + fallback。
+新增 P0+P1+P2 完善：
+- P0-1/2/3  RAG + 记忆 + 掌握度
+- P0-4  结构化 JSON 响应（前端 5 卡片渲染）
+- P0-5  追问历史上下文
+- P1-6  LangGraph 多步 Agent（论坛 AI 智能体）
+- P1-7  答案校验/降级
+- P1-8  写回 user_memory
+- P1-9  流式输出（可选）
+- P2-11 回答持久化与缓存
+- P2-12 AI 回答点赞/采纳
+- P2-13 与其他模块联动
+- P2-14 追问判定
+- P2-15 历史评论上下文
 """
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from agents.forum_agent import ai_answer_for_post
+from agents.forum_agent import (
+    ai_answer_for_post,
+    ai_followup_for_post,
+    run_forum_graph,
+    set_db as set_forum_db,
+)
 from database import get_db
 from dependencies import get_current_user
-from models import ForumCategory, ForumCheckin, ForumComment, ForumLike, ForumPost, User
-from schemas import ForumCommentRequest, ForumPostRequest
-from services.llm_service import chat_completion
+from models import (
+    ForumAiAnswer,
+    ForumAiAnswerLike,
+    ForumAiFollowup,
+    ForumCategory,
+    ForumCheckin,
+    ForumComment,
+    ForumLike,
+    ForumPost,
+    User,
+)
+from schemas import ForumAiFeedbackRequest, ForumCommentRequest, ForumPostRequest
+from services.llm_service import chat_completion_stream
 from utils.response import AppError, success
 
 router = APIRouter(prefix="/api/forum", tags=["forum"])
@@ -295,12 +303,89 @@ def reply(
     return success({"comment_id": comment.id})
 
 
+# ---------------- AI 回答主入口（P0-1 ~ P2-15 全部集成） ----------------
+
 @router.post("/posts/{post_id}/ai-answer")
-def ai_answer(post_id: int, db: Session = Depends(get_db)):
+def ai_answer(
+    post_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """AI 回答帖子主入口。"""
     post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
     if not post:
         raise AppError("POST_NOT_FOUND", "帖子不存在", status_code=404)
-    return success(ai_answer_for_post(post.title, post.content, post.subject, post.knowledge_point))
+
+    set_forum_db(db)
+    post_dict = {
+        "id": post.id,
+        "title": post.title,
+        "content": post.content,
+        "subject": post.subject or "",
+        "knowledge_point": post.knowledge_point or "",
+    }
+    result = run_forum_graph(
+        db=db,
+        post=post_dict,
+        user_id=user.id,
+        followup_question="",
+        answer_id=None,
+    )
+    answer = result.get("answer", {}) or {}
+    return success({
+        "answer_id": result.get("answer_id"),
+        "memory_id": result.get("memory_id"),
+        "answer": answer,
+        "structured": answer,
+        "subject": result.get("subject", ""),
+        "knowledge_point": result.get("knowledge_point", ""),
+        "retrieval": result.get("retrieval", {}),
+        "agent_steps": result.get("agent_steps", []),
+        "llm_used": result.get("llm_used", False),
+        "llm_error": result.get("llm_error", ""),
+        "should_followup": result.get("should_followup", False),
+        "followup_hint": result.get("followup_hint", ""),
+        "user_profile": result.get("user_profile", {}),
+    })
+
+
+@router.post("/posts/{post_id}/ai-answer-stream")
+def ai_answer_stream(
+    post_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """AI 回答流式输出（SSE，P1-9）。"""
+    post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
+    if not post:
+        raise AppError("POST_NOT_FOUND", "帖子不存在", status_code=404)
+
+    set_forum_db(db)
+    post_dict = {
+        "id": post.id,
+        "title": post.title,
+        "content": post.content,
+        "subject": post.subject or "",
+        "knowledge_point": post.knowledge_point or "",
+    }
+    result = run_forum_graph(
+        db=db,
+        post=post_dict,
+        user_id=user.id,
+        followup_question="",
+        answer_id=None,
+    )
+    answer = result.get("answer", {}) or {}
+    text = json_dumps_pretty(answer)
+
+    def _gen():
+        chunk_size = 80
+        for i in range(0, len(text), chunk_size):
+            chunk = text[i:i + chunk_size]
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 @router.post("/posts/{post_id}/ai-followup")
@@ -308,37 +393,194 @@ def ai_followup(
     post_id: int,
     payload: ForumCommentRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    """AI 追问接口（P0-5, P1-6, P2-14, P2-15）。"""
     post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
     if not post:
         raise AppError("POST_NOT_FOUND", "帖子不存在", status_code=404)
-    fallback = (
-        f"<p>可以继续从定义、流程、边界条件三个角度拆解 <b>{post.title}</b>，"
-        f"并用一道同类题验证。你提到「{payload.content}」，建议先定位题目中发生状态变化的时刻。</p>"
+
+    # 找该帖子最近的 AI 回答
+    last_answer = (
+        db.query(ForumAiAnswer)
+        .filter(ForumAiAnswer.post_id == post_id, ForumAiAnswer.is_deleted == False)
+        .order_by(ForumAiAnswer.create_time.desc())
+        .first()
     )
-    llm = chat_completion(
-        [
-            {
-                "role": "system",
-                "content": "你是考研 408 学习论坛 AI 小助手，回答要友好、具体、可执行，可使用简单 HTML。",
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"帖子标题：{post.title}\n帖子内容：{post.content}\n"
-                    f"科目：{post.subject}\n知识点：{post.knowledge_point}\n"
-                    f"用户追问：{payload.content}\n请给出进一步回答。"
-                ),
-            },
-        ],
-        fallback,
+    answer_id = last_answer.id if last_answer else None
+
+    post_dict = {
+        "id": post.id,
+        "title": post.title,
+        "content": post.content,
+        "subject": post.subject or "",
+        "knowledge_point": post.knowledge_point or "",
+    }
+    set_forum_db(db)
+    result = ai_followup_for_post(
+        db=db,
+        post=post_dict,
+        user_id=user.id,
+        followup_question=payload.content,
+        answer_id=answer_id,
     )
     return success({
-        "answer": llm.content.replace("\n", "<br>"),
-        "llm_used": llm.used_llm,
-        "llm_error": llm.error,
+        "answer": result.get("answer", {}),
+        "structured": result.get("answer", {}),
+        "should_followup": result.get("should_followup", False),
+        "followup_hint": result.get("followup_hint", ""),
+        "agent_steps": result.get("agent_steps", []),
+        "llm_used": result.get("llm_used", False),
+        "llm_error": result.get("llm_error", ""),
     })
 
+
+# ---------------- P2-12 点赞/采纳 ----------------
+
+@router.post("/ai-answer/like")
+def like_ai_answer(
+    payload: ForumAiFeedbackRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """对 AI 回答点赞/采纳（P2-12）。"""
+    answer = db.query(ForumAiAnswer).filter(
+        ForumAiAnswer.id == payload.answer_id,
+        ForumAiAnswer.is_deleted == False,
+    ).first()
+    if not answer:
+        raise AppError("ANSWER_NOT_FOUND", "回答不存在", status_code=404)
+
+    existing = db.query(ForumAiAnswerLike).filter(
+        ForumAiAnswerLike.user_id == user.id,
+        ForumAiAnswerLike.answer_id == payload.answer_id,
+    ).first()
+
+    if existing:
+        existing.is_deleted = False
+        existing.create_time = datetime.utcnow()
+    else:
+        db.add(ForumAiAnswerLike(
+            user_id=user.id,
+            answer_id=payload.answer_id,
+        ))
+
+    answer.like_count = (answer.like_count or 0) + 1
+    if payload.is_helpful:
+        answer.is_accepted = True
+
+    db.commit()
+    return success({
+        "answer_id": answer.id,
+        "like_count": answer.like_count,
+        "is_accepted": answer.is_accepted,
+    })
+
+
+@router.post("/ai-answer/unlike")
+def unlike_ai_answer(
+    payload: ForumAiFeedbackRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """取消 AI 回答点赞。"""
+    existing = db.query(ForumAiAnswerLike).filter(
+        ForumAiAnswerLike.user_id == user.id,
+        ForumAiAnswerLike.answer_id == payload.answer_id,
+    ).first()
+    if existing:
+        existing.is_deleted = True
+    answer = db.query(ForumAiAnswer).filter(ForumAiAnswer.id == payload.answer_id).first()
+    if answer and answer.like_count > 0:
+        answer.like_count -= 1
+    db.commit()
+    return success({"answer_id": payload.answer_id, "like_count": answer.like_count if answer else 0})
+
+
+# ---------------- P2-13 模块联动（跳转） ----------------
+
+@router.get("/posts/{post_id}/ai-actions")
+def ai_actions(post_id: int, db: Session = Depends(get_db)):
+    """获取 AI 回答的行动链接（出题/视频/错题本），前端用于按钮跳转。"""
+    post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
+    if not post:
+        raise AppError("POST_NOT_FOUND", "帖子不存在", status_code=404)
+    subject = post.subject or ""
+    kp = post.knowledge_point or ""
+
+    actions = [
+        {
+            "type": "question",
+            "label": "🎯 生成专项题",
+            "url": "/index.html?page=question",
+            "params": {"subject": subject, "knowledge_point": kp, "mode": "knowledge_point"},
+        },
+        {
+            "type": "video",
+            "label": "🎬 看视频讲解",
+            "url": "/index.html?page=knowledge",
+            "params": {"subject": subject, "knowledge_point": kp},
+        },
+        {
+            "type": "mistake",
+            "label": "📒 加入错题本",
+            "url": "/index.html?page=mistake",
+            "params": {"subject": subject, "knowledge_point": kp},
+        },
+        {
+            "type": "qa",
+            "label": "💬 深入问答",
+            "url": "/index.html?page=qa",
+            "params": {"subject": subject, "knowledge_point": kp},
+        },
+    ]
+    return success({"items": actions, "subject": subject, "knowledge_point": kp})
+
+
+# ---------------- 追问历史 ----------------
+
+@router.get("/posts/{post_id}/ai-followup-history")
+def followup_history(
+    post_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取帖子 AI 追问历史。"""
+    last_answer = (
+        db.query(ForumAiAnswer)
+        .filter(ForumAiAnswer.post_id == post_id, ForumAiAnswer.is_deleted == False)
+        .order_by(ForumAiAnswer.create_time.desc())
+        .first()
+    )
+    if not last_answer:
+        return success({"items": []})
+
+    rows = (
+        db.query(ForumAiFollowup)
+        .filter(
+            ForumAiFollowup.answer_id == last_answer.id,
+            ForumAiFollowup.user_id == user.id,
+            ForumAiFollowup.is_deleted == False,
+        )
+        .order_by(ForumAiFollowup.create_time)
+        .all()
+    )
+    return success({
+        "answer_id": last_answer.id,
+        "items": [
+            {
+                "id": r.id,
+                "question": r.question,
+                "answer": r.answer,
+                "knowledge_point": r.knowledge_point,
+                "create_time": relative_time(r.create_time),
+            }
+            for r in rows
+        ],
+    })
+
+
+# ---------------- 原有辅助接口 ----------------
 
 @router.get("/hot")
 def hot(db: Session = Depends(get_db)):
@@ -457,4 +699,6 @@ def my_posts(
     return success({"items": [post_to_dict(p, user) for p in rows]})
 
 
-
+def json_dumps_pretty(obj) -> str:
+    import json
+    return json.dumps(obj, ensure_ascii=False, indent=2)

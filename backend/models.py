@@ -339,6 +339,68 @@ class ForumPost(Base):
         Index("idx_post_del", "is_deleted"),
     )
 
+
+# -------------------------- 30. 论坛AI回答 ForumAiAnswer --------------------------
+class ForumAiAnswer(Base):
+    """AI 对论坛主帖的回答。"""
+    __tablename__ = "forum_ai_answer"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("forum_post.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    knowledge_point = Column(String(128), default="")
+    confidence = Column(Float, default=0.0)
+    model_name = Column(String(64), default="")
+    is_accepted = Column(Boolean, default=False)
+    like_count = Column(Integer, default=0)
+    status = Column(String(32), default="active")
+    is_deleted = Column(Boolean, default=False)
+    create_time = Column(DateTime, default=datetime.utcnow)
+    update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_ai_answer_post", "post_id"),
+        Index("idx_ai_answer_user", "user_id"),
+        Index("idx_ai_answer_del", "is_deleted"),
+    )
+
+
+# -------------------------- 31. 论坛AI回答点赞 ForumAiAnswerLike --------------------------
+class ForumAiAnswerLike(Base):
+    """用户对 AI 回答的点赞记录。"""
+    __tablename__ = "forum_ai_answer_like"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    answer_id = Column(Integer, ForeignKey("forum_ai_answer.id", ondelete="CASCADE"), nullable=False)
+    is_deleted = Column(Boolean, default=False)
+    create_time = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "answer_id", name="uk_ai_answer_like_uid_aid"),
+        Index("idx_ai_answer_like_uid", "user_id"),
+        Index("idx_ai_answer_like_del", "is_deleted"),
+    )
+
+
+# -------------------------- 32. 论坛AI追问 ForumAiFollowup --------------------------
+class ForumAiFollowup(Base):
+    """用户对 AI 回答的追问对话记录。"""
+    __tablename__ = "forum_ai_followup"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    answer_id = Column(Integer, ForeignKey("forum_ai_answer.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    knowledge_point = Column(String(128), default="")
+    is_deleted = Column(Boolean, default=False)
+    create_time = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_ai_followup_answer", "answer_id"),
+        Index("idx_ai_followup_user", "user_id"),
+        Index("idx_ai_followup_del", "is_deleted"),
+    )
+
 # -------------------------- 16. 论坛评论 ForumComment --------------------------
 class ForumComment(Base):
     __tablename__ = "forum_comment"
