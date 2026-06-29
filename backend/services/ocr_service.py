@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 
 from config import settings
 from utils.response import AppError
@@ -36,8 +36,9 @@ log = logger.info
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-MAX_SIDE = 1280           # 最长边限制：速度↑ 准确率仍可接受（v2 缩紧至 1280）
-MIN_SIDE = 600            # 适度放大提高小字识别率
+MAX_SIDE = int(os.environ.get("OCR_MAX_SIDE", "1800"))  # 更高分辨率保留小字细节
+MIN_SIDE = int(os.environ.get("OCR_MIN_SIDE", "900"))   # 适度放大小图，提高截图/拍照小字识别率
+OCR_VARIANT_LIMIT = int(os.environ.get("OCR_VARIANT_LIMIT", "3"))
 JPEG_QUALITY = 88
 OCR_DEVICE = os.environ.get("OCR_DEVICE", "cpu")  # v2: PaddleOCR 3.x 新参数名
 LLM_CORRECT_THRESHOLD = 0.85  # 行置信度低于该值时送 LLM 二次校对
@@ -65,41 +66,86 @@ def _upload_path(filename: str) -> Path:
 # ============================================================
 # 2) 图片预处理：缩放、对比度增强、灰度、二值化（v2 强化）
 # ============================================================
-def _preprocess_image(src_path: Path, max_side: int = MAX_SIDE) -> Path:
-    """缩放 + 增强对比度 + 灰度，显著提升 OCR 准确率（v2 升级）。
+def _fit_for_ocr(im: Image.Image, max_side: int = MAX_SIDE) -> Image.Image:
+    """按 OCR 需要缩放：大图不过度压缩，小图主动放大。"""
+    w, h = im.size
+    longest = max(w, h)
+    if longest > max_side:
+        ratio = max_side / longest
+        return im.resize((max(1, int(w * ratio)), max(1, int(h * ratio))), Image.LANCZOS)
+    if longest < MIN_SIDE:
+        ratio = MIN_SIDE / longest
+        return im.resize((max(1, int(w * ratio)), max(1, int(h * ratio))), Image.LANCZOS)
+    return im
 
-    优化项：
-    - 最长边超过 max_side 时等比缩放（默认 1280px）
-    - 小图适度放大到 MIN_SIDE（600px）以提高识别率
-    - 灰度 + 对比度增强 1.4x
-    - 自动按 EXIF 旋转
-    - 保留为 PNG（无损 + 压缩友好）
-    """
+
+def _otsu_threshold(gray: Image.Image) -> int:
+    """用 Otsu 阈值生成二值增强图，提升浅色/压缩截图文字对比度。"""
+    hist = gray.histogram()
+    total = sum(hist)
+    if not total:
+        return 160
+    sum_total = sum(i * count for i, count in enumerate(hist))
+    sum_bg = 0.0
+    weight_bg = 0
+    best_var = -1.0
+    best_threshold = 160
+    for i, count in enumerate(hist):
+        weight_bg += count
+        if weight_bg == 0:
+            continue
+        weight_fg = total - weight_bg
+        if weight_fg == 0:
+            break
+        sum_bg += i * count
+        mean_bg = sum_bg / weight_bg
+        mean_fg = (sum_total - sum_bg) / weight_fg
+        var_between = weight_bg * weight_fg * (mean_bg - mean_fg) ** 2
+        if var_between > best_var:
+            best_var = var_between
+            best_threshold = i
+    return max(96, min(210, best_threshold))
+
+
+def _save_preprocess_variant(image: Image.Image, out_path: Path) -> Path:
+    image.save(out_path, format="PNG", optimize=True)
+    return out_path
+
+
+def _preprocess_variants(src_path: Path, max_side: int = MAX_SIDE) -> list[Path]:
+    """生成多种 OCR 输入图，分别适配拍照题、截图小字和浅色背景。"""
     processed_dir = src_path.parent / "_ocr_processed"
     processed_dir.mkdir(exist_ok=True)
-    out_path = processed_dir / (src_path.stem + ".png")
     try:
         with Image.open(src_path) as im:
-            im = ImageOps.exif_transpose(im)  # EXIF 旋转
-            im = im.convert("RGB")
-            w, h = im.size
-            scale = min(max_side / max(w, h), 1.0)
-            if max(w, h) > max_side:
-                nw, nh = int(w * scale), int(h * scale)
-                im = im.resize((nw, nh), Image.LANCZOS)
-            elif max(w, h) < MIN_SIDE:
-                # 小图适度放大（提高小字识别率）
-                ratio = MIN_SIDE / max(w, h)
-                nw, nh = int(w * ratio), int(h * ratio)
-                im = im.resize((nw, nh), Image.LANCZOS)
-            # 对比度增强 1.4x（对打印字/手写体均有效）
-            im = im.convert("L")  # 灰度
-            im = ImageEnhance.Contrast(im).enhance(1.4)
-            im.save(out_path, format="PNG", optimize=True)
-        return out_path
+            base = ImageOps.exif_transpose(im).convert("RGB")
+            base = _fit_for_ocr(base, max_side)
+
+            variants: list[Path] = []
+
+            gray = ImageOps.autocontrast(base.convert("L"))
+            gray = ImageEnhance.Contrast(gray).enhance(1.65)
+            gray = ImageEnhance.Sharpness(gray).enhance(1.35)
+            variants.append(_save_preprocess_variant(gray, processed_dir / f"{src_path.stem}_gray.png"))
+
+            denoised = gray.filter(ImageFilter.MedianFilter(size=3))
+            threshold = _otsu_threshold(denoised)
+            binary = denoised.point(lambda p: 255 if p > threshold else 0).convert("L")
+            variants.append(_save_preprocess_variant(binary, processed_dir / f"{src_path.stem}_binary.png"))
+
+            color = ImageEnhance.Contrast(base).enhance(1.18)
+            color = ImageEnhance.Sharpness(color).enhance(1.25)
+            variants.append(_save_preprocess_variant(color, processed_dir / f"{src_path.stem}_color.png"))
+
+            return variants[:max(1, OCR_VARIANT_LIMIT)]
     except Exception as exc:
         log(f"图片预处理失败，回落到原图: {exc}")
-        return src_path
+        return [src_path]
+
+
+def _preprocess_image(src_path: Path, max_side: int = MAX_SIDE) -> Path:
+    """兼容旧调试脚本：返回主预处理图。"""
+    return _preprocess_variants(src_path, max_side)[0]
 
 
 # ============================================================
@@ -168,6 +214,17 @@ def _get_easy_engine() -> Any:
 # ============================================================
 # 4) 引擎适配：归一化为 [{text, score, y, x}] 行级结构
 # ============================================================
+def _clean_ocr_fragment(text: str) -> str:
+    """清理 OCR 行内噪声，不改写题意和公式。"""
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    t = re.sub(r"[ \t\u3000]+", " ", t)
+    t = re.sub(r"\s+([，。；：？！、,.!?;:)）】}])", r"\1", t)
+    t = re.sub(r"([（(【{\[])\s+", r"\1", t)
+    return t.strip()
+
+
 def _paddle_lines(ocr: Any, path: Path) -> list[dict[str, Any]]:
     """运行 PaddleOCR 3.x 并提取行级识别结果。
 
@@ -232,7 +289,7 @@ def _paddle_lines(ocr: Any, path: Path) -> list[dict[str, Any]]:
 
         n = len(rec_texts)
         for i, (text, score) in enumerate(zip(rec_texts, rec_scores)):
-            t = str(text or "").strip()
+            t = _clean_ocr_fragment(str(text or ""))
             if not t:
                 continue
             s = float(score or 0.0)
@@ -245,6 +302,7 @@ def _paddle_lines(ocr: Any, path: Path) -> list[dict[str, Any]]:
                 "y": float(y),
                 "x": float(x),
                 "engine": "paddleocr",
+                "variant": path.stem,
             })
 
     # 按 y 升序 + x 升序拼接，更接近阅读顺序
@@ -269,7 +327,7 @@ def _easy_lines(reader: Any, path: Path) -> list[dict[str, Any]]:
         if not item or len(item) < 3:
             continue
         box, text, score = item[0], item[1], item[2]
-        t = str(text or "").strip()
+        t = _clean_ocr_fragment(str(text or ""))
         if not t:
             continue
         s = float(score or 0.0)
@@ -289,6 +347,7 @@ def _easy_lines(reader: Any, path: Path) -> list[dict[str, Any]]:
             "y": y_avg,
             "x": x_avg,
             "engine": "easyocr",
+            "variant": path.stem,
         })
     lines.sort(key=lambda ln: (round(ln["y"] / 12), ln["x"]))
     log(f"📍 EasyOCR 识别耗时 {cost_ms:.0f}ms, 共 {len(lines)} 行（过滤后）")
@@ -325,6 +384,68 @@ def _merge_lines(paddle: list[dict], easy: list[dict]) -> list[dict]:
     merged.extend(easy_remaining)
     # 再次按 y 排序
     merged.sort(key=lambda ln: (round(ln["y"] / 12), ln["x"]))
+    return merged
+
+
+def _line_pick_score(line: dict[str, Any]) -> float:
+    """融合时的候选评分：置信度优先，兼顾完整度。"""
+    text = str(line.get("text") or "")
+    return float(line.get("score") or 0.0) + min(len(text), 80) / 240
+
+
+def _is_same_visual_line(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    a_text = str(a.get("text") or "")
+    b_text = str(b.get("text") or "")
+    if not a_text or not b_text:
+        return False
+    if a_text == b_text:
+        return True
+    y_dist = abs(float(a.get("y") or 0.0) - float(b.get("y") or 0.0))
+    if y_dist > 34:
+        return False
+    return _line_similarity(a_text, b_text) >= 0.58
+
+
+def _merge_multi_line_sets(line_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """融合多个预处理版本的行结果，保留每一行更可信的文本。"""
+    candidates = [line for lines in line_sets for line in lines]
+    if not candidates:
+        return []
+    groups: list[list[dict[str, Any]]] = []
+    for line in sorted(candidates, key=lambda ln: (round(float(ln.get("y") or 0) / 12), float(ln.get("x") or 0))):
+        for group in groups:
+            if any(_is_same_visual_line(line, existing) for existing in group):
+                group.append(line)
+                break
+        else:
+            groups.append([line])
+
+    merged: list[dict[str, Any]] = []
+    seen_texts: set[str] = set()
+    for group in groups:
+        best = max(group, key=_line_pick_score)
+        text = str(best.get("text") or "").strip()
+        if not text or text in seen_texts:
+            continue
+        seen_texts.add(text)
+        best = dict(best)
+        best["score"] = max(float(item.get("score") or 0.0) for item in group)
+        best["engine"] = "paddleocr-multipass" if len(group) > 1 else best.get("engine", "paddleocr")
+        merged.append(best)
+    merged.sort(key=lambda ln: (round(float(ln.get("y") or 0) / 12), float(ln.get("x") or 0)))
+    return merged
+
+
+def _paddle_multi_variant_lines(ocr: Any, paths: list[Path]) -> list[dict[str, Any]]:
+    if ocr is None:
+        return []
+    line_sets: list[list[dict[str, Any]]] = []
+    for variant_path in paths:
+        lines = _paddle_lines(ocr, variant_path)
+        if lines:
+            line_sets.append(lines)
+    merged = _merge_multi_line_sets(line_sets)
+    log(f"📍 PaddleOCR 多版本融合: variants={len(paths)}, merged={len(merged)}行")
     return merged
 
 
@@ -388,9 +509,11 @@ def _llm_correct_ocr_text(raw_text: str, low_conf_lines: list[str]) -> str:
 def recognize_image(path: Path) -> dict[str, Any]:
     """识别图片：预处理 → 并行多引擎 → 融合 → LLM 纠错。"""
     t0 = time.perf_counter()
-    preprocessed = _preprocess_image(path)
+    preprocessed_paths = _preprocess_variants(path)
+    preprocessed = preprocessed_paths[0]
     t_pre = time.perf_counter() - t0
-    log(f"📐 预处理耗时 {t_pre*1000:.0f}ms: {preprocessed.name} ({os.path.getsize(preprocessed) if preprocessed.exists() else 0}B)")
+    sizes = ", ".join(f"{p.name}:{os.path.getsize(p) if p.exists() else 0}B" for p in preprocessed_paths)
+    log(f"📐 预处理耗时 {t_pre*1000:.0f}ms: variants={len(preprocessed_paths)} [{sizes}]")
 
     paddle_lines: list[dict] = []
     easy_lines_: list[dict] = []
@@ -398,7 +521,7 @@ def recognize_image(path: Path) -> dict[str, Any]:
 
     with ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr") as pool:
         futures = {
-            pool.submit(_paddle_lines, _get_paddle_engine(), preprocessed): "paddle",
+            pool.submit(_paddle_multi_variant_lines, _get_paddle_engine(), preprocessed_paths): "paddle",
             pool.submit(_easy_lines, _get_easy_engine(), preprocessed): "easy",
         }
         for fut in as_completed(futures, timeout=ENGINE_TIMEOUT + 10):
@@ -443,6 +566,7 @@ def recognize_image(path: Path) -> dict[str, Any]:
                 "paddle_lines": 0,
                 "easy_lines": 0,
                 "merged_lines": 0,
+                "preprocess_variants": len(preprocessed_paths),
             },
         }
 
@@ -492,6 +616,7 @@ def recognize_image(path: Path) -> dict[str, Any]:
             "paddle_lines": len(paddle_lines),
             "easy_lines": len(easy_lines_),
             "merged_lines": len(merged),
+            "preprocess_variants": len(preprocessed_paths),
             "avg_score": round(avg_score, 4),
             "llm_corrected": corrected_text != raw_text,
         },

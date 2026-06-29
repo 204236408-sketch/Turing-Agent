@@ -116,7 +116,68 @@ def _normalize_kp(knowledge_point: str) -> str:
     if not knowledge_point:
         return ""
     import re
-    return re.sub(r"[\(（][^)）]*[\)）]", "", knowledge_point).strip()
+    normalized = re.sub(r"[\(（][^)）]*[\)）]", "", knowledge_point).strip()
+    return normalized.replace("的", "")
+
+
+def _choice_templates_for_kp(subject: str, kp_label: str) -> list[dict]:
+    """高质量选择题兜底模板：选项必须围绕真实考点，不使用泛化元话术。"""
+    normalized = _normalize_kp(kp_label)
+    if "浮点数表示与运算" in normalized:
+        return [
+            {
+                "stem": f"【{subject} · {kp_label}】关于浮点数阶码和尾数的表示，下列说法正确的是？",
+                "options": ["A. 阶码通常采用移码表示，尾数通常采用原码表示", "B. 阶码通常采用原码表示，尾数通常采用补码表示", "C. 阶码和尾数都必须采用补码表示", "D. 阶码和尾数都必须采用移码表示"],
+                "answer": "A",
+                "hints": ["先区分阶码和尾数的功能", "再回忆移码便于阶码大小比较"],
+                "explain": "浮点数中阶码采用移码便于比较大小，尾数采用原码表示有效数值部分。",
+                "easy": "易把定点数补码运算经验套到浮点数阶码/尾数，误认为二者都用补码。",
+            },
+            {
+                "stem": f"【{subject} · {kp_label}】浮点加减运算的一般处理顺序是？",
+                "options": ["A. 尾数加减 → 对阶 → 舍入 → 规格化", "B. 对阶 → 尾数加减 → 规格化 → 舍入", "C. 规格化 → 对阶 → 尾数加减 → 舍入", "D. 舍入 → 对阶 → 规格化 → 尾数加减"],
+                "answer": "B",
+                "hints": ["先让两个操作数阶码一致", "尾数运算后再规格化并舍入"],
+                "explain": "浮点加减先对阶，小阶向大阶看齐；随后进行尾数加减，再规格化和舍入。",
+                "easy": "易跳过对阶直接做尾数加减，或把规格化放到尾数运算之前。",
+            },
+            {
+                "stem": f"【{subject} · {kp_label}】关于 IEEE754 单精度浮点数格式，下列分段正确的是？",
+                "options": ["A. 1 位符号位、8 位阶码、23 位尾数", "B. 1 位符号位、11 位阶码、52 位尾数", "C. 8 位符号位、1 位阶码、23 位尾数", "D. 1 位符号位、5 位阶码、10 位尾数"],
+                "answer": "A",
+                "hints": ["先判断是单精度还是双精度", "单精度总长 32 位"],
+                "explain": "IEEE754 单精度 float 为 32 位：符号位 1 位、阶码 8 位、尾数 23 位。",
+                "easy": "易把单精度和双精度字段长度混淆，尤其把 11 位阶码、52 位尾数错套到 float。",
+            },
+        ]
+    if "页面置换算法" in normalized or "内存管理" in normalized:
+        return [
+            {
+                "stem": f"【{subject} · {kp_label}】下列页面置换算法中，可能出现 Belady 异常的是？",
+                "options": ["A. OPT 最优置换算法", "B. FIFO 先进先出算法", "C. LRU 最近最少使用算法", "D. 改进型 Clock 算法"],
+                "answer": "B",
+                "hints": ["先回忆 Belady 异常的典型算法", "再排除栈式算法"],
+                "explain": "FIFO 可能出现 Belady 异常；OPT 与 LRU 不会出现该异常。",
+                "easy": "易把 LRU 和 FIFO 的淘汰依据混淆。",
+            },
+            {
+                "stem": f"【{subject} · {kp_label}】LRU 页面置换算法选择淘汰的页面是？",
+                "options": ["A. 最早进入内存的页面", "B. 未来最长时间不会访问的页面", "C. 最近最长时间未被访问的页面", "D. 访问次数最少的页面"],
+                "answer": "C",
+                "hints": ["LRU 的 R 是 recent", "关注最近访问时间而不是进入时间"],
+                "explain": "LRU 淘汰最近最长时间未被访问的页面；FIFO 才关注进入内存的先后顺序。",
+                "easy": "易把 LRU 与 FIFO、LFU 混淆。",
+            },
+            {
+                "stem": f"【{subject} · {kp_label}】在页面访问序列模拟题中，判断是否缺页的关键依据是？",
+                "options": ["A. 当前访问页是否已经在页框中", "B. 当前访问页是否编号最小", "C. 当前访问页是否最早进入内存", "D. 当前访问页是否属于操作系统内核页"],
+                "answer": "A",
+                "hints": ["逐项检查页框当前内容", "命中时按算法更新状态"],
+                "explain": "访问页已经在页框中则命中，否则发生缺页，再按指定算法选择淘汰页。",
+                "easy": "易在页面命中时忘记更新 LRU 的最近访问顺序。",
+            },
+        ]
+    return []
 
 
 # KP → 关键概念词。覆盖 seed 库里 KP 命名与题库实际 KP 不完全一致的情况
@@ -161,7 +222,7 @@ def _shuffle_round_robin(items: list[dict], count: int) -> list[dict]:
     n = len(items)
     # 起点用确定性偏移（基于调用次数的 hash），避免每次随机洗牌造成用户刷新看到不同题
     start = (int(time.time()) // 30) % n  # 每 30 秒切换一次起点
-    picked = [items[(start + i) % n] for i in range(count)]
+    picked = [items[(start + i) % n] for i in range(min(count, n))]
     return picked
 
 
@@ -249,8 +310,8 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
 
     # 1 & 2：从种子题库抽题（用归一化 KP）
     picked = _pick_seed_questions(subject, kp_normalized, vt, count)
-    if picked:
-        return picked
+    if picked and len(picked) >= count:
+        return picked[:count]
 
     # 3：题型通用模板（仅作兜底，标 quality_flag=deprecated 阻断其进入参考池）
     #    模板中的 KP 显示为归一化后的名字（去除 (ISA) 等括号后缀），更干净
@@ -292,7 +353,7 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
     #     否则会被下游 dedup 标记为重复,导致「3 道题一模一样」的现象
     kp_label = (kp_normalized or "该知识点").strip() or "该知识点"
     sub_label = (subject or "408 考研").strip() or "408 考研"
-    choice_templates = [
+    choice_templates = _choice_templates_for_kp(sub_label, kp_label) or [
         {
             "stem": f"【{sub_label} · {kp_label}】下列关于 {kp_label} 的核心概念，说法最准确的一项是？",
             "options": ["A. 仅考查定义背诵", "B. 兼顾概念理解与边界条件辨析", "C. 只考计算过程", "D. 只考综合应用"],
@@ -315,8 +376,10 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
             "explain": f"408 命题对 {kp_label} 的考查兼顾选择与大题，且常与相近考点联合出题，复习时需注意知识体系。",
         },
     ]
-    out: list[dict] = []
+    out: list[dict] = list(picked or [])
     for i in range(count):
+        if len(out) >= count:
+            break
         t = choice_templates[i % len(choice_templates)]
         out.append({
             "question_text": t["stem"],
@@ -441,6 +504,54 @@ def _jaccard(a: str, b: str) -> float:
     if not sa or not sb:
         return 0.0
     return len(sa & sb) / len(sa | sb)
+
+
+def _question_identity(item: dict) -> str:
+    """Stable key for exact duplicate questions, including choices when present."""
+    text = str(item.get("question_text", ""))
+    options = item.get("options") or []
+    if isinstance(options, str):
+        try:
+            options = json.loads(options)
+        except Exception:
+            options = [options]
+    if not options:
+        return ""
+    option_text = "|".join(str(opt) for opt in options)
+    return _text_signature(f"{text}|{option_text}")
+
+
+def _unique_question_items(items: list[dict]) -> list[dict]:
+    unique: list[dict] = []
+    seen: set[str] = set()
+    for item in items or []:
+        key = _question_identity(item)
+        if not key:
+            unique.append(item)
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
+
+
+def _has_generic_bad_options(options: list[Any]) -> bool:
+    """Reject meta/exam-form choices that are not real knowledge-point distractors."""
+    bad_phrases = (
+        "仅考查定义背诵",
+        "只考计算过程",
+        "只考综合应用",
+        "仅以选择题形式出现",
+        "仅以大题形式出现",
+        "不属于 408 考纲范围",
+        "不属于408考纲范围",
+        "只有 1 个固定步骤",
+        "步骤之间无任何关联",
+        "步骤顺序不可调整",
+    )
+    joined = "\n".join(str(opt) for opt in options or [])
+    return any(phrase in joined for phrase in bad_phrases)
 
 
 def analyze_user_state(state: QuestionState) -> dict:
@@ -618,15 +729,18 @@ def generate_questions_node(state: QuestionState) -> dict:
             llm = LLMResult(content="", used_llm=False, error=f"timed out after {_NODE_TIMEOUT}s", data=fallback_data)
 
     raw_questions = (llm.data or fallback_data).get("questions") or fallback_data["questions"]
-    raw_questions = raw_questions[:count]
+    raw_questions = _unique_question_items(raw_questions)
 
     # 最终兜底：如果 LLM 和 fallback 加起来都不足 count 道，用 _build_fallback 补齐（choice 类型已有通用模板）
     if len(raw_questions) < count:
         need = count - len(raw_questions)
-        supplemental = _build_fallback(vt, subject, knowledge_point, need)
-        if supplemental:
-            raw_questions = list(raw_questions) + supplemental
-            logger.info("LLM+seed 不足 %d 道，已用通用模板补足 %d 道", count, len(supplemental))
+        supplemental = _build_fallback(vt, subject, knowledge_point, count + need)
+        existing = {_question_identity(item) for item in raw_questions}
+        additions = [item for item in supplemental if _question_identity(item) not in existing]
+        if additions:
+            raw_questions = list(raw_questions) + additions[:need]
+            logger.info("LLM+seed 不足 %d 道，已用通用模板补足 %d 道", count, len(additions[:need]))
+    raw_questions = _unique_question_items(raw_questions)[:count]
 
     # 检测 LLM 主动拒答（知识库无内容时按 prompt 规则应输出 __REFUSAL__）
     refused_count = sum(1 for it in raw_questions if "__REFUSAL__" in str(it.get("question_text", "")))
@@ -929,6 +1043,9 @@ def validate_questions(state: QuestionState) -> dict:
                 if ans not in {"A", "B", "C", "D"}:
                     valid = False
                     reasons.append(f"#{idx+1} 选择题答案 {ans!r} 不在 A/B/C/D")
+                if _has_generic_bad_options(options):
+                    valid = False
+                    reasons.append(f"#{idx+1} 选择题选项过于泛化,未形成真实知识点干扰项")
         if vt in ("fill", "essay") and not item.get("standard_answer", "").strip():
             valid = False
             reasons.append(f"#{idx+1} 缺少标准答案文本")
@@ -969,7 +1086,7 @@ def _refill_questions(state: QuestionState) -> dict:
         }
 
     need = count - len(raw_questions)
-    pool = _build_fallback(vt, subject, knowledge_point, need)
+    pool = _build_fallback(vt, subject, knowledge_point, count + need)
     # 题干去重：新题和已有题不能重复
     existing_sigs = {_text_signature(str(it.get("question_text", ""))) for it in raw_questions}
     filled = 0
@@ -993,7 +1110,7 @@ def _refill_questions(state: QuestionState) -> dict:
         start,
     )
     return {
-        "raw_questions": raw_questions,
+        "raw_questions": _unique_question_items(raw_questions)[:count],
         "refilled": filled,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
@@ -1002,7 +1119,7 @@ def _refill_questions(state: QuestionState) -> dict:
 def save_questions(state: QuestionState) -> dict:
     db = _get_db()
     start = time.time()
-    raw_questions = state.get("raw_questions", [])
+    raw_questions = _unique_question_items(state.get("raw_questions", []))[:state.get("count", 3)]
     vt = state.get("variant_type", "choice")
     llm = state.get("llm_result", None)
     subject = state.get("subject", "")
@@ -1079,7 +1196,7 @@ def fallback_questions(state: QuestionState) -> dict:
     mode = state.get("mode", "")
     user_id = state.get("user_id", 0)
     vt = _to_variant_type(question_type)
-    fallback_data = _build_fallback(vt, subject, knowledge_point, count)
+    fallback_data = _unique_question_items(_build_fallback(vt, subject, knowledge_point, count))[:count]
 
     is_smart = mode != "自由选择"
     session = QuestionGenerationSession(

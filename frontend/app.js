@@ -1702,6 +1702,7 @@ function bindAll(){
     try{
       const data=await apiRequest("/api/ocr/analyze",{method:"POST",body:JSON.stringify({text,subject,knowledge_point:point,user_answer,low_confidence_lines})});
       ocrState=data;
+      notebookCache=null;
       const analysis=data.analysis||{};
       const resolvedSubject=analysis.subject||data.subject||subject;
       const resolvedPoint=analysis.knowledge_point||data.knowledge_point||point;
@@ -1714,6 +1715,7 @@ function bindAll(){
       if(tools)tools.style.display="flex";
       document.getElementById("ocrStatus").textContent="分析完成";
       setOcrStep(4);
+      loadMistakeNotebook();
       toast(data.llm_used?"错题分析已提交并写入记忆（AI 大模型）":"错题分析已提交并写入记忆（保底规则）","success");
     }catch(error){toast(error.message,"error");document.getElementById("ocrStatus").textContent="分析失败";setOcrStep(2);}
   };
@@ -1724,8 +1726,9 @@ function bindAll(){
   document.getElementById("saveOcrMistake").onclick=async()=>{
     if(!ocrState.mistake_id)return toast("请先完成 OCR 分析","error");
     setOcrStep(4);
-    toast("已返回题本列表","success");
-    setTimeout(()=>{openBookView("overview");loadMistakeNotebook()},500);
+    notebookCache=null;
+    toast("已加入不会题本","success");
+    setTimeout(()=>{openBookView("unknown")},500);
   };
   document.getElementById("generateOcrPractice").onclick=()=>{
     const subject=document.getElementById("configSubject")?.textContent||"操作系统";
@@ -2175,7 +2178,11 @@ function bindQuestionOptions(){document.querySelectorAll("#options .option").for
 function switchQuestion(direction){const next=currentQuestionIndex+direction;if(next<0||next>=activeQuestions.length)return;currentQuestionIndex=next;renderQuestion();toast(direction>0?"已切换到下一题":"已切换到上一题")}
 function renderQuestion(){const q=activeQuestions[currentQuestionIndex];if(!q||!document.getElementById("questionTitle"))return;document.getElementById("questionMeta").textContent=q.meta.replace(/第 \d+ 题/,`第 ${currentQuestionIndex+1} 题`);document.getElementById("currentQuestionNo").textContent=currentQuestionIndex+1;document.getElementById("totalQuestionNo").textContent=activeQuestions.length;document.getElementById("questionTitle").textContent=q.title;document.getElementById("options").innerHTML=q.options.map(x=>`<div class="option">${x}</div>`).join("");document.getElementById("recommendReason").textContent=q.reason;document.getElementById("hintText").textContent=q.hint;document.getElementById("answerText").textContent=q.answer;document.getElementById("prevQuestion").disabled=currentQuestionIndex===0;document.getElementById("nextQuestion").disabled=currentQuestionIndex===activeQuestions.length-1;["hint","video","answer"].forEach(id=>document.getElementById(id).classList.remove("show"));document.getElementById("wrongAction").classList.remove("show");document.getElementById("causeDetail").classList.remove("show");document.getElementById("causeSummary").classList.remove("show");document.querySelectorAll("[data-cause]").forEach(x=>x.classList.remove("chosen"));document.getElementById("causeNote").value="";document.querySelectorAll(".mastery button").forEach(x=>x.classList.remove("chosen"));bindQuestionOptions()}
 function openQuestionDrawer(id){document.getElementById("questionDrawerMask").classList.add("show");document.getElementById(id).classList.add("open")}
-function closeQuestionDrawers(){document.getElementById("questionDrawerMask").classList.remove("show");document.getElementById("manualDrawer").classList.remove("open");document.getElementById("smartDrawer").classList.remove("open")}
+function closeQuestionDrawers(){
+ const mask=document.getElementById("questionDrawerMask");
+ if(mask)mask.classList.remove("show");
+ ["manualDrawer","smartDrawer","feedbackDrawer"].forEach(id=>document.getElementById(id)?.classList.remove("open"));
+}
 function selectedValue(group){const selected=document.querySelector(`[data-choice-group="${group}"] .selected`);return selected?selected.dataset.value:""}
 
 function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report","knowledge"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent="早上好，继续向目标前进 👋";const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天 · 今日计划完成 3 / 5`}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="knowledge"&&!window.knDetailActive)loadKnowledgeNavPage();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();renderMapping(id);window.scrollTo(0,0);if(id!=="knowledge")window.knDetailActive=false;}
@@ -2426,11 +2433,7 @@ async function submitQuestionFeedback(){
    body:JSON.stringify({question_id:q.id, feedback_type:fbType, content}),
   });
   toast("✅ 反馈已提交，感谢你的帮助");
-  // 关闭抽屉
-  const drawer=document.getElementById("feedbackDrawer");
-  if(drawer)drawer.classList.remove("open");
-  const mask=document.getElementById("questionDrawerMask");
-  if(mask)mask.classList.remove("show");
+  closeQuestionDrawers();
   // 清空 textarea
   const ta=document.getElementById("feedbackContent");
   if(ta)ta.value="";

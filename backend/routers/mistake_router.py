@@ -127,26 +127,22 @@ def notebook(
     user: User = Depends(get_current_user),
 ):
     status_list = [s.strip() for s in status.split(",")]
-    base_filter = db.query(Mistake).filter(
+    all_user_mistakes = db.query(Mistake).filter(
         Mistake.user_id == user.id,
         Mistake.status == "active",
-        Mistake.mastery_status.in_(status_list),
-    )
-    # 先把符合状态的所有错题拉出来,按题干归一化去重,再分页返回,
-    # 避免同一道题在「不会题本/不熟题本」中重复出现(OCR 同图重复导入/同一题答错多次)
-    all_matching = base_filter.order_by(Mistake.create_time.desc()).all()
-    unique_mistakes = _dedup_mistakes(all_matching, db=db)
+    ).order_by(Mistake.create_time.desc()).all()
+
+    # 先按“同一道题”合并，再按最新 mastery_status 分发到题本。
+    # 同题如果最新状态是“不会”，就不会继续出现在“不熟题本”。
+    unique_all_mistakes = _dedup_mistakes(all_user_mistakes, db=db)
+    unique_mistakes = [m for m in unique_all_mistakes if m.mastery_status in status_list]
     total = len(unique_mistakes)
     start = (page - 1) * page_size
     mistakes = unique_mistakes[start:start + page_size]
 
-    all_user_mistakes = db.query(Mistake).filter(
-        Mistake.user_id == user.id,
-        Mistake.status == "active",
-    ).all()
-    total_unfamiliar = sum(1 for m in all_user_mistakes if m.mastery_status == "不熟")
-    total_unknown = sum(1 for m in all_user_mistakes if m.mastery_status == "不会")
-    total_all = len(all_user_mistakes)
+    total_unfamiliar = sum(1 for m in unique_all_mistakes if m.mastery_status == "不熟")
+    total_unknown = sum(1 for m in unique_all_mistakes if m.mastery_status == "不会")
+    total_all = len(unique_all_mistakes)
 
     q_ids = [m.question_id for m in mistakes if m.question_id]
     questions = {q.id: q for q in db.query(Question).filter(Question.id.in_(q_ids)).all()} if q_ids else {}
