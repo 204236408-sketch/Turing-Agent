@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#fafbfc" />
+<title>我的勋章 · Hall of Honors</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700;800&family=Caveat:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  /* =========================================================
+     Design tokens — modern, neutral, no warm tones
+     ========================================================= */
+  :root {
+    --bg: #fafbfc;
+    --bg-tint: #f3f5f8;
+    --paper: #ffffff;
+    --ink: #1a1d24;
+    --ink-soft: #5a6270;
+    --ink-mute: #9ca3ad;
+    --line: #e8eaed;
+    --line-strong: #d1d5db;
+    --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.04), 0 1px 3px rgba(20, 20, 30, 0.06);
+    --shadow-md: 0 4px 12px rgba(20, 20, 30, 0.06), 0 2px 4px rgba(20, 20, 30, 0.04);
+    --shadow-lg: 0 20px 50px rgba(20, 20, 30, 0.12), 0 8px 20px rgba(20, 20, 30, 0.06);
+    --accent: #ff4d6d;          /* fresh coral */
+    --accent-2: #4f7cff;        /* cool blue */
+    --ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  html { color-scheme: light; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: auto; overflow: hidden; }
+  body {
+    font-family: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink);
+    background: transparent;
+    min-height: 0;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+  h1, h2, h3 { margin: 0; font-weight: 700; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: var(--accent); color: #fff; }
+
+  /* Skip link */
+  .skip-link {
+    position: absolute; top: -40px; left: 16px; z-index: 200;
+    background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 8px;
+    font-weight: 600; transition: top 200ms var(--ease-soft);
+  }
+  .skip-link:focus { top: 16px; outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Background — subtle floating blobs (cool tones) */
+  .bg { position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(900px 700px at 100% -10%, rgba(79, 124, 255, 0.08), transparent 60%),
+      radial-gradient(800px 700px at -10% 110%, rgba(255, 77, 109, 0.06), transparent 60%),
+      linear-gradient(180deg, #fafbfc 0%, #f3f5f8 100%);
+  }
+  .floating { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .floating span {
+    position: absolute; font-family: "Caveat", cursive; color: var(--ink-mute);
+    font-size: 28px; font-weight: 500; opacity: 0.10;
+    animation: floatUp 28s linear infinite;
+  }
+  .floating span:nth-child(1) { left: 6%;  font-size: 36px; animation-delay: 0s;   animation-duration: 30s; }
+  .floating span:nth-child(2) { left: 18%; font-size: 22px; animation-delay: -5s;  animation-duration: 34s; }
+  .floating span:nth-child(3) { left: 32%; font-size: 30px; animation-delay: -10s; animation-duration: 32s; }
+  .floating span:nth-child(4) { left: 48%; font-size: 24px; animation-delay: -15s; animation-duration: 36s; }
+  .floating span:nth-child(5) { left: 62%; font-size: 32px; animation-delay: -8s;  animation-duration: 31s; }
+  .floating span:nth-child(6) { left: 76%; font-size: 22px; animation-delay: -20s; animation-duration: 35s; }
+  .floating span:nth-child(7) { left: 88%; font-size: 28px; animation-delay: -3s;  animation-duration: 33s; }
+  @keyframes floatUp {
+    0%   { transform: translateY(110vh) rotate(-8deg); opacity: 0; }
+    8%   { opacity: 0.10; }
+    92%  { opacity: 0.10; }
+    100% { transform: translateY(-120px) rotate(8deg); opacity: 0; }
+  }
+
+  /* =========================================================
+     Layout
+     ========================================================= */
+  .shell { max-width: 100%; height: 315px; margin: 0 auto; padding: 0 8px 0; overflow: hidden; }
+  .header { display: none; }
+  .header-left { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow {
+    color: var(--ink-soft); font-size: 12px; letter-spacing: 0.20em; text-transform: uppercase; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); }
+  .title {
+    font-size: clamp(34px, 4.4vw, 44px);
+    line-height: 1.1; font-weight: 800; letter-spacing: -0.02em;
+    color: var(--ink);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .title .count {
+    display: inline-flex; align-items: center;
+    padding: 6px 16px;
+    background: var(--ink); color: #fff;
+    border-radius: 999px;
+    font-size: 0.45em; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+  }
+  .subtitle { color: var(--ink-soft); font-size: 14.5px; margin-top: 4px; font-weight: 400; }
+  .subtitle .hand { font-family: "Caveat", cursive; font-size: 18px; color: var(--accent); }
+
+  /* =========================================================
+     Stats — clean cards, subtle shadow
+     ========================================================= */
+  .stats { display: none; }
+  .stat {
+    position: relative; padding: 20px 22px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+    transition: transform 200ms var(--ease-soft), box-shadow 200ms var(--ease-soft);
+  }
+  .stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .stat .label {
+    color: var(--ink-soft); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;
+  }
+  .stat .value {
+    font-size: 26px; font-weight: 700; margin-top: 8px; line-height: 1.1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  }
+  .stat .value .unit { color: var(--ink-mute); font-size: 14px; font-weight: 500; margin-left: 4px; }
+  .stat .glyph {
+    position: absolute; top: 18px; right: 18px;
+    width: 34px; height: 34px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 16px; font-weight: 700;
+    color: #fff;
+  }
+  .stat .glyph.s1 { background: linear-gradient(135deg, #ff7a8e, #ff4d6d); }
+  .stat .glyph.s2 { background: linear-gradient(135deg, #ffba5a, #ff9a3d); }
+  .stat .glyph.s3 { background: linear-gradient(135deg, #6e8aff, #4f7cff); }
+  .stat .glyph.s4 { background: linear-gradient(135deg, #b185ff, #8a5cf5); }
+
+  /* =========================================================
+     Toolbar
+     ========================================================= */
+  .toolbar { display: none; }
+  .tabs { display: inline-flex; gap: 6px; flex-wrap: wrap; padding: 5px; background: var(--bg-tint); border-radius: 999px; }
+  .tab {
+    padding: 8px 18px; color: var(--ink-soft); font-size: 13px; font-weight: 600;
+    background: transparent; border-radius: 999px;
+    transition: background 200ms var(--ease-soft), color 200ms var(--ease-soft);
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { background: var(--ink); color: #fff; }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .search { position: relative; flex: 0 1 260px; }
+  .search input {
+    width: 100%; padding: 10px 14px 10px 38px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
+    color: var(--ink); font-size: 13.5px; font-weight: 500;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 200ms var(--ease-soft), box-shadow 200ms var(--ease-soft);
+  }
+  .search input::placeholder { color: var(--ink-mute); }
+  .search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255, 77, 109, 0.12); }
+  .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--ink-mute); }
+
+  /* =========================================================
+     Grid
+     ========================================================= */
+  .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, 1fr); gap: 6px 4px; height: 315px; overflow: hidden; }
+  .card {
+    position: relative;
+    padding: 1px 3px 3px;
+    text-align: center;
+    background: transparent;
+    cursor: pointer;
+    transition: transform 360ms var(--ease-soft);
+  }
+  .card:hover { transform: translateY(-4px); }
+  .card:hover .medal-wrap { animation: hoverFloat 1.6s var(--ease-soft) infinite; }
+  .card:hover .medal-svg { animation: tilt 1.4s ease-in-out infinite; }
+  .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 12px; }
+  .card[data-locked="true"] { cursor: not-allowed; }
+  .card[data-locked="true"]:hover { transform: none; }
+  .card[data-locked="true"]:hover .medal-svg { animation: none; }
+  .card[data-locked="true"] .medal-wrap { filter: grayscale(0.95) opacity(0.40); }
+  .card[data-locked="true"] .name { color: var(--ink-mute); }
+  @keyframes tilt {
+    0%, 100% { transform: rotate(-3deg); }
+    50%      { transform: rotate(3deg); }
+  }
+  @keyframes hoverFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
+  }
+
+  /* =========================================================
+     Medal — uniform hex frame, diverse icons inside
+     ========================================================= */
+  .medal-wrap {
+    position: relative; width: 76px; height: 88px; margin: 0 auto 1px;
+    filter: drop-shadow(0 8px 16px rgba(20, 20, 30, 0.08));
+  }
+  .medal-svg { width: 100%; height: 100%; display: block; }
+
+  .name {
+    font-size: 11px; font-weight: 700; color: var(--ink);
+    letter-spacing: 0.01em;
+  }
+  .date {
+    color: var(--ink-soft); font-size: 8px; margin-top: 1px;
+    font-variant-numeric: tabular-nums; font-weight: 500;
+  }
+  .progress-row { margin-top: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 100%; }
+  .progress-text { font-size: 9px; color: var(--ink-soft); font-weight: 600; font-variant-numeric: tabular-nums; text-align:center; width:100%; }
+  .progress-text .cur { color: var(--ink); font-weight: 700; }
+  .progress-text .slash { color: var(--ink-mute); margin: 0 3px; }
+  .medal-rule { width: 100%; max-width: 100px; margin: 1px auto 0; color: var(--ink-soft); font-size: 8px; line-height: 1.18; min-height: 20px; }
+
+  /* Empty state */
+  .empty { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--ink-mute); text-align: center; }
+  .empty[data-show="true"] { display: flex; }
+
+  /* =========================================================
+     Modal
+     ========================================================= */
+  .modal-root { position: fixed; inset: 0; z-index: 50; display: none; touch-action: manipulation; }
+  .modal-root[data-open="true"] { display: block; }
+  .scrim {
+    position: absolute; inset: 0;
+    background: rgba(20, 20, 30, 0.45);
+    backdrop-filter: blur(8px);
+    opacity: 0; transition: opacity 320ms var(--ease-soft);
+  }
+  .modal-root[data-open="true"] .scrim { opacity: 1; }
+  .modal {
+    position: absolute; left: 50%; top: 50%;
+    width: min(540px, calc(100vw - 32px));
+    max-height: calc(100vh - 64px); overflow: hidden;
+    background: var(--paper);
+    border-radius: 24px;
+    padding: 34px 34px 26px;
+    box-shadow: var(--shadow-lg);
+    transform: translate(-50%, -50%) scale(0.94);
+    opacity: 0;
+    transition: transform 480ms var(--ease), opacity 320ms var(--ease-soft);
+    overscroll-behavior: contain;
+  }
+  .modal-root[data-open="true"] .modal { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+
+  .medal-stage { position: relative; width: 170px; height: 196px; margin: 10px auto 14px; filter: drop-shadow(0 12px 24px rgba(20, 20, 30, 0.10)); }
+  .medal-stage .medal-svg {
+    animation: medalEnter 800ms var(--ease) 120ms backwards, medalFloat 5s var(--ease-soft) 1.1s infinite;
+  }
+  @keyframes medalEnter {
+    0%   { transform: scale(0.7) translateY(14px) rotate(-6deg); opacity: 0; }
+    100% { transform: scale(1)   translateY(0)    rotate(0);    opacity: 1; }
+  }
+  @keyframes medalFloat {
+    0%, 100% { transform: translateY(0)    rotate(0); }
+    50%      { transform: translateY(-6px) rotate(-1.5deg); }
+  }
+
+  .m-meta {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; font-weight: 700;
+    opacity: 0; animation: rise 600ms var(--ease-soft) 380ms forwards;
+  }
+  .m-title {
+    text-align: center;
+    font-size: 28px; font-weight: 800;
+    margin-top: 6px;
+    color: var(--ink); letter-spacing: -0.01em;
+    opacity: 0; transform: translateY(8px);
+    animation: rise 600ms var(--ease-soft) 480ms forwards;
+  }
+  .m-title .trophy { font-size: 1em; line-height: 1; vertical-align: baseline; margin-left: 4px; }
+  .m-divider {
+    width: 40px; height: 3px; background: var(--accent);
+    margin: 14px auto 14px;
+    border-radius: 999px;
+    opacity: 0; animation: rise 600ms var(--ease-soft) 580ms forwards;
+  }
+  .m-desc {
+    text-align: center; color: var(--ink-soft);
+    line-height: 1.7;
+    font-size: 14px;
+    max-width: 420px; margin: 0 auto;
+    opacity: 0; transform: translateY(8px);
+    animation: rise 600ms var(--ease-soft) 680ms forwards;
+  }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+  .m-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin: 22px 0 4px;
+  }
+  .m-stat {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 8px; text-align: center;
+    opacity: 0; transform: translateY(8px);
+    animation: rise 600ms var(--ease-soft) forwards;
+  }
+  .m-stat:nth-child(1) { animation-delay: 800ms; }
+  .m-stat:nth-child(2) { animation-delay: 880ms; }
+  .m-stat:nth-child(3) { animation-delay: 960ms; }
+  .m-stat .k { color: var(--ink-mute); font-size: 10px; letter-spacing: 0.20em; text-transform: uppercase; font-weight: 700; }
+  .m-stat .v { font-size: 20px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  .criteria { margin-top: 24px; }
+  .criteria h3 {
+    font-size: 11px; color: var(--ink-soft);
+    margin-bottom: 12px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+  }
+  .criteria ul { padding: 0; margin: 0; list-style: none; }
+  .criteria li {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-size: 14px;
+    color: var(--ink-soft); line-height: 1.55;
+    opacity: 0; transform: translateY(6px);
+    animation: rise 500ms var(--ease-soft) forwards;
+  }
+  .criteria li:nth-child(1) { animation-delay: 1040ms; }
+  .criteria li:nth-child(2) { animation-delay: 1140ms; }
+  .criteria li:nth-child(3) { animation-delay: 1240ms; }
+  .criteria li:nth-child(4) { animation-delay: 1340ms; }
+  .criteria li:nth-child(5) { animation-delay: 1440ms; }
+  .criteria li .num {
+    flex: none;
+    width: 22px; height: 22px; border-radius: 7px;
+    background: var(--ink); color: #fff;
+    display: grid; place-items: center;
+    font-size: 11px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .criteria li.done { background: #eaf6ec; border-color: #b8e0bf; }
+  .criteria li.done .num { background: #2d8a3d; }
+
+  .actions { display: flex; gap: 10px; margin-top: 24px; opacity: 0; animation: rise 600ms var(--ease-soft) 1560ms forwards; }
+  .btn {
+    flex: 1; padding: 12px 18px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+    font-size: 13.5px; font-weight: 600;
+    transition: background 200ms var(--ease-soft), border-color 200ms var(--ease-soft);
+  }
+  .btn:hover  { background: var(--bg-tint); border-color: var(--line-strong); }
+  .btn:active { transform: scale(0.98); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn-primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn-primary:hover { background: #2a2d35; border-color: #2a2d35; }
+
+  .close {
+    position: absolute; top: 16px; right: 16px;
+    width: 36px; height: 36px; border-radius: 12px;
+    background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line);
+    display: grid; place-items: center;
+    transition: background 200ms var(--ease-soft), color 200ms var(--ease-soft), transform 200ms var(--ease-soft);
+  }
+  .close:hover  { background: var(--bg-tint); color: var(--ink); transform: rotate(90deg); }
+  .close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%) translateY(8px);
+    background: var(--ink); color: #fff; padding: 11px 22px;
+    border-radius: 12px;
+    font-size: 13px; font-weight: 500; z-index: 200;
+    box-shadow: var(--shadow-lg);
+    opacity: 0; transition: opacity 240ms var(--ease-soft), transform 240ms var(--ease-soft);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  @media (max-width: 1080px) { .grid { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, 1fr); gap: 6px 4px; } }
+  @media (max-width: 880px)  { .grid { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, 1fr); gap: 6px 4px; } .stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px)  {
+    .grid { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, 1fr); gap: 6px 4px; }
+    .toolbar { flex-direction: column; align-items: stretch; }
+    .search { flex: 1 1 auto; }
+    .shell { padding: 0 8px; height: 315px; }
+    .header { flex-direction: column; align-items: flex-start; }
+    .modal { padding: 32px 22px 22px; }
+    .m-title { font-size: 24px; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="floating" aria-hidden="true">
+    <span>✦</span><span>✿</span><span>★</span><span>✿</span><span>✦</span><span>★</span><span>✿</span>
+  </div>
+
+  <main class="shell" id="main">
+    <header class="header">
+      <div class="header-left">
+        <span class="eyebrow">Hall of Honors</span>
+        <h1 class="title">我的勋章<span class="count" id="ownedCount">7 / 10</span></h1>
+        <p class="subtitle">记录每一次小小的坚持,让努力变成看得见的勋章 <span class="hand">✿</span></p>
+      </div>
+    </header>
+
+    <section class="stats" aria-label="勋章概览">
+      <div class="stat">
+        <div class="glyph s1" aria-hidden="true">🏅</div>
+        <div class="label">Earned</div>
+        <div class="value" id="stat-owned">7<span class="unit">/ 10</span></div>
+      </div>
+      <div class="stat">
+        <div class="glyph s2" aria-hidden="true">★</div>
+        <div class="label">Total Points</div>
+        <div class="value" id="stat-points">880</div>
+      </div>
+      <div class="stat">
+        <div class="glyph s3" aria-hidden="true">✦</div>
+        <div class="label">Top Honor</div>
+        <div class="value" id="stat-rank" style="font-size:18px">知识探索者</div>
+      </div>
+      <div class="stat">
+        <div class="glyph s4" aria-hidden="true">↗</div>
+        <div class="label">Next Goal</div>
+        <div class="value" id="stat-next" style="font-size:18px">图灵之光</div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div class="tabs" role="tablist" aria-label="勋章分类">
+        <button class="tab" role="tab" aria-selected="true"  data-filter="all">全部</button>
+        <button class="tab" role="tab" aria-selected="false" data-filter="learning">学习成就</button>
+        <button class="tab" role="tab" aria-selected="false" data-filter="rank">段位勋章</button>
+        <button class="tab" role="tab" aria-selected="false" data-filter="locked">未解锁</button>
+      </div>
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="search" placeholder="Search…" aria-label="搜索勋章" autocomplete="off" />
+      </label>
+    </div>
+
+    <section class="grid" id="grid" aria-label="勋章列表"></section>
+
+    <div class="empty" id="empty" aria-live="polite">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9h.01M15 9h.01M8.5 15.5c1-.8 2.2-1.2 3.5-1.2s2.5.4 3.5 1.2"/></svg>
+      <p style="margin-top:10px">没有匹配的勋章</p>
+    </div>
+  </main>
+
+  <div class="modal-root" id="modal-root" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <div class="scrim" data-close></div>
+    <div class="modal" role="document" id="modal">
+      <button class="close" data-close aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="m-meta" id="m-meta">— HONOR —</div>
+      <h2 class="m-title" id="m-title">勋章</h2>
+      <div class="medal-stage" id="medalStage">
+        <div id="medalContainer"></div>
+      </div>
+      <p class="m-desc" id="m-desc"></p>
+
+      <div class="m-stats" hidden>
+        <div class="m-stat"><div class="k">Points</div><div class="v" id="m-points">—</div></div>
+        <div class="m-stat"><div class="k">Rarity</div><div class="v" id="m-rarity">—</div></div>
+        <div class="m-stat"><div class="k">Status</div><div class="v" id="m-status">—</div></div>
+      </div>
+
+      <div class="criteria" hidden>
+        <h3>解锁条件</h3>
+        <ul id="m-criteria"></ul>
+      </div>
+
+      <div class="actions" hidden>
+        <button class="btn" data-close>关闭</button>
+        <button class="btn btn-primary" id="m-share">分享勋章 ✨</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    /* =========================================================
+       Hand-drawn rough filter (subtle)
+       ========================================================= */
+    const ROUGH = `<defs>
+      <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="3"/>
+        <feDisplacementMap in="SourceGraphic" scale="1.4"/>
+      </filter>
+      <filter id="roughIcon" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="5"/>
+        <feDisplacementMap in="SourceGraphic" scale="0.8"/>
+      </filter>
+    </defs>`;
+
+    /* =========================================================
+       Hex frame — UNIFORM for all medals, hand-drawn, decorated
+       ========================================================= */
+    function hexFrame() {
+      return `<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hexFill" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"  stop-color="#ffffff"/>
+            <stop offset="100%" stop-color="#f5f6f9"/>
+          </linearGradient>
+          <linearGradient id="hexHi" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.85"/>
+            <stop offset="45%" stop-color="#ffffff" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#000000" stop-opacity="0.04"/>
+          </linearGradient>
+          <pattern id="hexDots" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+            <circle cx="3" cy="3" r="0.4" fill="#c8ccd2"/>
+          </pattern>
+        </defs>
+        <!-- ribbon tails (decorative) -->
+        <path d="M40 102 L38 116 L48 110 L50 113 L52 110 L62 116 L60 102 Z"
+              fill="#ffffff" stroke="#a8aeb6" stroke-width="1.4" stroke-linejoin="round" filter="url(#rough)"/>
+        <path d="M44 108 L42 114 L48 111" fill="none" stroke="#a8aeb6" stroke-width="0.8" opacity="0.6"/>
+        <path d="M56 108 L58 114 L52 111" fill="none" stroke="#a8aeb6" stroke-width="0.8" opacity="0.6"/>
+        <!-- main hex body with hand-drawn wobble -->
+        <path d="M50 6 L94 30 L94 90 L50 114 L6 90 L6 30 Z"
+              fill="url(#hexFill)" stroke="#a8aeb6" stroke-width="1.8" stroke-linejoin="round" filter="url(#rough)"/>
+        <!-- subtle dot pattern -->
+        <path d="M50 6 L94 30 L94 90 L50 114 L6 90 L6 30 Z"
+              fill="url(#hexDots)" stroke="none" opacity="0.55"/>
+        <!-- inner highlight overlay -->
+        <path d="M50 6 L94 30 L94 90 L50 114 L6 90 L6 30 Z"
+              fill="url(#hexHi)" stroke="none"/>
+        <!-- inner dashed frame -->
+        <path d="M50 18 L82 36 L82 84 L50 102 L18 84 L18 36 Z"
+              fill="none" stroke="#c8ccd2" stroke-width="0.9" stroke-dasharray="2.5 2.5" opacity="0.75"/>
+        <!-- corner ornaments (hand-drawn marks) -->
+        <path d="M20 30 L24 32" stroke="#a8aeb6" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+        <path d="M80 30 L76 32" stroke="#a8aeb6" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+        <path d="M20 90 L24 88" stroke="#a8aeb6" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+        <path d="M80 90 L76 88" stroke="#a8aeb6" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+        <!-- mid-side decorative dots -->
+        <circle cx="12" cy="60" r="1.2" fill="#a8aeb6" opacity="0.65"/>
+        <circle cx="88" cy="60" r="1.2" fill="#a8aeb6" opacity="0.65"/>
+        <circle cx="26" cy="40" r="1"   fill="#a8aeb6" opacity="0.55"/>
+        <circle cx="74" cy="40" r="1"   fill="#a8aeb6" opacity="0.55"/>
+        <circle cx="26" cy="80" r="1"   fill="#a8aeb6" opacity="0.55"/>
+        <circle cx="74" cy="80" r="1"   fill="#a8aeb6" opacity="0.55"/>
+        <!-- top hanging hole with ring -->
+        <circle cx="50" cy="15" r="3" fill="none" stroke="#a8aeb6" stroke-width="1.2"/>
+        <circle cx="50" cy="15" r="1.4" fill="#a8aeb6" opacity="0.4"/>
+        <!-- tiny top flourish -->
+        <path d="M44 9 L46 11 M56 9 L54 11" stroke="#a8aeb6" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+      </svg>`;
+    }
+
+    /* =========================================================
+       Icon library — diverse vibrant colors, cute hand-drawn
+       Each icon: (c1 main, c2 accent, c3 dark, c4 light)
+       ========================================================= */
+
+    // 1. 连续学习者 — red/orange flame with embers & smoke
+    function iconFlame() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- yellow glow behind -->
+        <circle cx="0" cy="2" r="26" fill="#ffe082" opacity="0.45"/>
+        <!-- smoke wisps above -->
+        <path d="M-6 -28 Q -2 -32, 0 -28" fill="none" stroke="#9ca3ad" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/>
+        <path d="M4 -32 Q 8 -36, 4 -40" fill="none" stroke="#9ca3ad" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+        <!-- floating embers around -->
+        <circle cx="-22" cy="-12" r="1.4" fill="#ff6b3d" stroke="#c93838" stroke-width="0.5"/>
+        <circle cx="22"  cy="-18" r="1.2" fill="#ffb300" stroke="#c08a1f" stroke-width="0.5"/>
+        <circle cx="-20" cy="20"  r="1.2" fill="#ff6b3d" stroke="#c93838" stroke-width="0.5"/>
+        <circle cx="24"  cy="14"  r="1.4" fill="#ffb300" stroke="#c08a1f" stroke-width="0.5"/>
+        <circle cx="0"   cy="-30" r="1"   fill="#ff4d4d" stroke="#c93838" stroke-width="0.4"/>
+        <!-- outer flame -->
+        <path d="M0 -22 C 12 -12, 22 -2, 22 10 C 22 22, 12 30, 0 30 C -12 30, -22 22, -22 10 C -22 2, -16 -4, -10 -10 C -6 -8, -2 -8, 0 -12 C 0 -16, -4 -18, 0 -22 Z"
+              fill="#ff4d4d" stroke="#c93838" stroke-width="2" stroke-linejoin="round"/>
+        <!-- inner flame -->
+        <path d="M0 -8 C 6 -2, 10 4, 10 12 C 10 18, 6 22, 0 22 C -6 22, -10 18, -10 12 C -10 4, -4 -2, 0 -8 Z"
+              fill="#ffb84d" opacity="0.9"/>
+        <!-- inner glow -->
+        <ellipse cx="0" cy="14" rx="3" ry="5" fill="#ffe082" opacity="0.85"/>
+        <!-- face -->
+        <circle cx="-4" cy="12" r="1.6" fill="#3a1a1a"/>
+        <circle cx="4"  cy="12" r="1.6" fill="#3a1a1a"/>
+        <circle cx="-3.5" cy="11.5" r="0.5" fill="#fff"/>
+        <circle cx="4.5"  cy="11.5" r="0.5" fill="#fff"/>
+        <path d="M-3 16 Q 0 19, 3 16" fill="none" stroke="#3a1a1a" stroke-width="1.4" stroke-linecap="round"/>
+        <!-- sparkles -->
+        <path d="M-18 -22 L-17 -24 L-15 -25 L-17 -26 L-18 -28 L-19 -26 L-21 -25 L-19 -24 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+        <path d="M20 -22 L21 -24 L23 -25 L21 -26 L20 -28 L19 -26 L17 -25 L19 -24 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 2. 错题终结者 — target with 2 arrows & burst
+    function iconTarget() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- burst lines around -->
+        <line x1="-30" y1="-20" x2="-26" y2="-16" stroke="#ff4d4d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="30"  y1="-20" x2="26"  y2="-16" stroke="#ff4d4d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="-30" y1="0"   x2="-26" y2="0"   stroke="#ff4d4d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="30"  y1="0"   x2="26"  y2="0"   stroke="#ff4d4d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="0"   y1="-30" x2="0"   y2="-26" stroke="#ff4d4d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="-18" y1="-30" x2="-15" y2="-26" stroke="#ff4d4d" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="18"  y1="-30" x2="15"  y2="-26" stroke="#ff4d4d" stroke-width="1.2" stroke-linecap="round"/>
+        <!-- target rings -->
+        <circle r="22" fill="#ffffff" stroke="#c93838" stroke-width="2"/>
+        <circle r="16" fill="#ff8585" stroke="#c93838" stroke-width="1.4"/>
+        <circle r="10" fill="#ffffff" stroke="#c93838" stroke-width="1.6"/>
+        <circle r="4"  fill="#ff4d4d" stroke="#c93838" stroke-width="1.4"/>
+        <!-- two arrows stuck in target -->
+        <line x1="-22" y1="-22" x2="-3" y2="-3" stroke="#3a1a1a" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M-26 -22 L-14 -22 L-22 -14 Z" fill="#3a1a1a" stroke="#3a1a1a" stroke-width="1" stroke-linejoin="round"/>
+        <line x1="18" y1="14" x2="3" y2="-1" stroke="#3a1a1a" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M14 18 L22 10 L22 18 Z" fill="#3a1a1a" stroke="#3a1a1a" stroke-width="1" stroke-linejoin="round"/>
+        <!-- check in center -->
+        <path d="M-2 0 L-0.5 2 L2.5 -2" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- sparkles -->
+        <path d="M-26 -28 L-25 -30 L-23 -31 L-25 -32 L-26 -34 L-27 -32 L-29 -31 L-27 -30 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+        <path d="M26 24 L27 22 L29 21 L27 20 L26 18 L25 20 L23 21 L25 22 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 3. 知识探索者 — open book with vines, leaves, star, bookmark
+    function iconBook() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- star above -->
+        <path d="M0 -32 L2 -26 L8 -26 L3 -22.5 L5 -16.5 L0 -20 L-5 -16.5 L-3 -22.5 L-8 -26 L-2 -26 Z"
+              fill="#ffc94d" stroke="#c08a1f" stroke-width="1.4" stroke-linejoin="round"/>
+        <!-- vines on sides -->
+        <path d="M-30 10 Q -32 -2, -26 -10 Q -22 -14, -24 -20" fill="none" stroke="#2a7a36" stroke-width="1.4" stroke-linecap="round"/>
+        <ellipse cx="-28" cy="-6"  rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(-30 -28 -6)"/>
+        <ellipse cx="-26" cy="-14" rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(-45 -26 -14)"/>
+        <path d="M30 10 Q 32 -2, 26 -10 Q 22 -14, 24 -20" fill="none" stroke="#2a7a36" stroke-width="1.4" stroke-linecap="round"/>
+        <ellipse cx="28" cy="-6"  rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(30 28 -6)"/>
+        <ellipse cx="26" cy="-14" rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(45 26 -14)"/>
+        <!-- open book -->
+        <path d="M-22 -8 C -16 -12, -8 -12, -2 -8 L-2 18 C -8 14, -16 14, -22 18 Z"
+              fill="#5cc472" stroke="#2a7a36" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M22 -8 C 16 -12, 8 -12, 2 -8 L2 18 C 8 14, 16 14, 22 18 Z"
+              fill="#5cc472" stroke="#2a7a36" stroke-width="2" stroke-linejoin="round"/>
+        <line x1="0" y1="-8" x2="0" y2="18" stroke="#2a7a36" stroke-width="1.6"/>
+        <!-- page lines -->
+        <line x1="-16" y1="0"  x2="-7"  y2="-1" stroke="#2a7a36" stroke-width="1" opacity="0.75"/>
+        <line x1="-16" y1="5"  x2="-7"  y2="4"  stroke="#2a7a36" stroke-width="1" opacity="0.75"/>
+        <line x1="-16" y1="10" x2="-9"  y2="9"  stroke="#2a7a36" stroke-width="1" opacity="0.75"/>
+        <line x1="7"   y1="-1" x2="16"  y2="0"  stroke="#2a7a36" stroke-width="1" opacity="0.75"/>
+        <line x1="7"   y1="4"  x2="16"  y2="5"  stroke="#2a7a36" stroke-width="1" opacity="0.75"/>
+        <line x1="9"   y1="9"  x2="16"  y2="10" stroke="#2a7a36" stroke-width="1" opacity="0.75"/>
+        <!-- bookmark ribbon -->
+        <path d="M-12 -8 L-12 4 L-9 1 L-6 4 L-6 -8 Z" fill="#ff4d4d" stroke="#c93838" stroke-width="1" stroke-linejoin="round"/>
+        <!-- sparkles -->
+        <path d="M-26 -22 L-25 -24 L-23 -25 L-25 -26 L-26 -28 L-27 -26 L-29 -25 L-27 -24 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+        <path d="M26 -22 L27 -24 L29 -25 L27 -26 L26 -28 L25 -26 L23 -25 L25 -24 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 4. AI提问官 — detailed purple robot with circuits & sparks
+    function iconRobot() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- antenna with glow ball -->
+        <line x1="0" y1="-30" x2="0" y2="-22" stroke="#6a4ac9" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="0" cy="-32" r="3.2" fill="#c4a8ff" stroke="#6a4ac9" stroke-width="1.4"/>
+        <circle cx="0" cy="-32" r="1.4" fill="#ffffff"/>
+        <!-- data waves around antenna -->
+        <path d="M-5 -34 Q -8 -32, -5 -30" fill="none" stroke="#a87bff" stroke-width="1" stroke-linecap="round" opacity="0.7"/>
+        <path d="M5 -34 Q 8 -32, 5 -30" fill="none" stroke="#a87bff" stroke-width="1" stroke-linecap="round" opacity="0.7"/>
+        <!-- head -->
+        <rect x="-18" y="-22" width="36" height="26" rx="5" fill="#a87bff" stroke="#6a4ac9" stroke-width="2"/>
+        <rect x="-16" y="-20" width="32" height="4" rx="2" fill="#c4a8ff" opacity="0.6"/>
+        <!-- head screen inset -->
+        <rect x="-15" y="-15" width="30" height="18" rx="3" fill="#7c4dff" stroke="#4a2a8a" stroke-width="1"/>
+        <!-- body -->
+        <rect x="-13" y="4" width="26" height="14" rx="2" fill="#7c4dff" stroke="#4a2a8a" stroke-width="1.6"/>
+        <!-- circuit pattern on body -->
+        <line x1="-10" y1="8" x2="-6" y2="8" stroke="#4a2a8a" stroke-width="0.8" opacity="0.7"/>
+        <line x1="-6" y1="8" x2="-6" y2="11" stroke="#4a2a8a" stroke-width="0.8" opacity="0.7"/>
+        <line x1="2" y1="8" x2="6" y2="8" stroke="#4a2a8a" stroke-width="0.8" opacity="0.7"/>
+        <line x1="6" y1="8" x2="6" y2="11" stroke="#4a2a8a" stroke-width="0.8" opacity="0.7"/>
+        <!-- arms -->
+        <line x1="-18" y1="0" x2="-23" y2="-2" stroke="#6a4ac9" stroke-width="2" stroke-linecap="round"/>
+        <line x1="18"  y1="0" x2="23"  y2="-2" stroke="#6a4ac9" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="-23" cy="-2" r="2.2" fill="#6a4ac9"/>
+        <circle cx="23"  cy="-2" r="2.2" fill="#6a4ac9"/>
+        <!-- face: glowing eyes -->
+        <circle cx="-7" cy="-10" r="3" fill="#ffffff"/>
+        <circle cx="7"  cy="-10" r="3" fill="#ffffff"/>
+        <circle cx="-7" cy="-10" r="1.6" fill="#3a1a5a"/>
+        <circle cx="7"  cy="-10" r="1.6" fill="#3a1a5a"/>
+        <circle cx="-6.5" cy="-10.5" r="0.5" fill="#ffffff"/>
+        <circle cx="7.5"  cy="-10.5" r="0.5" fill="#ffffff"/>
+        <!-- smile -->
+        <path d="M-3 -3 Q 0 0, 3 -3" fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round"/>
+        <!-- body lights -->
+        <circle cx="-6" cy="11" r="1.5" fill="#ffc94d" stroke="#4a2a8a" stroke-width="0.6"/>
+        <circle cx="0"  cy="11" r="1.5" fill="#ff80ab" stroke="#4a2a8a" stroke-width="0.6"/>
+        <circle cx="6"  cy="11" r="1.5" fill="#4fc3f7" stroke="#4a2a8a" stroke-width="0.6"/>
+        <!-- sparkles -->
+        <path d="M-26 -4 L-25 -6 L-23 -7 L-25 -8 L-26 -10 L-27 -8 L-29 -7 L-27 -6 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+        <path d="M26 4 L27 2 L29 1 L27 0 L26 -2 L25 0 L23 1 L25 2 Z" fill="#ff80ab" stroke="#c93838" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 5. 笔记达人 — yellow notebook with pencil, heart, star, doodles
+    function iconNoter() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- star above heart -->
+        <path d="M0 -36 L1.5 -32 L5.5 -32 L2.5 -29.5 L3.5 -25.5 L0 -28 L-3.5 -25.5 L-2.5 -29.5 L-5.5 -32 L-1.5 -32 Z"
+              fill="#ffc94d" stroke="#c08a1f" stroke-width="1" stroke-linejoin="round"/>
+        <!-- notebook -->
+        <rect x="-16" y="-18" width="30" height="36" rx="2" fill="#ffc94d" stroke="#c08a1f" stroke-width="2"/>
+        <!-- spiral binding -->
+        <line x1="-16" y1="-12" x2="-10" y2="-12" stroke="#c08a1f" stroke-width="1.6"/>
+        <line x1="-16" y1="-6"  x2="-10" y2="-6"  stroke="#c08a1f" stroke-width="1.6"/>
+        <line x1="-16" y1="0"   x2="-10" y2="0"   stroke="#c08a1f" stroke-width="1.6"/>
+        <line x1="-16" y1="6"   x2="-10" y2="6"   stroke="#c08a1f" stroke-width="1.6"/>
+        <line x1="-16" y1="12"  x2="-10" y2="12"  stroke="#c08a1f" stroke-width="1.6"/>
+        <!-- page lines -->
+        <line x1="-6" y1="-4" x2="10" y2="-4" stroke="#3a2a08" stroke-width="1" opacity="0.6"/>
+        <line x1="-6" y1="2"  x2="10" y2="2"  stroke="#3a2a08" stroke-width="1" opacity="0.6"/>
+        <line x1="-6" y1="8"  x2="6"  y2="8"  stroke="#3a2a08" stroke-width="1" opacity="0.6"/>
+        <!-- highlighter mark -->
+        <rect x="-4" y="6" width="10" height="2" fill="#ffe082" opacity="0.85"/>
+        <!-- heart on top -->
+        <path d="M-6 -24 C -8 -27, -12 -26, -12 -23 C -12 -21, -8 -18, -6 -16 C -4 -18, 0 -21, 0 -23 C 0 -26, -4 -27, -6 -24 Z"
+              fill="#ff4d6d" stroke="#c93838" stroke-width="1.4" stroke-linejoin="round"/>
+        <!-- pencil -->
+        <g transform="translate(14 -2) rotate(35)">
+          <rect x="-3" y="-2" width="22" height="4" fill="#ff80ab" stroke="#c93838" stroke-width="1.4"/>
+          <path d="M19 -2 L24 0 L19 2 Z" fill="#ffffff" stroke="#3a1a1a" stroke-width="1.2" stroke-linejoin="round"/>
+          <path d="M22 -1 L24 0 L22 1 Z" fill="#3a1a1a"/>
+          <rect x="-7" y="-2" width="4" height="4" fill="#3a1a1a"/>
+        </g>
+        <!-- sparkles -->
+        <path d="M-22 -22 L-21 -24 L-19 -25 L-21 -26 L-22 -28 L-23 -26 L-25 -25 L-23 -24 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.5"/>
+        <path d="M24 -8 L25 -10 L27 -11 L25 -12 L24 -14 L23 -12 L21 -11 L23 -10 Z" fill="#ff80ab" stroke="#c93838" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 6. 青铜 — ornate shield with banner, laurel, star
+    function iconBronze() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- laurel branches -->
+        <path d="M-22 0 Q -28 -4, -28 -12" fill="none" stroke="#2a7a36" stroke-width="1.4" stroke-linecap="round"/>
+        <ellipse cx="-26" cy="-4"  rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(-30 -26 -4)"/>
+        <ellipse cx="-28" cy="-10" rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(-45 -28 -10)"/>
+        <path d="M22 0 Q 28 -4, 28 -12" fill="none" stroke="#2a7a36" stroke-width="1.4" stroke-linecap="round"/>
+        <ellipse cx="26" cy="-4"  rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(30 26 -4)"/>
+        <ellipse cx="28" cy="-10" rx="2" ry="3" fill="#3fb950" stroke="#2a7a36" stroke-width="0.8" transform="rotate(45 28 -10)"/>
+        <!-- star above -->
+        <path d="M0 -32 L1.5 -27 L7 -27 L2.5 -23.5 L4 -18.5 L0 -22 L-4 -18.5 L-2.5 -23.5 L-7 -27 L-1.5 -27 Z"
+              fill="#ffc94d" stroke="#8b4513" stroke-width="1.2" stroke-linejoin="round"/>
+        <!-- shield -->
+        <path d="M-18 -20 L18 -20 L18 4 C 18 14, 8 22, 0 26 C -8 22, -18 14, -18 4 Z"
+              fill="#cd7f32" stroke="#8b4513" stroke-width="2" stroke-linejoin="round"/>
+        <!-- shield inner border -->
+        <path d="M-14 -16 L14 -16 L14 2 C 14 10, 6 16, 0 20 C -6 16, -14 10, -14 2 Z"
+              fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity="0.55"/>
+        <!-- banner across top -->
+        <path d="M-16 -22 L16 -22 L14 -16 L-14 -16 Z" fill="#8b4513" stroke="#5a2a08" stroke-width="1" stroke-linejoin="round"/>
+        <!-- roman numeral III -->
+        <text x="0" y="7" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="18" fill="#ffffff" letter-spacing="2">III</text>
+        <!-- highlight on shield -->
+        <path d="M-10 -14 Q -6 -16, -2 -14" fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
+      </g>`;
+    }
+
+    // 7. 白银 — shield with double wings, stars
+    function iconSilver() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- big wings with feather lines -->
+        <path d="M-18 -12 C -28 -10, -34 -2, -30 8 C -26 2, -22 -4, -18 -6 Z"
+              fill="#b8c5d6" stroke="#6a7a8c" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M-20 -6 C -26 -4, -28 0, -26 6" fill="none" stroke="#6a7a8c" stroke-width="0.9" opacity="0.7"/>
+        <path d="M-22 -2 C -26 0, -26 4, -24 8" fill="none" stroke="#6a7a8c" stroke-width="0.9" opacity="0.7"/>
+        <path d="M-24 2 C -27 4, -27 6, -26 9" fill="none" stroke="#6a7a8c" stroke-width="0.9" opacity="0.7"/>
+        <path d="M18 -12 C 28 -10, 34 -2, 30 8 C 26 2, 22 -4, 18 -6 Z"
+              fill="#b8c5d6" stroke="#6a7a8c" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M20 -6 C 26 -4, 28 0, 26 6" fill="none" stroke="#6a7a8c" stroke-width="0.9" opacity="0.7"/>
+        <path d="M22 -2 C 26 0, 26 4, 24 8" fill="none" stroke="#6a7a8c" stroke-width="0.9" opacity="0.7"/>
+        <path d="M24 2 C 27 4, 27 6, 26 9" fill="none" stroke="#6a7a8c" stroke-width="0.9" opacity="0.7"/>
+        <!-- star above -->
+        <path d="M0 -30 L1.5 -25 L7 -25 L2.5 -21.5 L4 -16.5 L0 -20 L-4 -16.5 L-2.5 -21.5 L-7 -25 L-1.5 -25 Z"
+              fill="#ffffff" stroke="#6a7a8c" stroke-width="1.2" stroke-linejoin="round"/>
+        <!-- shield -->
+        <path d="M-16 -18 L16 -18 L16 4 C 16 12, 8 20, 0 24 C -8 20, -16 12, -16 4 Z"
+              fill="#d4dce8" stroke="#6a7a8c" stroke-width="2" stroke-linejoin="round"/>
+        <!-- shield inner border -->
+        <path d="M-12 -14 L12 -14 L12 2 C 12 10, 6 14, 0 18 C -6 14, -12 10, -12 2 Z"
+              fill="none" stroke="#6a7a8c" stroke-width="0.9" stroke-dasharray="2 2" opacity="0.6"/>
+        <!-- roman numeral II -->
+        <text x="0" y="7" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="20" fill="#3a4554" letter-spacing="3">II</text>
+        <!-- sparkles -->
+        <path d="M-30 -22 L-29 -24 L-27 -25 L-29 -26 L-30 -28 L-31 -26 L-33 -25 L-31 -24 Z" fill="#4f7cff" stroke="#2090e0" stroke-width="0.5"/>
+        <path d="M30 -22 L31 -24 L33 -25 L31 -26 L30 -28 L29 -26 L27 -25 L29 -24 Z" fill="#4f7cff" stroke="#2090e0" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 8. 黄金 — crown on shield with sun rays & gems
+    function iconGold() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- sun rays around -->
+        <line x1="0"   y1="-36" x2="0"   y2="-40" stroke="#ffc94d" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="-12" y1="-32" x2="-15" y2="-36" stroke="#ffc94d" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="12"  y1="-32" x2="15"  y2="-36" stroke="#ffc94d" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="-22" y1="-24" x2="-26" y2="-26" stroke="#ffc94d" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="22"  y1="-24" x2="26"  y2="-26" stroke="#ffc94d" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="-8"  y1="-34" x2="-10" y2="-38" stroke="#ffc94d" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="8"   y1="-34" x2="10"  y2="-38" stroke="#ffc94d" stroke-width="1.2" stroke-linecap="round"/>
+        <!-- crown -->
+        <path d="M-14 -22 L-10 -28 L-4 -22 L0 -30 L4 -22 L10 -28 L14 -22 L12 -16 L-12 -16 Z"
+              fill="#ffc94d" stroke="#c08a1f" stroke-width="1.6" stroke-linejoin="round"/>
+        <circle cx="-10" cy="-28" r="1.8" fill="#ff4d4d" stroke="#c93838" stroke-width="0.6"/>
+        <circle cx="0"   cy="-30" r="1.8" fill="#4f7cff" stroke="#2090e0" stroke-width="0.6"/>
+        <circle cx="10"  cy="-28" r="1.8" fill="#3fb950" stroke="#2a7a36" stroke-width="0.6"/>
+        <line x1="-12" y1="-19" x2="12" y2="-19" stroke="#c08a1f" stroke-width="1" opacity="0.6"/>
+        <!-- shield -->
+        <path d="M-18 -14 L18 -14 L18 6 C 18 16, 8 24, 0 28 C -8 24, -18 16, -18 6 Z"
+              fill="#ffd24a" stroke="#c08a1f" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M-14 -10 L14 -10 L14 4 C 14 12, 6 18, 0 22 C -6 18, -14 12, -14 4 Z"
+              fill="none" stroke="#c08a1f" stroke-width="0.9" stroke-dasharray="2 2" opacity="0.6"/>
+        <!-- roman numeral I -->
+        <text x="0" y="9" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="24" fill="#8b4513">I</text>
+        <!-- highlight on shield -->
+        <path d="M-10 -8 Q -6 -10, -2 -8" fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+      </g>`;
+    }
+
+    // 9. 钻石 — gem with light rays, sparkles, mini gems
+    function iconDiamond() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- light rays from top -->
+        <line x1="0"   y1="-30" x2="0"   y2="-36" stroke="#4fc3f7" stroke-width="1.6" stroke-linecap="round"/>
+        <line x1="-12" y1="-26" x2="-16" y2="-30" stroke="#4fc3f7" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="12"  y1="-26" x2="16"  y2="-30" stroke="#4fc3f7" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="-20" y1="-20" x2="-24" y2="-23" stroke="#4fc3f7" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="20"  y1="-20" x2="24"  y2="-23" stroke="#4fc3f7" stroke-width="1.2" stroke-linecap="round"/>
+        <!-- main diamond -->
+        <path d="M-22 -8 L-12 -22 L12 -22 L22 -8 L0 26 Z"
+              fill="#ffffff" stroke="#2090e0" stroke-width="2" stroke-linejoin="round"/>
+        <!-- top facets -->
+        <path d="M-22 -8 L-12 -22 L0 -8 Z" fill="#4fc3f7" stroke="#2090e0" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M-12 -22 L12 -22 L0 -8 Z" fill="#d4eeff" stroke="#2090e0" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M12 -22 L22 -8 L0 -8 Z" fill="#7dd3fc" stroke="#2090e0" stroke-width="1.4" stroke-linejoin="round"/>
+        <!-- side lines -->
+        <line x1="-22" y1="-8" x2="22" y2="-8" stroke="#2090e0" stroke-width="1.4"/>
+        <line x1="-22" y1="-8" x2="0" y2="26" stroke="#2090e0" stroke-width="1.2" opacity="0.6"/>
+        <line x1="22"  y1="-8" x2="0" y2="26" stroke="#2090e0" stroke-width="1.2" opacity="0.6"/>
+        <!-- inner reflections -->
+        <line x1="-12" y1="-22" x2="-4" y2="-8" stroke="#ffffff" stroke-width="0.8" opacity="0.85"/>
+        <line x1="12"  y1="-22" x2="4"  y2="-8" stroke="#ffffff" stroke-width="0.8" opacity="0.85"/>
+        <!-- highlight -->
+        <ellipse cx="-3" cy="-16" rx="2" ry="3" fill="#ffffff" opacity="0.7"/>
+        <!-- sparkles -->
+        <path d="M-26 -18 L-24 -22 L-20 -24 L-24 -26 L-26 -30 L-28 -26 L-32 -24 L-28 -22 Z" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.8"/>
+        <path d="M28 4 L29 1 L32 0 L29 -1 L28 -4 L27 -1 L24 0 L27 1 Z" fill="#ff80ab" stroke="#c93838" stroke-width="0.6"/>
+        <path d="M-16 20 L-15 18 L-13 17 L-15 16 L-16 14 L-17 16 L-19 17 L-17 18 Z" fill="#4fc3f7" stroke="#2090e0" stroke-width="0.5"/>
+        <path d="M16 20 L17 18 L19 17 L17 16 L16 14 L15 16 L13 17 L15 18 Z" fill="#4fc3f7" stroke="#2090e0" stroke-width="0.5"/>
+      </g>`;
+    }
+
+    // 10. 图灵之光 — lightbulb with rays, binary code, halo, particles
+    function iconBulb() {
+      return `<g transform="translate(50 60)" filter="url(#roughIcon)">
+        <!-- halo glow -->
+        <circle cx="0" cy="-14" r="22" fill="#ffe082" opacity="0.32"/>
+        <circle cx="0" cy="-14" r="18" fill="#ffe082" opacity="0.45"/>
+        <!-- light rays (8 directions) -->
+        <line x1="0"   y1="-32" x2="0"   y2="-40" stroke="#ffc94d" stroke-width="2.4" stroke-linecap="round"/>
+        <line x1="-14" y1="-26" x2="-19" y2="-32" stroke="#ffc94d" stroke-width="2" stroke-linecap="round"/>
+        <line x1="14"  y1="-26" x2="19"  y2="-32" stroke="#ffc94d" stroke-width="2" stroke-linecap="round"/>
+        <line x1="-22" y1="-14" x2="-30" y2="-14" stroke="#ffc94d" stroke-width="2" stroke-linecap="round"/>
+        <line x1="22"  y1="-14" x2="30"  y2="-14" stroke="#ffc94d" stroke-width="2" stroke-linecap="round"/>
+        <line x1="-12" y1="-30" x2="-15" y2="-36" stroke="#ffc94d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="12"  y1="-30" x2="15"  y2="-36" stroke="#ffc94d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="-18" y1="-22" x2="-24" y2="-25" stroke="#ffc94d" stroke-width="1.4" stroke-linecap="round"/>
+        <line x1="18"  y1="-22" x2="24"  y2="-25" stroke="#ffc94d" stroke-width="1.4" stroke-linecap="round"/>
+        <!-- bulb -->
+        <path d="M-13 -16 C -13 -28, 13 -28, 13 -16 C 13 -8, 8 -4, 6 0 L6 6 L-6 6 L-6 0 C -8 -4, -13 -8, -13 -16 Z"
+              fill="#ff80ab" stroke="#c93838" stroke-width="2" stroke-linejoin="round"/>
+        <!-- bulb highlight -->
+        <ellipse cx="-4" cy="-18" rx="3" ry="6" fill="#ffffff" opacity="0.65"/>
+        <!-- base -->
+        <line x1="-7" y1="6"  x2="7"  y2="6"  stroke="#3a1a1a" stroke-width="2.2"/>
+        <line x1="-7" y1="10" x2="7"  y2="10" stroke="#3a1a1a" stroke-width="2.2"/>
+        <path d="M-5 14 L5 14 L3 18 L-3 18 Z" fill="#3a1a1a" stroke="#3a1a1a" stroke-width="2" stroke-linejoin="round"/>
+        <!-- filament -->
+        <path d="M-4 -6 Q -2 -2, 0 -4 Q 2 -2, 4 -6" fill="none" stroke="#ffc94d" stroke-width="2" stroke-linecap="round"/>
+        <!-- happy face -->
+        <circle cx="-4" cy="-16" r="1.4" fill="#3a1a1a"/>
+        <circle cx="4"  cy="-16" r="1.4" fill="#3a1a1a"/>
+        <path d="M-3 -10 Q 0 -7, 3 -10" fill="none" stroke="#3a1a1a" stroke-width="1.2" stroke-linecap="round"/>
+        <!-- binary code symbols around -->
+        <text x="-26" y="-8" font-family="monospace" font-size="6" fill="#6a4ac9" opacity="0.7">01</text>
+        <text x="22"  y="-8" font-family="monospace" font-size="6" fill="#6a4ac9" opacity="0.7">10</text>
+        <text x="-26" y="6"  font-family="monospace" font-size="6" fill="#6a4ac9" opacity="0.7">11</text>
+        <text x="22"  y="6"  font-family="monospace" font-size="6" fill="#6a4ac9" opacity="0.7">01</text>
+        <!-- floating particles -->
+        <circle cx="-20" cy="-2" r="1" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.4"/>
+        <circle cx="22"  cy="-2" r="1" fill="#ffc94d" stroke="#c08a1f" stroke-width="0.4"/>
+        <circle cx="0"   cy="-36" r="1" fill="#ff80ab" stroke="#c93838" stroke-width="0.4"/>
+      </g>`;
+    }
+
+    /* =========================================================
+       Medal data
+       ========================================================= */
+    const medals = [
+      {
+        id: "streak", name: "连续学习者", category: "learning", rarity: "稀有", points: 120, owned: true,
+        ill: iconFlame, date: "2024.06.01",
+        desc: "七天不间断,日日点灯。一支微笑的小火苗,记录你与知识之间最稳定的约定。",
+        criteria: [
+          "连续打卡 7 天",
+          "每日进入平台完成学习",
+          "中断后连续打卡天数重新计算"
+        ]
+      },
+      {
+        id: "terminator", name: "错题终结者", category: "learning", rarity: "稀有", points: 100, owned: true,
+        ill: iconTarget, date: "2024.06.05",
+        desc: "百道错题,百次新生。瞄准中心,让每一次订正都成为一次精准命中。",
+        criteria: [
+          "错题本订正 20 道错题",
+          "每道错题完成原因回顾",
+          "订正记录进入错题本统计"
+        ]
+      },
+      {
+        id: "explorer", name: "知识探索者", category: "learning", rarity: "史诗", points: 160, owned: true,
+        ill: iconBook, date: "2024.06.10",
+        desc: "在知识图谱间从容穿行,掌握的节点因你而逐渐丰盈。",
+        criteria: [
+          "知识图谱掌握 30 个知识点",
+          "完成对应知识点学习",
+          "掌握进度写入知识图谱"
+        ]
+      },
+      {
+        id: "asker", name: "AI提问官", category: "learning", rarity: "稀有", points: 90, owned: true,
+        ill: iconRobot, date: "2024.06.12",
+        desc: "五十次提问,五十次新的可能。与 AI 对话,让每一个问题都有回响。",
+        criteria: [
+          "完成 50 次 AI 知识问答",
+          "每次一问一答计入统计",
+          "无效空问题不计入次数"
+        ]
+      },
+      {
+        id: "noter", name: "笔记达人", category: "learning", rarity: "稀有", points: 110, owned: true,
+        ill: iconNoter, date: "2024.06.15",
+        desc: "结构化的笔记,是你向世界交出的、最清醒的思考方式。",
+        criteria: [
+          "添加 20 条学习笔记",
+          "笔记关联到具体知识点",
+          "笔记记录进入知识点导航"
+        ]
+      },
+      {
+        id: "bronze", name: "青铜", category: "rank", rarity: "段位", points: 80, owned: true,
+        ill: iconBronze, date: "2024.06.18",
+        desc: "第一枚段位勋章,代表你正式踏上了学习者的道路。古铜之盾,坚实起步。",
+        criteria: [
+          "累计获得 100 积分",
+          "通过打卡或学习行为获得积分",
+          "积分流水正常记录"
+        ]
+      },
+      {
+        id: "silver", name: "白银", category: "rank", rarity: "段位", points: 180, owned: false,
+        progress: 8, total: 20,
+        ill: iconSilver,
+        desc: "白银之翼,展开一段新的旅程。意味着你的坚持已超越昨天的自己。",
+        criteria: [
+          "累计获得 500 积分",
+          "保持打卡和学习行为",
+          "高级 AI 功能消耗不影响累计获得"
+        ]
+      },
+      {
+        id: "gold", name: "黄金", category: "rank", rarity: "段位", points: 320, owned: false,
+        progress: 0, total: 50,
+        ill: iconGold,
+        desc: "黄金加冕,头顶王冠。你已成为这座学习殿堂中的耀眼明星。",
+        criteria: [
+          "累计获得 1500 积分",
+          "持续通过打卡积累",
+          "完成更多学习行为获取积分"
+        ]
+      },
+      {
+        id: "diamond", name: "钻石", category: "rank", rarity: "段位", points: 500, owned: false,
+        progress: 0, total: 100,
+        ill: iconDiamond,
+        desc: "钻石恒久远,一颗永流传。代表顶级毅力与不可磨灭的成就。",
+        criteria: [
+          "累计获得 5000 积分",
+          "长期保持学习和打卡",
+          "持续完成练习、笔记与错题订正"
+        ]
+      },
+      {
+        id: "turing", name: "图灵之光", category: "rank", rarity: "传说", points: 1000, owned: false,
+        progress: 0, total: 200,
+        ill: iconBulb,
+        desc: "致敬图灵,致敬一切思考者。这是一束点亮自己、也照亮他人的光。",
+        criteria: [
+          "累计获得 10000 积分",
+          "保持长期复习节奏",
+          "持续使用平台完成学习闭环"
+        ]
+      }
+    ];
+
+    /* =========================================================
+       Render
+       ========================================================= */
+    const grid = document.getElementById("grid");
+    const empty = document.getElementById("empty");
+    const tabs = document.querySelectorAll(".tab");
+    const search = document.getElementById("search");
+
+    function makeMedalSVG(m) {
+      return `<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" class="medal-svg">${ROUGH}${hexFrame()}${m.ill()}</svg>`;
+    }
+
+    function render(list) {
+      grid.innerHTML = "";
+      if (!list.length) { empty.dataset.show = "true"; return; }
+      empty.dataset.show = "false";
+      const frag = document.createDocumentFragment();
+      list.forEach((m) => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "card";
+        card.dataset.id = m.id;
+        card.dataset.locked = String(!m.owned);
+        card.setAttribute("aria-label",
+          `${m.name},${m.owned ? "已获得" : "未解锁"},${m.rarity}勋章,价值${m.points}积分`);
+
+        const inner = `
+          <div class="medal-wrap">${makeMedalSVG(m)}</div>
+          <div class="name">${m.name}</div>
+          <div class="progress-row">
+            <div class="progress-text"><span class="cur">${m.progress ?? m.total ?? 0}</span><span class="slash">/</span>${m.total ?? m.progress ?? 0}</div>
+          </div>
+          <div class="medal-rule">${m.criteria[0]}</div>
+        `;
+        card.innerHTML = inner;
+        card.addEventListener("click", () => {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+              type: "pc-open-medal-modal",
+              medal: {
+                name: m.name,
+                owned: m.owned,
+                desc: m.desc,
+                svg: makeMedalSVG(m)
+              }
+            }, "*");
+          } else {
+            openModal(m);
+          }
+        });
+        frag.appendChild(card);
+      });
+      grid.appendChild(frag);
+    }
+
+    function applyFilter() {
+      const f = document.querySelector(".tab[aria-selected='true']").dataset.filter;
+      const q = search.value.trim().toLowerCase();
+      let list = medals.slice();
+      if (f === "learning") list = list.filter(m => m.category === "learning");
+      else if (f === "rank")   list = list.filter(m => m.category === "rank");
+      else if (f === "locked") list = list.filter(m => !m.owned);
+      if (q) list = list.filter(m => m.name.toLowerCase().includes(q));
+      render(list);
+    }
+    tabs.forEach(t => t.addEventListener("click", () => {
+      tabs.forEach(x => x.setAttribute("aria-selected", "false"));
+      t.setAttribute("aria-selected", "true");
+      applyFilter();
+    }));
+    search.addEventListener("input", applyFilter);
+
+    /* =========================================================
+       Stats
+       ========================================================= */
+    const owned = medals.filter(m => m.owned);
+    const points = owned.reduce((a, b) => a + b.points, 0);
+    const fmt = new Intl.NumberFormat("zh-CN");
+    document.getElementById("stat-owned").innerHTML = `${owned.length}<span class="unit">/ ${medals.length}</span>`;
+    document.getElementById("stat-points").textContent = fmt.format(points);
+    document.getElementById("stat-rank").textContent = "知识探索者";
+    const next = medals.find(m => !m.owned);
+    document.getElementById("stat-next").textContent = next ? next.name : "已封顶";
+    document.getElementById("ownedCount").textContent = `${owned.length} / ${medals.length}`;
+
+    /* =========================================================
+       Modal
+       ========================================================= */
+    const modalRoot = document.getElementById("modal-root");
+    const modal = document.getElementById("modal");
+    const lastFocus = { el: null };
+    let currentMedal = null;
+
+    function openModal(m) {
+      currentMedal = m;
+      const container = document.getElementById("medalContainer");
+      container.innerHTML = `<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" class="medal-svg" style="width:100%;height:100%;display:block">${ROUGH}${hexFrame()}${m.ill()}</svg>`;
+
+      document.getElementById("m-meta").textContent = m.name;
+      document.getElementById("m-title").innerHTML = `${m.owned ? "恭喜解锁新勋章！" : "继续努力解锁新勋章！"}<span class="trophy">🏆</span>`;
+      document.getElementById("m-desc").textContent = m.owned
+        ? m.desc
+        : `还差一点就能点亮这枚勋章。${m.desc}`;
+      document.getElementById("m-points").textContent = m.points;
+      document.getElementById("m-rarity").textContent = m.rarity;
+      document.getElementById("m-status").textContent = m.owned ? "已获得" : `${m.progress}/${m.total}`;
+
+      const list = document.getElementById("m-criteria");
+      list.innerHTML = "";
+      m.criteria.forEach((c, i) => {
+        const li = document.createElement("li");
+        if (m.owned) li.className = "done";
+        const num = String(i + 1).padStart(2, "0");
+        li.innerHTML = `<span class="num">${num}</span><span>${c}</span>`;
+        list.appendChild(li);
+      });
+
+      [...modal.querySelectorAll(".m-meta, .m-title, .m-desc, .medal-stage .medal-svg")].forEach(el => {
+        el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";
+      });
+
+      lastFocus.el = document.activeElement;
+      modalRoot.dataset.open = "true";
+      modalRoot.querySelector(".close").focus();
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeModal() {
+      modalRoot.dataset.open = "false";
+      document.body.style.overflow = "";
+      if (lastFocus.el && lastFocus.el.focus) lastFocus.el.focus();
+    }
+    modalRoot.addEventListener("click", (e) => {
+      if (e.target.closest("[data-close]")) closeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (modalRoot.dataset.open === "true" && e.key === "Escape") closeModal();
+    });
+
+    document.getElementById("m-share").addEventListener("click", async () => {
+      if (!currentMedal) return;
+      const text = `我${currentMedal.owned ? "已获得" : "正在解锁"}「${currentMedal.name}」勋章 ✨ Hall of Honors`;
+      if (navigator.share) {
+        try { await navigator.share({ title: "我的勋章", text }); }
+        catch (_) { /* user cancelled */ }
+      } else if (navigator.clipboard) {
+        try { await navigator.clipboard.writeText(text); showToast("已复制分享文案 ✨"); }
+        catch (_) { showToast(text); }
+      } else {
+        showToast(text);
+      }
+    });
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => t.classList.remove("show"), 1800);
+    }
+
+    function syncFromOverview(overview) {
+      if (!overview) return;
+      const byId = {
+        streak: overview.medals?.module?.find(x => x.type === "streak"),
+        terminator: overview.medals?.module?.find(x => x.type === "mistake"),
+        explorer: overview.medals?.module?.find(x => x.type === "mastery"),
+        asker: overview.medals?.module?.find(x => x.type === "qa"),
+        noter: overview.medals?.module?.find(x => x.type === "note"),
+        bronze: overview.medals?.points?.find(x => x.type === "point_bronze"),
+        silver: overview.medals?.points?.find(x => x.type === "point_silver"),
+        gold: overview.medals?.points?.find(x => x.type === "point_gold"),
+        diamond: overview.medals?.points?.find(x => x.type === "point_diamond"),
+        turing: overview.medals?.points?.find(x => x.type === "point_turing")
+      };
+      medals.forEach(m => {
+        const data = byId[m.id];
+        if (!data) return;
+        m.owned = !!data.unlocked;
+        m.progress = Number(data.current || 0);
+        m.total = Number(data.target || 0);
+        if (m.owned) m.date = (data.achieved_at || new Date().toISOString().slice(0, 10)).replaceAll("-", ".");
+      });
+      const owned = medals.filter(m => m.owned);
+      const points = Number(overview.account?.total_earned || 0);
+      document.getElementById("stat-owned").innerHTML = `${owned.length}<span class="unit">/ ${medals.length}</span>`;
+      document.getElementById("stat-points").textContent = new Intl.NumberFormat("zh-CN").format(points);
+      document.getElementById("stat-rank").textContent = owned.at(-1)?.name || "暂未获得";
+      document.getElementById("stat-next").textContent = medals.find(m => !m.owned)?.name || "已封顶";
+      document.getElementById("ownedCount").textContent = `${owned.length} / ${medals.length}`;
+      render(medals);
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "pc-medals-overview") syncFromOverview(event.data.overview);
+    });
+
+    render(medals);
+  </script>
+</body>
+</html>

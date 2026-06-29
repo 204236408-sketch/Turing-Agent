@@ -1,0 +1,24 @@
+{
+  "earn": {
+    "daily_checkin": {"points": 10, "label": "每日登录打卡", "limit": "每天一次"},
+    "checkin_streak_3": {"points": 20, "label": "连续打卡 3 天", "limit": "达成奖励"},
+    "checkin_streak_7": {"points": 50, "label": "连续打卡 7 天", "limit": "达成奖励"},
+    "learn_knowledge": {"points": 5, "label": "学习一个知识点", "limit": "同知识点一次"},
+    "finish_question": {"points": 2, "label": "完成一道练习题", "limit": "每题一次"},
+    "correct_question": {"points": 3, "label": "答对一道题", "limit": "每题一次"},
+    "review_mistake": {"points": 5, "label": "订正一道错题", "limit": "每错题一次"},
+    "add_note": {"points": 5, "label": "添加学习笔记", "limit": "每条一次"},
+    "share_note": {"points": 3, "label": "分享笔记", "limit": "每条一次"},
+    "generate_report_basic": {"points": 5, "label": "生成学习报告", "limit": "每天一次"}
+  },
+  "spend": {
+    "ai_chat": {"points": 1, "label": "AI 知识问答", "description": "每次一问一答"},
+    "ai_deep_analysis": {"points": 1, "label": "AI 小助手深度解析", "description": "长回答 / 综合解释"},
+    "generate_questions": {"points": 3, "label": "智能出题", "description": "每生成一组题"},
+    "ai_check_answer": {"points": 2, "label": "AI 批改简答题", "description": "每次批改"},
+    "ocr_import": {"points": 3, "label": "OCR 错题导入", "description": "每次图片识别"},
+    "mistake_cause_analysis": {"points": 6, "label": "错题原因分析", "description": "每题分析"},
+    "ai_report": {"points": 3, "label": "学习报告 AI 生成", "description": "每份报告"},
+    "video_recommendation": {"points": 3, "label": "视频资源智能推荐", "description": "每次推荐"}
+  }
+}

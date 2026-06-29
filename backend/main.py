@@ -23,9 +23,11 @@ from routers import (
     knowledge_router,
     mastery_router,
     memory_router,
+    membership_router,
     mistake_router,
     notes_router,
     ocr_router,
+    points_router,
     profile_router,
     qa_router,
     question_router,
@@ -162,6 +164,8 @@ app.include_router(video_router.router)
 app.include_router(forum_router.router)
 app.include_router(memory_router.router)
 app.include_router(report_router.router)
+app.include_router(points_router.router)
+app.include_router(membership_router.router)
 
 
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

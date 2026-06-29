@@ -1,0 +1,134 @@
+.pc-nav-button{margin-top:4px}
+.personal-center-page{max-width:1280px;margin:0 auto}
+.pc-hero{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr);gap:16px;margin-bottom:16px}
+.pc-balance-card{position:relative;overflow:hidden;background:linear-gradient(135deg,#fff,color-mix(in srgb,var(--brand) 9%,#fff))}
+.pc-balance-card:after{content:"POINTS";position:absolute;right:-10px;bottom:-12px;font-size:56px;font-weight:900;color:var(--brand);opacity:.07}
+.pc-card-title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.pc-card-title h3{font-size:15px;margin:0}
+.pc-card-title p{font-size:10px;color:var(--muted);margin:4px 0 0}
+.pc-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0 0}
+.pc-metric{background:rgba(255,255,255,.72);border:1px solid var(--line);border-radius:13px;padding:12px;min-height:72px}
+.pc-metric-primary{background:linear-gradient(135deg,color-mix(in srgb,var(--brand) 10%,#fff),#fff);border-color:color-mix(in srgb,var(--brand) 25%,var(--line))}
+.pc-metric span{display:block;font-size:9px;color:var(--muted);margin-bottom:7px}
+.pc-metric b{font-size:17px;line-height:1.2}
+#pcBalance{display:inline-block;font-size:32px;line-height:.95;color:var(--brand);font-weight:950;letter-spacing:-1px}
+#pcStreak{display:inline-block;font-size:28px;line-height:.95;color:var(--good);font-weight:950;letter-spacing:-.8px;margin-right:3px}
+.pc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+/* 勋章卡片 */
+.pc-medal-card{display:flex;flex-direction:column}
+.pc-medal-head{margin-bottom:12px}
+.pc-medal-head h3{font-size:15px;margin:4px 0 0}
+.pc-medals-frame{width:100%;height:315px;border:0;background:transparent;border-radius:14px;overflow:hidden}
+.pc-medal-row-title{font-size:10px;color:var(--muted);font-weight:800;margin:6px 0 8px}
+.pc-medal-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px 4px}
+.pc-medal-item{display:flex;flex-direction:column;align-items:center;gap:3px;background:transparent;border:0;border-radius:12px;padding:2px 1px;text-align:center;opacity:.76;transition:transform 360ms cubic-bezier(0.22,1,0.36,1),opacity .2s;min-height:126px;justify-content:flex-start;box-shadow:none;cursor:pointer}
+.pc-medal-item:hover{transform:translateY(-8px)}
+.pc-medal-item:hover .pc-medal-svg{animation:pcMedalTilt 1.4s ease-in-out infinite}
+.pc-medal-item.unlocked{opacity:1}
+.pc-medal-item-name{font-size:10px;color:var(--ink);font-weight:900}
+.pc-medal-item-need{font-size:8px;color:var(--muted);line-height:1.35}
+.pc-module-medals{margin-bottom:10px}
+.pc-medal-svg-wrap{width:84px;height:100px;display:block;filter:drop-shadow(0 8px 16px rgba(20,20,30,.08))}
+.pc-medal-svg{width:100%;height:100%;display:block}
+.pc-medal-svg.large{width:180px;height:208px}
+@keyframes pcMedalTilt{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+
+.pc-section{margin-top:16px}
+.pc-record-card{position:relative;overflow:hidden}
+.pc-record-card:after{content:"";position:absolute;right:-10px;bottom:-18px;width:120px;height:120px;border-radius:50%;background:var(--brand);opacity:.06;filter:blur(30px)}
+
+/* 会员套餐 */
+.pc-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pc-plan{border:1px solid var(--line);background:var(--panel);border-radius:16px;padding:18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px;min-height:170px;transition:.2s}
+.pc-plan:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(18,35,65,.1)}
+.pc-plan.active{border-color:var(--brand);background:linear-gradient(180deg,color-mix(in srgb,var(--brand) 8%,var(--panel)),var(--panel))}
+.pc-plan-header{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pc-plan-header h4{font-size:14px;margin:0}
+.pc-plan-price{font-size:22px;font-weight:900;color:var(--brand);white-space:nowrap}
+.pc-plan p{font-size:9px;color:var(--muted);line-height:1.6;margin:0;flex:1}
+.pc-plan button{width:100%;margin-top:auto}
+
+/* 记录与规则 */
+.pc-mode-tabs{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 12px}
+.pc-mode-tabs button{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:10px;padding:9px 16px;font-size:10px;font-weight:900;box-shadow:var(--shadow)}
+.pc-mode-tabs button.active{background:var(--brand);border-color:var(--brand);color:var(--brandInk)}
+.pc-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.pc-tabs button{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:9px;padding:7px 10px;font-size:9px}
+.pc-tabs button.active{background:var(--brand);border-color:var(--brand);color:var(--brandInk)}
+.pc-tabs .pc-tab-earn.active{background:var(--good);border-color:var(--good);color:white}
+.pc-tabs .pc-tab-spend.active{background:var(--danger);border-color:var(--danger);color:white}
+.pc-tx-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:11px 0;font-size:10px}
+.pc-tx-row:first-child{border-top:0}
+.pc-tx-row span{color:var(--muted);font-size:9px}
+.pc-points-plus{color:var(--good);font-weight:900}
+.pc-points-minus{color:var(--danger);font-weight:900}
+
+.pc-rule-mini{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+.pc-rule-mini h4{font-size:11px;margin:0 0 10px;color:var(--ink)}
+.pc-rule-mini-list{display:grid;gap:8px}
+.pc-rule-mini-item{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:10px}
+.pc-rule-mini-item b:first-child{flex:1;min-width:0}
+.pc-rule-mini-item span{color:var(--muted);font-size:9px}
+
+.pc-empty{padding:25px;text-align:center;color:var(--muted);font-size:10px}
+.pc-upgrade-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:220;background:rgba(10,22,42,.38);backdrop-filter:blur(3px);padding:20px}
+.pc-upgrade-modal.show{display:flex}
+#pcMedalModal.show{animation:pcScrimFade 320ms cubic-bezier(0.22,1,0.36,1) both}
+.pc-upgrade-box{width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 22px 70px rgba(18,35,65,.22);padding:24px}
+.pc-upgrade-box h3{font-size:20px;margin:0 0 9px}
+.pc-upgrade-box p{font-size:11px;color:var(--muted);line-height:1.7;margin:0 0 16px}
+.pc-upgrade-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.pc-cost-confirm-box{border-top:4px solid var(--brand)}
+.pc-cost-confirm-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 18px}
+.pc-cost-confirm-meta span{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:10px;color:var(--muted)}
+.pc-cost-confirm-meta b{display:block;color:var(--brand);font-size:22px;margin-top:4px}
+.pc-module-cost{margin-left:12px;margin-right:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pc-module-cost span{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:9px;color:var(--muted)}
+.pc-module-cost b{color:var(--brand);font-size:13px}
+.pc-modal-x{position:absolute;right:16px;top:14px;border:0;background:var(--panel2);color:var(--muted);border-radius:50%;width:30px;height:30px;font-size:18px;line-height:1;cursor:pointer}
+.pc-payment-box{position:relative;width:min(760px,100%);background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 80px rgba(18,35,65,.28);padding:24px;display:grid;grid-template-columns:1fr 300px;gap:22px}
+.pc-payment-side h3{font-size:24px;margin:8px 0 8px}
+.pc-payment-side p{font-size:11px;color:var(--muted);line-height:1.8;margin:0 0 18px}
+.pc-pay-price{display:flex;align-items:flex-end;color:var(--danger);font-size:20px;font-weight:900;margin:18px 0}
+.pc-pay-price b{font-size:46px;line-height:.9;margin-left:2px}
+.pc-agreement{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--muted);margin-top:20px}
+.pc-agreement input{accent-color:var(--brand)}
+.pc-qr-area{display:flex;flex-direction:column;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:18px}
+.pc-qr-wrap{position:relative;width:198px;height:198px;background:white;border-radius:14px;display:grid;place-items:center;box-shadow:inset 0 0 0 10px #fff}
+.pc-real-qr{width:168px;height:168px;object-fit:cover;border-radius:8px;display:block}
+.pc-qr-mask{position:absolute;inset:0;display:grid;place-items:center;background:rgba(255,255,255,.78);border-radius:14px;color:var(--ink);font-size:13px;font-weight:900;text-align:center}
+.pc-qr-wrap.agreed .pc-qr-mask{display:none}
+.pc-qr-wrap.paying .pc-qr-mask{inset:auto 14px 14px;background:rgba(11,18,32,.78);color:white;border-radius:999px;padding:8px 12px}
+.pc-qr-wrap.paid .pc-qr-mask{background:rgba(22,168,120,.82);color:white}
+.pc-pay-status{font-size:10px;color:var(--muted);text-align:center;min-height:16px}
+.pc-qr-area button{width:100%}
+.pc-medal-detail-box,.pc-congrats-box{position:relative;width:min(430px,100%);background:linear-gradient(180deg,#fff,var(--panel2));border:1px solid var(--line);border-radius:22px;box-shadow:0 26px 90px rgba(18,35,65,.28);padding:26px;text-align:center;overflow:hidden}
+#pcMedalModal.show .pc-medal-detail-box{animation:pcModalPop 480ms cubic-bezier(0.34,1.56,0.64,1) both}
+.pc-medal-detail-box h3,.pc-congrats-box h3{font-size:24px;margin:4px 0 10px;line-height:1.2}
+#pcMedalModal.show .pc-medal-detail-box h3{opacity:0;transform:translateY(8px);animation:pcRise 600ms cubic-bezier(0.22,1,0.36,1) 480ms forwards}
+.pc-medal-detail-box p,.pc-congrats-box p{font-size:13px;color:var(--muted);line-height:1.75;margin:0}
+#pcMedalModal.show .pc-medal-detail-box p{opacity:0;transform:translateY(8px);animation:pcRise 600ms cubic-bezier(0.22,1,0.36,1) 680ms forwards}
+.pc-medal-share{margin:14px auto 0;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;padding:9px 18px;font-size:11px;font-weight:800}
+#pcMedalModal.show .pc-medal-share{opacity:0;transform:translateY(8px);animation:pcRise 600ms cubic-bezier(0.22,1,0.36,1) 880ms forwards}
+.pc-detail-medal-icon{margin:0 auto;width:180px;height:208px;filter:drop-shadow(0 12px 24px rgba(20,20,30,.10))}
+.pc-parent-medal-icon{width:176px;height:202px;margin:4px auto 12px}
+.pc-parent-medal-icon .medal-svg{width:100%;height:100%;display:block}
+.pc-detail-medal-icon .pc-medal-svg,.pc-parent-medal-icon .medal-svg{animation:pcMedalEnter 800ms cubic-bezier(0.34,1.56,0.64,1) 120ms backwards,pcMedalFloat 5s cubic-bezier(0.22,1,0.36,1) 1.1s infinite}
+@keyframes pcScrimFade{from{background:rgba(10,22,42,0);backdrop-filter:blur(0)}to{background:rgba(10,22,42,.38);backdrop-filter:blur(3px)}}
+@keyframes pcModalPop{0%{transform:scale(.94);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes pcMedalEnter{0%{transform:scale(.7) translateY(14px) rotate(-6deg);opacity:0}100%{transform:scale(1) translateY(0) rotate(0);opacity:1}}
+@keyframes pcMedalFloat{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-6px) rotate(-1.5deg)}}
+@keyframes pcRise{to{opacity:1;transform:translateY(0)}}
+.pc-detail-progress{position:relative;height:12px;background:var(--line);border-radius:999px;overflow:hidden;margin:16px 0 12px}
+.pc-detail-progress span{position:absolute;left:0;right:0;top:-18px;font-size:10px;color:var(--muted)}
+.pc-detail-progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brand),#8b5cf6);border-radius:999px}
+.pc-detail-status{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 13px;font-size:10px;color:var(--brand);font-weight:900}
+.pc-congrats-box{background:radial-gradient(circle at 50% 10%,rgba(255,220,120,.35),transparent 35%),linear-gradient(180deg,#fff,var(--panel2))}
+.pc-congrats-glow{position:absolute;inset:-40px;background:conic-gradient(from 90deg,transparent,#ffe08a,transparent,#8b5cf6,transparent);opacity:.18;animation:pcSpin 5s linear infinite}
+.pc-congrats-box>*:not(.pc-congrats-glow){position:relative}
+.pc-congrats-box strong{display:block;font-size:30px;color:var(--brand);margin-bottom:10px}
+@keyframes pcSpin{to{transform:rotate(360deg)}}
+
+@media(max-width:1100px){.pc-plans{grid-template-columns:repeat(2,minmax(0,1fr))}.pc-hero{grid-template-columns:1fr}.pc-medal-list{grid-template-columns:repeat(5,minmax(90px,1fr));overflow-x:auto;padding-bottom:4px}.pc-payment-box{grid-template-columns:1fr}}
+@media(max-width:560px){.pc-plans{grid-template-columns:1fr}.pc-metrics{grid-template-columns:1fr}.pc-tx-row{grid-template-columns:1fr auto}.pc-tx-row span{grid-column:1/-1}.pc-medal-list{grid-template-columns:repeat(5,92px)}}

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "普通用户",
+    "daily_points": 0,
+    "discount_rate": 1.0,
+    "description": "基础功能，无额外积分赠送和消耗折扣"
+  },
+  {
+    "name": "月度会员",
+    "daily_points": 30,
+    "discount_rate": 0.8,
+    "description": "每日赠送 30 积分，AI 功能 8 折消耗"
+  },
+  {
+    "name": "学期会员",
+    "daily_points": 50,
+    "discount_rate": 0.7,
+    "description": "每日赠送 50 积分，AI 功能 7 折消耗，解锁高级报告"
+  },
+  {
+    "name": "年度会员",
+    "daily_points": 80,
+    "discount_rate": 0.5,
+    "description": "每日赠送 80 积分，AI 功能 5 折消耗，高级 AI 功能优先"
+  }
+]
