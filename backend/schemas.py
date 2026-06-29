@@ -32,6 +32,11 @@ class QuestionGenerateRequest(BaseModel):
     difficulty: str = "中等"
     question_type: str = "选择题"
     count: int = Field(default=3, ge=1, le=10)
+    # OCR 错题场景下携带：原图识别文本 + Agent 推断的标准答案
+    # 用于让 LLM 出"与错题同考点/同结构"的同类题（避免凭空出题）
+    reference_text: str = ""
+    reference_answer: str = ""
+    source: str = "manual"  # manual / ocr / smart / weak_kp
 
 
 class SmartQuestionGenerateRequest(BaseModel):
@@ -72,6 +77,13 @@ class OcrAnalyzeRequest(BaseModel):
     subject: str = "操作系统"
     knowledge_point: str = "页面置换算法"
     user_answer: str = ""
+    low_confidence_lines: list[str] = []
+
+
+class OcrGuessUserAnswerRequest(BaseModel):
+    text: str
+    subject: str = "操作系统"
+    knowledge_point: str = "页面置换算法"
 
 
 class ForumPostRequest(BaseModel):

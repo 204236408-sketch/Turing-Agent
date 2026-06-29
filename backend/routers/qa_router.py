@@ -5,20 +5,25 @@
 - POST /api/qa/chat        — 同步问答（保留向后兼容）
 - GET  /api/qa/chat/stream — SSE 流式问答（打字机 + 步骤提示）
 - GET  /api/qa/history     — 获取问答历史会话列表
+
+设计要点：
+- 始终走 LLM 流式（chat_completion_stream），让 LLM 主导回答
+- 知识库命中时：RAG 检索到的内容作为 LLM 上下文
+- 知识库未命中时：提示 LLM 基于自身知识回答（不返回笼统模板）
+- LLM 异常时：fallback 到纯文本提示，不阻塞前端
+- SSE 用同步生成器 + 队列 + 后台线程（避免 async generator 在 StreamingResponse 中 hang）
 """
-import asyncio
 import json
 import logging
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from typing import Generator
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from agents.qa_agent import answer_question
 from agents.qa_graph import (
     detect_intent,
     load_mastery,
@@ -28,20 +33,22 @@ from agents.qa_graph import (
 )
 from database import get_db
 from dependencies import get_current_user
-from models import Conversation, ConversationMessage, KnowledgeMastery, User
+from models import Conversation, ConversationMessage, User
 from prompts.qa_prompt import QA_SYSTEM_PROMPT, QA_USER_TEMPLATE
 from schemas import QaChatRequest
 from services.llm_service import chat_completion_stream
 from services.mastery_service import get_or_create_mastery, recalculate_mastery
-from utils.response import AppError, success
+from utils.response import success
 
 logger = logging.getLogger("qa_router")
 
 router = APIRouter(prefix="/api/qa", tags=["qa"])
 
 
+# ---------------- 同步端点（保留向后兼容） ----------------
 @router.post("/chat")
 def chat(payload: QaChatRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """同步问答：直接调用 chat_completion_stream 收集完整内容。"""
     conversation = None
     if payload.conversation_id:
         conversation = db.query(Conversation).filter(
@@ -56,54 +63,105 @@ def chat(payload: QaChatRequest, db: Session = Depends(get_db), user: User = Dep
     db.commit()
     conversation_id = conversation.id
 
+    set_db(db)
+    state: dict = {
+        "user_id": user.id,
+        "conversation_id": conversation_id,
+        "question": payload.question,
+        "history": [],
+        "agent_steps": [],
+        "llm_used": False,
+        "llm_error": "",
+    }
     try:
-        result = answer_question(db, user.id, payload.question, conversation_id=conversation_id)
-    except Exception:
-        result = {
-            "answer": "系统暂时无法处理该问题，请稍后重试。",
-            "subject": "408",
-            "knowledge_point": "综合知识",
-            "agent_steps": [
-                {"name": "目标识别", "output": "识别异常，降级返回"},
-                {"name": "生成回答", "output": "AI 服务异常，已降级本地回答"},
-            ],
-            "retrieved_knowledge": [],
-            "memories": [],
-            "related_actions": ["重试提问", "查看知识点"],
-            "llm_used": False,
-        }
-    db.add(ConversationMessage(conversation_id=conversation_id, role="assistant", content=result["answer"]))
+        state.update(detect_intent(state))
+        state.update(retrieve_knowledge_node(state))
+        state.update(retrieve_memory(state))
+        state.update(load_mastery(state))
+
+        subject = state.get("subject", "408")
+        knowledge_point = state.get("knowledge_point", "综合")
+        retrieved = state.get("retrieved_knowledge", [])
+        memories = state.get("memories_used", [])
+        mastery = state.get("mastery", {})
+        retrieval = state.get("retrieval", {})
+
+        knowledge_text = _format_knowledge_text(retrieved) if retrieved else "（知识库无强匹配，请基于自身知识回答）"
+        memory_text = "\n".join([m.get("content", "") for m in memories]) if memories else "暂无强相关长期记忆。"
+        mastery_text = (
+            f"掌握度：{mastery.get('status', '未知')}，正确率：{mastery.get('correct_rate', 0)}"
+            if mastery else "暂无掌握度数据。"
+        )
+        history_rows = state.get("history", [])
+        history_lines = [f"{m.get('role', '')}: {m.get('content', '')}" for m in history_rows[-4:]]
+        history_section = "\n近期对话：\n" + "\n".join(history_lines) if history_lines else ""
+        seed_qs = state.get("seed_questions", [])
+        similar_qs_text = ""
+        if seed_qs:
+            lines = [f"题目 {i + 1}: {sq.get('question_text', '')[:200]}" for i, sq in enumerate(seed_qs[:2])]
+            similar_qs_text = "\n".join(lines)
+
+        prompt = QA_USER_TEMPLATE.format(
+            question=payload.question,
+            history_section=history_section,
+            knowledge_text=(
+                f"{knowledge_text}\n\n"
+                f"检索置信度：{retrieval.get('confidence', 'unknown')}。"
+                "若知识库无匹配，请基于 408 统考知识自主回答；证据不足时明确提示。"
+            ),
+            memory_text=memory_text,
+            mastery_text=mastery_text,
+            similar_questions=similar_qs_text or "暂无强相关种子题。",
+        )
+        msgs = [
+            {"role": "system", "content": QA_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+        full_content = "".join(chat_completion_stream(msgs, ""))
+        if not full_content.strip():
+            full_content = _plain_fallback(payload.question, subject, knowledge_point)
+        llm_used = bool(full_content)
+    except Exception as e:
+        logger.exception("chat error")
+        full_content = _plain_fallback(payload.question, "408", "综合")
+        subject, knowledge_point, llm_used = "408", "综合", False
+
+    db.add(ConversationMessage(conversation_id=conversation_id, role="assistant", content=full_content))
     try:
-        mastery = get_or_create_mastery(db, user.id, result["subject"], result["knowledge_point"])
-        mastery.qa_count += 1
-        recalculate_mastery(db, user.id, result["subject"], result["knowledge_point"])
+        m = get_or_create_mastery(db, user.id, subject, knowledge_point)
+        m.qa_count += 1
+        recalculate_mastery(db, user.id, subject, knowledge_point)
     except Exception:
         pass
     db.commit()
-    response_data = {
+
+    return success({
         "conversation_id": conversation_id,
-        "subject": result["subject"],
-        "knowledge_point": result["knowledge_point"],
-        "answer": result["answer"],
-        "agent_steps": result.get("agent_steps", []),
-        "retrieved_knowledge": result.get("retrieved_knowledge", []),
-        "retrieval": result.get("retrieval", {}),
-        "answer_sources": result.get("answer_sources", []),
-        "retrieval_confidence": result.get("retrieval_confidence", "unknown"),
-        "memories_used": result.get("memories", []),
-        "suggested_followups": result.get("suggested_followups", result.get("related_actions", [])),
-        "llm_used": result.get("llm_used", False),
-    }
-    return success(response_data)
+        "subject": subject,
+        "knowledge_point": knowledge_point,
+        "answer": full_content,
+        "agent_steps": state.get("agent_steps", []),
+        "retrieved_knowledge": state.get("retrieved_knowledge", []),
+        "retrieval": state.get("retrieval", {}),
+        "memories_used": state.get("memories_used", []),
+        "suggested_followups": ["生成专项题", "加入复习计划", f"更多 {knowledge_point} 练习"],
+        "llm_used": llm_used,
+    })
 
 
+# ---------------- SSE 流式端点 ----------------
 @router.get("/chat/stream")
-async def chat_stream(
+def chat_stream(
     question: str = Query(...),
     conversation_id: int | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """SSE 流式问答。
+    - 同步 generator + Queue + 后台线程，避免 async generator 在 Starlette 中 hang
+    - 始终走 LLM 流式
+    - 知识库命中：RAG 上下文；未命中：LLM 自主回答
+    """
     conversation = None
     if conversation_id:
         conversation = db.query(Conversation).filter(
@@ -117,198 +175,206 @@ async def chat_stream(
     db.add(ConversationMessage(conversation_id=conversation.id, role="user", content=question))
     db.commit()
     cid = conversation.id
+    user_id = user.id
 
-    async def event_stream():
-        q: queue.Queue = queue.Queue()
-        thread_done = threading.Event()
+    def _put(event_type: str, data: dict) -> str:
+        return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
-        def _put(event_type: str, data: dict) -> None:
-            q.put({"event": event_type, "data": data})
+    def _build_state() -> tuple[dict, list[str]]:
+        """运行 graph 检索阶段，返回 (state, step_sse_chunks)。"""
+        set_db(db)
+        state: dict = {
+            "user_id": user_id,
+            "conversation_id": cid,
+            "question": question,
+            "history": [],
+            "agent_steps": [],
+            "llm_used": False,
+            "llm_error": "",
+        }
+        chunks: list[str] = []
+        try:
+            t0 = time.time()
+            state.update(detect_intent(state))
+            chunks.append(_put("step", {
+                "name": "意图识别", "status": "success",
+                "duration_ms": int((time.time() - t0) * 1000),
+                "output": f"学科={state.get('subject')}, 知识点={state.get('knowledge_point')}",
+            }))
 
-        def run_qa() -> None:
+            t0 = time.time()
+            state.update(retrieve_knowledge_node(state))
+            chunks.append(_put("step", {
+                "name": "检索知识库", "status": "success",
+                "duration_ms": int((time.time() - t0) * 1000),
+                "chunks": len(state.get("retrieved_knowledge", [])),
+                "confidence": state.get("retrieval", {}).get("confidence", "unknown"),
+            }))
+
+            t0 = time.time()
+            state.update(retrieve_memory(state))
+            chunks.append(_put("step", {
+                "name": "读取长期记忆", "status": "success",
+                "duration_ms": int((time.time() - t0) * 1000),
+                "memories": len(state.get("memories_used", [])),
+            }))
+
+            t0 = time.time()
+            state.update(load_mastery(state))
+            chunks.append(_put("step", {
+                "name": "加载掌握度", "status": "success",
+                "duration_ms": int((time.time() - t0) * 1000),
+                "mastery": state.get("mastery", {}),
+            }))
+        except Exception as e:
+            logger.exception("graph stage error")
+            chunks.append(_put("step", {"name": "检索阶段", "status": "error", "reason": str(e)}))
+        return state, chunks
+
+    def _build_prompt(state: dict) -> list[dict]:
+        subject = state.get("subject", "408")
+        knowledge_point = state.get("knowledge_point", "综合")
+        retrieved = state.get("retrieved_knowledge", [])
+        memories = state.get("memories_used", [])
+        mastery = state.get("mastery", {})
+        retrieval = state.get("retrieval", {})
+
+        if retrieved:
+            knowledge_text = _format_knowledge_text(retrieved)
+        else:
+            knowledge_text = "（知识库无强匹配，请基于 408 统考知识自主回答；不要编造来源。）"
+
+        memory_text = "\n".join([m.get("content", "") for m in memories]) if memories else "暂无强相关长期记忆。"
+        mastery_text = (
+            f"掌握度：{mastery.get('status', '未知')}，正确率：{mastery.get('correct_rate', 0)}"
+            if mastery else "暂无掌握度数据。"
+        )
+        history_rows = state.get("history", [])
+        history_lines = [f"{m.get('role', '')}: {m.get('content', '')}" for m in history_rows[-4:]]
+        history_section = "\n近期对话：\n" + "\n".join(history_lines) if history_lines else ""
+        seed_qs = state.get("seed_questions", [])
+        similar_qs_text = ""
+        if seed_qs:
+            lines = [f"题目 {i + 1}: {sq.get('question_text', '')[:200]}" for i, sq in enumerate(seed_qs[:2])]
+            similar_qs_text = "\n".join(lines)
+
+        prompt = QA_USER_TEMPLATE.format(
+            question=question,
+            history_section=history_section,
+            knowledge_text=(
+                f"{knowledge_text}\n\n"
+                f"检索置信度：{retrieval.get('confidence', 'unknown')}。"
+                "若知识库无匹配证据请基于 408 统考知识自主回答；不要编造来源编号 [Sn]。"
+            ),
+            memory_text=memory_text,
+            mastery_text=mastery_text,
+            similar_questions=similar_qs_text or "暂无强相关种子题。",
+        )
+        return [
+            {"role": "system", "content": QA_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ], subject, knowledge_point
+
+    def _save_assistant(content: str, subject: str, knowledge_point: str) -> None:
+        try:
+            db.add(ConversationMessage(conversation_id=cid, role="assistant", content=content))
+            m = get_or_create_mastery(db, user_id, subject, knowledge_point)
+            m.qa_count += 1
+            recalculate_mastery(db, user_id, subject, knowledge_point)
+            db.commit()
+        except Exception:
+            logger.exception("save assistant msg error")
             try:
-                set_db(db)
-                state: dict = {
-                    "user_id": user.id,
-                    "conversation_id": cid,
-                    "question": question,
-                    "history": [],
-                    "agent_steps": [],
-                    "llm_used": False,
-                    "llm_error": "",
-                }
+                db.rollback()
+            except Exception:
+                pass
 
-                # ---- Phase 1: Graph retrieval nodes ----
-                t0 = time.time()
-                state.update(detect_intent(state))
-                _put("step", {
-                    "name": "意图识别",
-                    "status": "success",
-                    "duration_ms": int((time.time() - t0) * 1000),
-                    "output": f"学科={state.get('subject')}, 知识点={state.get('knowledge_point')}",
-                })
+    def event_stream() -> Generator[str, None, None]:
+        # 阶段 1: 同步运行 graph 检索（立即 yield 给前端）
+        try:
+            state, step_chunks = _build_state()
+        except Exception as e:
+            logger.exception("build state error")
+            state = {"subject": "408", "knowledge_point": "综合", "retrieved_knowledge": []}
+            step_chunks = [_put("step", {"name": "检索阶段", "status": "error", "reason": str(e)})]
+        for s in step_chunks:
+            yield s
 
-                t0 = time.time()
-                state.update(retrieve_knowledge_node(state))
-                retrieval = state.get("retrieval", {})
-                _put("step", {
-                    "name": "检索知识库",
-                    "status": "success",
-                    "duration_ms": int((time.time() - t0) * 1000),
-                    "chunks": len(state.get("retrieved_knowledge", [])),
-                    "confidence": retrieval.get("confidence", "unknown"),
-                })
+        # 阶段 2: 启动 LLM 流式生成
+        msgs, subject, knowledge_point = _build_prompt(state)
+        yield _put("step", {"name": "LLM 生成回答", "status": "streaming"})
 
-                t0 = time.time()
-                state.update(retrieve_memory(state))
-                _put("step", {
-                    "name": "读取长期记忆",
-                    "status": "success",
-                    "duration_ms": int((time.time() - t0) * 1000),
-                    "memories": len(state.get("memories_used", [])),
-                })
+        q: queue.Queue = queue.Queue()
+        full_content_parts: list[str] = []
 
-                t0 = time.time()
-                state.update(load_mastery(state))
-                _put("step", {
-                    "name": "加载掌握度",
-                    "status": "success",
-                    "duration_ms": int((time.time() - t0) * 1000),
-                    "mastery": state.get("mastery", {}),
-                })
-
-                # ---- Phase 2: Generate answer ----
-                subject = state.get("subject", "408")
-                knowledge_point = state.get("knowledge_point", "综合")
-                retrieved = state.get("retrieved_knowledge", [])
-                memories = state.get("memories_used", [])
-                mastery = state.get("mastery", {})
-
-                # Low-confidence path
-                if not retrieval.get("grounded", False):
-                    content = _cautious_answer(
-                        question, subject, knowledge_point,
-                        retrieval.get("warning", "证据不足，避免生成没有来源支撑的结论。"),
-                    )
-                    _put("step", {
-                        "name": "生成回答",
-                        "status": "degraded",
-                        "reason": "检索置信度不足，使用谨慎回答",
-                    })
-                    for char in content:
-                        _put("token", {"text": char})
-                    _put("done", {
-                        "answer": content,
-                        "conversation_id": cid,
-                        "subject": subject,
-                        "knowledge_point": knowledge_point,
-                        "llm_used": False,
-                        "llm_error": retrieval.get("warning", "low-confidence retrieval"),
-                        "suggested_followups": ["补充完整题干", "查看相关知识点", "生成基础诊断题"],
-                    })
-                    return
-
-                # High-confidence: stream LLM
-                knowledge_text = _format_knowledge_text(retrieved)
-                memory_text = "\n".join([m.get("content", "") for m in memories]) if memories else "暂无强相关长期记忆。"
-                mastery_text = (
-                    f"掌握度：{mastery.get('status', '未知')}，正确率：{mastery.get('correct_rate', 0)}"
-                    if mastery else "暂无掌握度数据。"
-                )
-                history_rows = state.get("history", [])
-                history_lines = [f"{m.get('role', '')}: {m.get('content', '')}" for m in history_rows[-4:]]
-                history_section = "\n近期对话：\n" + "\n".join(history_lines) if history_lines else ""
-
-                seed_qs = state.get("seed_questions", [])
-                similar_qs_text = ""
-                if seed_qs:
-                    lines = []
-                    for i, sq in enumerate(seed_qs[:2]):
-                        lines.append(f"题目 {i + 1}: {sq.get('question_text', '')[:200]}")
-                    similar_qs_text = "\n".join(lines)
-
-                prompt = QA_USER_TEMPLATE.format(
-                    question=question,
-                    history_section=history_section,
-                    knowledge_text=(
-                        f"{knowledge_text}\n\n"
-                        f"检索置信度：{retrieval.get('confidence', 'unknown')}。"
-                        "回答必须以 [S1]、[S2] 这样的编号证据为依据；证据不足时要明确提示，不要补编。"
-                    ),
-                    memory_text=memory_text,
-                    mastery_text=mastery_text,
-                    similar_questions=similar_qs_text or "暂无强相关种子题。",
-                )
-
-                msgs = [
-                    {"role": "system", "content": QA_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ]
-
-                _put("step", {
-                    "name": "LLM 生成回答",
-                    "status": "streaming",
-                })
-
-                full_content = ""
-                for token in chat_completion_stream(msgs, ""):
-                    _put("token", {"text": token})
-                    full_content += token
-
-                if not full_content:
-                    fallback = _cautious_answer(question, subject, knowledge_point, "LLM 返回空内容，已使用保底回答。")
-                    for char in fallback:
-                        _put("token", {"text": char})
-                    full_content = fallback
-
-                # Save assistant message + update mastery
-                db.add(ConversationMessage(conversation_id=cid, role="assistant", content=full_content))
-                try:
-                    m = get_or_create_mastery(db, user.id, subject, knowledge_point)
-                    m.qa_count += 1
-                    recalculate_mastery(db, user.id, subject, knowledge_point)
-                except Exception:
-                    pass
-                db.commit()
-
-                _put("done", {
-                    "answer": full_content,
-                    "conversation_id": cid,
-                    "subject": subject,
-                    "knowledge_point": knowledge_point,
-                    "llm_used": True,
-                    "suggested_followups": ["生成专项题", "加入复习计划", f"更多 {knowledge_point} 练习"],
-                })
-
+        def _stream_worker():
+            try:
+                for tok in chat_completion_stream(msgs, ""):
+                    if tok:
+                        full_content_parts.append(tok)
+                        q.put(("token", tok))
             except Exception as e:
-                logger.exception("chat_stream run_qa error")
-                _put("error", {"message": str(e)})
-            finally:
-                _put(None)  # sentinel
-                thread_done.set()
+                logger.exception("LLM stream error")
+                q.put(("error", str(e)))
+            q.put(("__DONE__", None))
 
-        ThreadPoolExecutor(max_workers=1).submit(run_qa)
+        thread = threading.Thread(target=_stream_worker, daemon=True)
+        thread.start()
 
+        # 持续从队列读 token
+        last_keepalive = time.time()
         while True:
             try:
-                item = q.get(timeout=0.08)
+                kind, val = q.get(timeout=0.05)
             except queue.Empty:
-                await asyncio.sleep(0.01)
+                # 每 15s 发个 keepalive 避免中间代理超时
+                if time.time() - last_keepalive > 15:
+                    yield ": keepalive\n\n"
+                    last_keepalive = time.time()
                 continue
-            if item is None:
+
+            if kind == "__DONE__":
                 break
-            yield f"event: {item['event']}\ndata: {json.dumps(item['data'], ensure_ascii=False)}\n\n"
+            if kind == "error":
+                yield _put("error", {"message": val})
+                break
+            if kind == "token":
+                yield _put("token", {"text": val})
+
+        # 拼装完整回答
+        full_content = "".join(full_content_parts)
+        if not full_content.strip():
+            full_content = _plain_fallback(question, subject, knowledge_point)
+            yield _put("token", {"text": full_content})
+
+        # 落库
+        _save_assistant(full_content, subject, knowledge_point)
+
+        # done
+        yield _put("done", {
+            "answer": full_content,
+            "conversation_id": cid,
+            "subject": subject,
+            "knowledge_point": knowledge_point,
+            "llm_used": bool(full_content_parts),
+            "suggested_followups": [
+                f"生成 {knowledge_point} 专项题",
+                "加入复习计划",
+                f"复习 {knowledge_point} 知识点",
+            ],
+        })
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-def _cautious_answer(question: str, subject: str, knowledge_point: str, warning: str) -> str:
+# ---------------- 工具函数 ----------------
+def _plain_fallback(question: str, subject: str, knowledge_point: str) -> str:
+    """当 LLM 不可用时的纯文本兜底（不再返回 HTML 标签）。"""
     kp = knowledge_point or "综合知识"
     return (
-        f"<b>检索结论：</b>当前知识库没有找到足够可信的证据来直接回答“{question}”。<br>"
-        f"<b>已定位：</b>{subject} / {kp}。<br>"
-        f"<b>风险提示：</b>{warning or '证据不足，避免生成没有来源支撑的结论。'}<br>"
-        "<b>建议：</b>请补充完整题干、选项或关键术语；也可以先查看该知识点的基础定义、典型题型和易错点。"
+        f"已定位问题：{subject} / {kp}。\n"
+        f"AI 服务暂时无法直接回答“{question}”，已为你保留本次问题。\n"
+        "建议：1) 稍后重试；2) 切换到该知识点的题库或视频继续学习；3) 在论坛发起讨论。"
     )
 
 

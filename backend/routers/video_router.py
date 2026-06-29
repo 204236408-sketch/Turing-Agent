@@ -4,24 +4,44 @@
 功能：
 - GET  /api/videos/recommend         — 智能推荐视频（LLM关键词提取 + 多级匹配）
 - GET  /api/videos/list              — 视频列表（支持按科目、知识点筛选）
+- GET  /api/videos/proxy-image       — 代理下载 B 站图床图片（绕过防盗链）
 - POST /api/videos/crawl             — 爬取视频资源（显式 mock，仅返回开发提示）
 - POST /api/videos/click             — 记录用户视频点击（用于个性化推荐）
 - GET  /api/videos/my-clicked        — 获取用户点击过的视频历史
 """
+import hashlib
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Body, Depends, Query
+import requests
+from fastapi import APIRouter, Body, Depends, Query, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
 from dependencies import get_current_user
 from models import KnowledgePoint, User, VideoViewLog
-from services.video_service import recommend_videos, recommend_videos_v2
+from services.video_service import (
+    recommend_videos,
+    recommend_videos_v2,
+    recommend_wangdao_for_knowledge_point,
+)
 from utils.response import success
 
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
+
+# 图片代理缓存目录
+_PROXY_IMG_DIR = Path(__file__).resolve().parent.parent / "frontend" / "covers"
+_PROXY_IMG_DIR.mkdir(parents=True, exist_ok=True)
+_PROXY_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://www.bilibili.com/",
+}
+# 只允许代理 B 站图床域名（安全白名单）
+_ALLOWED_HOSTS = {"i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com", "bimp.hdslb.com"}
 
 
 @router.get("/recommend")
@@ -85,26 +105,24 @@ def recommend(
             "crawl_count": result.get("crawl_count", 0),
             "cache_hit": result.get("cache_hit", False),
         })
-    elif kp_search_text:
-        # 知识点详情页场景：使用知识点名称+关键词作为搜索文本
-        result = recommend_videos_v2(
+    elif kp_search_text and knowledge_point_id:
+        # 知识点详情页场景：规则匹配 DB 中的王道对应知识点视频
+        # （无匹配时不强凑，避免混入不相关内容）
+        result = recommend_wangdao_for_knowledge_point(
             db,
-            subject=subject,
-            knowledge_point=knowledge_point,
-            question_text=kp_search_text,
+            knowledge_point_id=knowledge_point_id,
             limit=limit,
-            use_llm=True,
         )
         return success({
             "items": result.get("items", []),
-            "subject": subject,
-            "knowledge_point": knowledge_point,
-            "llm_keywords": result.get("llm_keywords", []),
-            "keyword_extract_method": result.get("keyword_extract_method", "unknown"),
-            "total_candidates": result.get("total_candidates", 0),
-            "local_count": result.get("local_count", 0),
-            "crawl_count": result.get("crawl_count", 0),
-            "cache_hit": result.get("cache_hit", False),
+            "subject": result.get("subject", subject),
+            "knowledge_point": result.get("knowledge_point", knowledge_point),
+            "wangdao_matched": result.get("wangdao_matched", 0),
+            "wangdao_passed": result.get("wangdao_passed", 0),
+            "total_returned": result.get("total_returned", 0),
+            "min_score": result.get("min_score", 50),
+            "max_count": result.get("max_count", 5),
+            "source_priority": result.get("source_priority", "wangdao_db"),
             "scene": "knowledge_point",
         })
     else:
@@ -209,3 +227,36 @@ def video_config():
         "parallel_enabled": settings.video_parallel_enabled,
         "user_click_weight": settings.video_user_click_weight,
     })
+
+
+@router.get("/proxy-image")
+def proxy_image(url: str = Query(..., description="B站图床图片URL")):
+    """代理下载 B 站图床图片，绕过 Referer 防盗链。
+
+    缓存到 frontend/covers/proxy_{hash}.jpg，首次请求下载，后续直接读本地。
+    前端用法: <img src="/api/videos/proxy-image?url=https://i0.hdslb.com/...">
+    """
+    # 安全校验：只允许 B 站图床域名
+    parsed = urlparse(url)
+    if parsed.hostname not in _ALLOWED_HOSTS:
+        return Response(status_code=403, content="Forbidden host")
+    if not url.startswith("https://"):
+        return Response(status_code=400, content="Only https allowed")
+
+    # 用 URL hash 作为缓存文件名
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:16]
+    cache_path = _PROXY_IMG_DIR / f"proxy_{url_hash}.jpg"
+
+    # 缓存命中 → 直接返回本地文件
+    if cache_path.exists():
+        return FileResponse(str(cache_path), media_type="image/jpeg")
+
+    # 下载
+    try:
+        r = requests.get(url, headers=_PROXY_HEADERS, timeout=15)
+        r.raise_for_status()
+        cache_path.write_bytes(r.content)
+        return FileResponse(str(cache_path), media_type="image/jpeg")
+    except Exception:
+        # 下载失败 → 返回 404，前端 onerror 会显示 fallback
+        return Response(status_code=404, content="Image not found")

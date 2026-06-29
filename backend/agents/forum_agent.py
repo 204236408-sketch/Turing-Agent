@@ -143,9 +143,12 @@ def _build_user_profile(
         logger.warning("[forum_agent] load mastery failed: %s", e)
 
     try:
-        memories = retrieve_user_memory(db, user_id, knowledge_point or subject, limit=3)
+        # 按当前 subject 过滤；不传 query 强制走 MySQL，避免 chroma 弱语义匹配串入无关科目
+        memories = retrieve_user_memory(db, user_id, "", limit=8)
+        # 优先同 subject 的记忆，跨 subject 不注入
+        same_subj = [m for m in memories if (m.get("subject") or "") == subject][:3]
         profile["recent_memories"] = [
-            {"content": m.get("content", ""), "type": m.get("type", "")} for m in memories[:3]
+            {"content": m.get("content", ""), "type": m.get("type", "")} for m in same_subj
         ]
     except Exception as e:
         logger.warning("[forum_agent] load memory failed: %s", e)
@@ -232,35 +235,52 @@ def _is_rejection(text: str) -> bool:
 
 
 def _is_low_quality_answer(data: dict) -> tuple[bool, str]:
-    """校验 LLM 输出的结构化 JSON 是否合格。"""
+    """校验 LLM 输出的结构化 JSON 是否合格。
+
+    收敛到 4 个核心字段：subject_kp / analysis / easy_trap / extend_exercise。
+    """
     if not isinstance(data, dict):
         return True, "answer not dict"
-    required = ["analysis", "easy_trap", "extend_exercise", "review_plan"]
+    required = ["analysis", "easy_trap", "extend_exercise"]
     for k in required:
         v = data.get(k, "")
         if not v or not str(v).strip():
             return True, f"missing field: {k}"
         if len(str(v).strip()) < 8:
             return True, f"field {k} too short"
-    if _is_rejection(str(data.get("analysis", ""))):
+    # 详细解析必须详尽（>= 200 字符的最小护栏；Prompt 要求至少 700 字，由 LLM 自行保证）
+    analysis_text = str(data.get("analysis", "")).strip()
+    if len(analysis_text) < 200:
+        return True, f"analysis too short ({len(analysis_text)} chars)"
+    if _is_rejection(analysis_text):
         return True, "rejection in analysis"
     return False, "ok"
 
 
 def _cautious_answer(post_title: str, subject: str, knowledge_point: str, reason: str) -> dict:
-    kp = knowledge_point or subject or "综合知识"
+    """谨慎降级回答（LLM 失败时使用），仅含 4 个核心字段。"""
+    subj_disp = subject or "408"
+    kp = knowledge_point.strip() if knowledge_point else ""
+    if kp and kp != subj_disp:
+        subject_kp = f"{subj_disp} · {kp}"
+    else:
+        subject_kp = f"{subj_disp} 综合知识"
     return {
-        "subject_kp": f"{subject or '408'} - {kp}",
+        "subject_kp": subject_kp,
         "analysis": (
             f"针对帖子「{post_title}」，当前知识库没有找到足够可信的证据来直接作答。"
-            f"请先明确题目中发生状态变化的时刻，并把每一步列出来，再回到 408 教材相应章节核对。"
+            f"请先明确题目中发生状态变化的时刻，并把每一步列出来：① 问题重述——把题干拆成「输入/操作序列/期望输出」三段；"
+            f"② 核心概念——回到 408 教材相应章节，定位到 {subj_disp} {('-' + kp) if kp else ''} 的定义与边界条件；"
+            f"③ 解题步骤——按时间/空间顺序推演，每一步标注对应的定理/规则；"
+            f"④ 关键公式/原理——列出本类题通用的判别式与记忆口诀；"
+            f"⑤ 结论——与题目期望输出核对，确认边界（空、半满、并发冲突等）。"
+            f"补全题干后可重新提问，AI 会基于完整证据给出 408 风格的详细解析。"
         ),
-        "easy_trap": "在缺乏证据时直接给结论；408 真题常考边界条件与例外情况。",
-        "extend_exercise": "1) 列出本题涉及的 2 个核心定义；2) 用一道同知识点中等题验证。",
-        "recommend_questions": "建议先查看该知识点的典型题型与基础概念，再生成 3 道专项练习。",
-        "recommend_video": SUBJECT_VIDEO_POOL.get(subject, SUBJECT_VIDEO_POOL["操作系统"]),
-        "review_plan": "Day1 概念；Day2 例题；Day3 真题。",
-        "memory_tip": "记录此题模糊点，等待补全题干后再追问。",
+        "easy_trap": "1) 在缺乏证据时直接给结论；2) 忽略 408 真题常考的边界条件与例外情况；3) 把「最坏/平均/最好」三种复杂度混为一谈。",
+        "extend_exercise": (
+            "1) 列出本题涉及的 2 个核心定义并口述其区别；"
+            "2) 用一道同知识点中等题（408 真题或王道课后题）独立完成，对照答案逐句纠错。"
+        ),
         "need_follow_up": "true",
         "evidence_warning": reason or "evidence insufficient",
     }
@@ -307,17 +327,13 @@ def load_history_node(state: dict) -> dict:
     if db and answer_id:
         rows = (
             db.query(ForumAiFollowup)
-            .filter(
-                ForumAiFollowup.answer_id == answer_id,
-                ForumAiFollowup.is_deleted == False,
-            )
+            .filter(ForumAiFollowup.answer_id == answer_id)
             .order_by(ForumAiFollowup.create_time)
-            .limit(6)
+            .limit(12)  # 6 轮对话 = 12 条 (user+assistant)
             .all()
         )
         for r in rows:
-            history.append({"role": "user", "content": r.question})
-            history.append({"role": "assistant", "content": r.answer})
+            history.append({"role": r.role or "user", "content": r.content or ""})
 
     comments: list[dict] = []
     if db and post_id:
@@ -453,34 +469,22 @@ def generate_answer_node(state: dict) -> dict:
     followup = state.get("followup_question", "")
 
     fallback = _cautious_answer(title, subject, kp, retrieval.get("warning", ""))
-    if not retrieval.get("grounded", False):
-        step = _make_step(
-            "generate_answer",
-            f"title='{title[:30]}'",
-            "low-confidence retrieval, cautious template used",
-            "degraded",
-            start,
-        )
-        return {
-            "answer": fallback,
-            "llm_used": False,
-            "llm_error": retrieval.get("warning", "low-confidence retrieval"),
-            "agent_steps": state.get("agent_steps", []) + [step],
-        }
-
+    # 即使 retrieval.grounded=False 也尝试调用 LLM（避免用户得到硬编码模板）；
+    # 仅在 LLM 失败/拒绝/超时 才回退到 fallback 模板。
     history_section = ""
     if history:
         history_section = "\n\n【历史追问上下文】\n" + "\n".join(
             f"{m.get('role', 'user')}: {m.get('content', '')[:300]}" for m in history[-6:]
         )
     followup_section = f"\n\n【用户最新追问】\n{followup}" if followup else ""
+    grounded_note = "" if retrieval.get("grounded", False) else "\n\n【提示】本次知识库证据较弱，请基于帖子内容与一般 408 知识给出尽可能有用的回答，并明确指出不确定之处。"
 
     prompt = FORUM_AI_PROMPT.format(
         title=title,
         content=content,
         comment_ctx=_format_comments(comments) + history_section,
         weak_kp=_format_weak_kp(profile),
-        kb_data=_format_kb(retrieved),
+        kb_data=_format_kb(retrieved) + grounded_note,
     ) + followup_section
 
     user_prompt = (
@@ -496,13 +500,14 @@ def generate_answer_node(state: dict) -> dict:
                         "你是 408 考研官方论坛 AI 助教，深耕四门统考科目，"
                         "结合帖子、评论、用户薄弱点与 408 知识库生成结构化专业回答。"
                         "**严格输出合法 JSON，禁止额外文字、Markdown、注释。**"
+                        "**只输出 4 个字段：subject_kp / analysis / easy_trap / extend_exercise，不要输出其他字段。**"
                     ),
                 },
                 {"role": "user", "content": user_prompt},
             ],
             fallback,
             temperature=0.3,
-            max_tokens=2200,
+            max_tokens=4096,
         )
 
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -519,21 +524,15 @@ def generate_answer_node(state: dict) -> dict:
             )
 
     data = llm.data if isinstance(llm.data, dict) else fallback
-    # 规范化字段，避免空值
-    for key in (
-        "subject_kp",
-        "analysis",
-        "easy_trap",
-        "extend_exercise",
-        "recommend_questions",
-        "recommend_video",
-        "review_plan",
-        "memory_tip",
-    ):
+    # 规范化字段：仅保留 4 个核心字段
+    for key in ("subject_kp", "analysis", "easy_trap", "extend_exercise"):
         if not data.get(key):
             data[key] = fallback.get(key, "")
-    if not data.get("recommend_video"):
-        data["recommend_video"] = SUBJECT_VIDEO_POOL.get(subject, SUBJECT_VIDEO_POOL["操作系统"])
+    # 主动剔除多余字段，确保前端只渲染 4 张卡片
+    allowed_keys = {"subject_kp", "analysis", "easy_trap", "extend_exercise", "need_follow_up"}
+    for extra in list(data.keys()):
+        if extra not in allowed_keys:
+            data.pop(extra, None)
     if "need_follow_up" not in data:
         data["need_follow_up"] = "false"
 
@@ -666,19 +665,31 @@ def persist_answer_node(state: dict) -> dict:
             _make_step("persist_answer", "skip", "no post/answer", "skipped", start)
         ]}
     try:
-        # 软删旧记录，保持单 post 单 active
+        # 软删旧记录：把同 post 的 active 答案置为 inactive
         db.query(ForumAiAnswer).filter(
-            ForumAiAnswer.post_id == post_id, ForumAiAnswer.is_deleted == False
-        ).update({"is_deleted": True})
+            ForumAiAnswer.post_id == post_id, ForumAiAnswer.is_active == True
+        ).update({"is_active": False})
 
         record = ForumAiAnswer(
             post_id=post_id,
             user_id=user_id,
-            content=json.dumps(answer, ensure_ascii=False),
+            subject=state.get("subject", ""),
             knowledge_point=state.get("knowledge_point", ""),
-            confidence=float(retrieval.get("best_score", 0.0)),
-            model_name=str(getattr(settings, "siliconflow_model", "")),
-            status="active",
+            structured_json=json.dumps(answer, ensure_ascii=False),
+            analysis=str(answer.get("analysis", "")),
+            easy_trap=str(answer.get("easy_trap", "")),
+            extend_exercise=str(answer.get("extend_exercise", "")),
+            review_plan=str(answer.get("review_plan", "")),
+            recommend_questions=str(answer.get("recommend_questions", "")),
+            recommend_video=str(answer.get("recommend_video", "")),
+            memory_tip=str(answer.get("memory_tip", "")),
+            need_follow_up=bool(str(answer.get("need_follow_up", "")).lower() in ("true", "1", "yes")),
+            sources_json=json.dumps(retrieval.get("sources", []), ensure_ascii=False),
+            retrieval_confidence=str(retrieval.get("confidence", "")),
+            agent_steps_json=json.dumps(state.get("agent_steps", [])[-5:], ensure_ascii=False),
+            llm_used=bool(state.get("llm_used", False)),
+            llm_error=str(state.get("llm_error", "") or "")[:500],
+            is_active=True,
         )
         db.add(record)
         db.flush()
@@ -791,7 +802,11 @@ def run_forum_graph(
     followup_question: str = "",
     answer_id: int | None = None,
 ) -> dict:
-    """执行论坛 AI LangGraph，返回完整结果。"""
+    """执行论坛 AI LangGraph，返回完整结果。
+
+    LangGraph 0.3 + StateGraph(dict) 行为：graph.invoke() 返回的是最后一个节点的 updates
+    而不是完整 state（与手动 state.update 不同）。改用 graph.stream() 累积所有 updates。
+    """
     set_db(db)
     graph = get_forum_graph()
     initial_state: dict = {
@@ -801,21 +816,26 @@ def run_forum_graph(
         "answer_id": answer_id,
         "agent_steps": [],
     }
-    result = graph.invoke(initial_state)
-    answer = result.get("answer", {}) or {}
+    # 用 stream 累积所有节点 updates，构造完整 final state
+    final_state: dict = dict(initial_state)
+    for update in graph.stream(initial_state):
+        for _node_name, node_updates in update.items():
+            if isinstance(node_updates, dict):
+                final_state.update(node_updates)
+    answer = final_state.get("answer", {}) or {}
     return {
         "answer": answer,
-        "answer_id": result.get("answer_id"),
-        "memory_id": result.get("memory_id"),
-        "subject": result.get("subject", ""),
-        "knowledge_point": result.get("knowledge_point", ""),
-        "retrieval": result.get("retrieval", {}),
-        "agent_steps": result.get("agent_steps", []),
-        "llm_used": result.get("llm_used", False),
-        "llm_error": result.get("llm_error", ""),
-        "should_followup": result.get("should_followup", False),
-        "followup_hint": result.get("followup_hint", ""),
-        "user_profile": result.get("user_profile", {}),
+        "answer_id": final_state.get("answer_id"),
+        "memory_id": final_state.get("memory_id"),
+        "subject": final_state.get("subject", ""),
+        "knowledge_point": final_state.get("knowledge_point", ""),
+        "retrieval": final_state.get("retrieval", {}),
+        "agent_steps": final_state.get("agent_steps", []),
+        "llm_used": final_state.get("llm_used", False),
+        "llm_error": final_state.get("llm_error", ""),
+        "should_followup": final_state.get("should_followup", False),
+        "followup_hint": final_state.get("followup_hint", ""),
+        "user_profile": final_state.get("user_profile", {}),
     }
 
 
@@ -840,15 +860,12 @@ def ai_answer_for_post(
     if db:
         result = run_forum_graph(db, post, user_id=user_id, followup_question="")
         answer = result["answer"]
-        # 老接口字段兼容
+        # 老接口字段兼容：仅渲染 4 个核心方面（问题定位/详细解析/易错陷阱/举一反三）
         analysis_html = (
             f"<p><b>📍 定位：</b>{escape_html(answer.get('subject_kp', f'{subject} - {knowledge_point}'))}</p>"
-            f"<p><b>🔍 解析：</b>{escape_html(answer.get('analysis', ''))}</p>"
+            f"<p><b>🔍 详细解析：</b>{escape_html(answer.get('analysis', ''))}</p>"
             f"<p><b>⚠️ 易错陷阱：</b>{escape_html(answer.get('easy_trap', ''))}</p>"
             f"<p><b>🎯 举一反三：</b>{escape_html(answer.get('extend_exercise', ''))}</p>"
-            f"<p><b>📅 复习计划：</b>{escape_html(answer.get('review_plan', ''))}</p>"
-            f"<p><b>🎬 推荐视频：</b><a href='{escape_attr(answer.get('recommend_video', ''))}' target='_blank'>{escape_html(answer.get('recommend_video', '王道B站完整课程'))}</a></p>"
-            f"<p><b>💾 记忆要点：</b>{escape_html(answer.get('memory_tip', ''))}</p>"
         )
         return {
             "answer": analysis_html,
@@ -894,17 +911,32 @@ def ai_followup_for_post(
         answer_id=answer_id,
     )
     answer = result.get("answer", {}) or {}
-    # 持久化追问历史
+    # 持久化追问历史：用图生成的新 answer_id（如果有），否则用传入的
+    post_id = post.get("id") if isinstance(post, dict) else None
+    persist_answer_id = result.get("answer_id") or answer_id
     try:
-        if answer_id:
-            followup_row = ForumAiFollowup(
-                answer_id=answer_id,
+        if persist_answer_id and post_id:
+            # 写两条记录：user 追问 + assistant 回答
+            user_row = ForumAiFollowup(
+                post_id=post_id,
+                answer_id=persist_answer_id,
                 user_id=user_id,
-                question=followup_question,
-                answer=json.dumps(answer, ensure_ascii=False),
-                knowledge_point=result.get("knowledge_point", ""),
+                role="user",
+                content=followup_question,
+                structured_json="",
             )
-            db.add(followup_row)
+            db.add(user_row)
+            db.flush()
+            assistant_row = ForumAiFollowup(
+                post_id=post_id,
+                answer_id=persist_answer_id,
+                user_id=user_id,
+                role="assistant",
+                content=json.dumps(answer, ensure_ascii=False),
+                structured_json=json.dumps(answer, ensure_ascii=False),
+                parent_id=user_row.id,
+            )
+            db.add(assistant_row)
             db.commit()
     except Exception as e:
         logger.warning("[forum_agent] save followup failed: %s", e)

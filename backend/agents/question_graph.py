@@ -64,6 +64,8 @@ def _pick_seed_questions(subject: str, knowledge_point: str, vt: str, count: int
     2) 模糊匹配 (subject, kp, 任意 vt) — 抽到后映射题型
     3) 语义匹配 (subject) + 题干含 KP 关键词 — KP 命名在 seed 库中粒度不同（如"内存管理"含"页面置换"题）时兜底
     4) 仍抽不到 → 返回空（让上层走通用模板兜底）
+
+    KP 在匹配前会去除括号后缀（(ISA)/(X86) 等），避免 OCR 推断出的 KP 与 seed 库不一致。
     """
     if count <= 0:
         return []
@@ -71,8 +73,15 @@ def _pick_seed_questions(subject: str, knowledge_point: str, vt: str, count: int
     if not pool:
         return []
 
+    # 归一化 KP: 去除括号后缀
+    kp_normalized = _normalize_kp(knowledge_point)
+    subject_match = subject or ""
+
     def _matches_kp_vt(item: dict, *, require_vt: bool) -> bool:
-        if item.get("subject") != subject or item.get("knowledge_point") != knowledge_point:
+        if item.get("subject") != subject_match:
+            return False
+        item_kp = _normalize_kp(item.get("knowledge_point", ""))
+        if item_kp != kp_normalized:
             return False
         if not require_vt:
             return True
@@ -89,17 +98,25 @@ def _pick_seed_questions(subject: str, knowledge_point: str, vt: str, count: int
         return _shuffle_round_robin(fuzzy, count)
 
     # 第 3 步：语义匹配（仅同 subject） + 题干含 KP 的关键概念词
-    keywords = _kp_semantic_keywords(knowledge_point)
+    keywords = _kp_semantic_keywords(kp_normalized)
     if keywords:
         sem = [
             dict(it) for it in pool
-            if it.get("subject") == subject
+            if it.get("subject") == subject_match
             and any(kw in (it.get("question_text") or "") for kw in keywords)
         ]
         if sem:
             return _shuffle_round_robin(sem, count)
 
     return []
+
+
+def _normalize_kp(knowledge_point: str) -> str:
+    """KP 名称归一化:去除括号后缀（(ISA)/(X86) 等），方便 seed 库模糊匹配。"""
+    if not knowledge_point:
+        return ""
+    import re
+    return re.sub(r"[\(（][^)）]*[\)）]", "", knowledge_point).strip()
 
 
 # KP → 关键概念词。覆盖 seed 库里 KP 命名与题库实际 KP 不完全一致的情况
@@ -109,6 +126,8 @@ _KP_KEYWORDS: dict[str, list[str]] = {
     "进程管理": ["进程", "PCB", "调度", "优先级", "就绪", "阻塞"],
     "内存管理": ["分页", "分段", "虚拟内存", "缺页", "页面"],
     "指令系统": ["指令", "寻址", "操作码", "指令字", "立即寻址"],
+    "指令集体系结构": ["指令", "ISA", "指令字", "寻址", "操作码", "RISC", "CISC", "微程序", "定长", "变长", "指令格式", "指令系统"],
+    "计算机组成原理": ["CPU", "指令", "存储器", "总线", "微程序", "数据通路", "控制器", "运算器", "寄存器", "Cache", "流水线"],
     "传输层": ["TCP", "UDP", "握手", "挥手", "TIME_WAIT", "端口"],
     "树与二叉树": ["二叉树", "遍历", "前序", "中序", "后序", "线索", "完全二叉树"],
     "线性表": ["顺序表", "链表", "单链表", "双链表", "顺序存储"],
@@ -219,22 +238,28 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
     2) 精确没抽到 → 按 (subject, kp) 模糊抽题（不限 vt）
     3) 仍抽不到 → 用 fill/essay/comprehensive 的题型通用模板（保留题型骨架，避免出现空白题）
     4) 不再使用「通用 choice 套话模板」（题干与知识点脱钩、质量低劣）
+
+    KP 在匹配前会归一化（去除 (xxx) 后缀），保证 OCR 推断出的 KP 也能匹配到 seed 库。
     """
     if count <= 0:
         return []
 
-    # 1 & 2：从种子题库抽题
-    picked = _pick_seed_questions(subject, knowledge_point, vt, count)
+    # KP 归一化
+    kp_normalized = _normalize_kp(knowledge_point)
+
+    # 1 & 2：从种子题库抽题（用归一化 KP）
+    picked = _pick_seed_questions(subject, kp_normalized, vt, count)
     if picked:
         return picked
 
     # 3：题型通用模板（仅作兜底，标 quality_flag=deprecated 阻断其进入参考池）
+    #    模板中的 KP 显示为归一化后的名字（去除 (ISA) 等括号后缀），更干净
     if vt == "fill":
         return [
             {
-                "question_text": f"【{subject} · {knowledge_point}】请填空：{knowledge_point} 的核心定义是什么？",
-                "standard_answer": f"{knowledge_point} 的标准定义（根据教材）",
-                "explanation": f"本题考查 {knowledge_point} 的概念理解，需完整表述。",
+                "question_text": f"【{subject} · {kp_normalized}】请填空：{kp_normalized} 的核心定义是什么？",
+                "standard_answer": f"{kp_normalized} 的标准定义（根据教材）",
+                "explanation": f"本题考查 {kp_normalized} 的概念理解，需完整表述。",
                 "hints": ["先回忆教材定义。", "注意关键词不能遗漏。"],
                 "quality_flag": "deprecated",
             } for _ in range(count)
@@ -242,9 +267,9 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
     if vt == "essay":
         return [
             {
-                "question_text": f"【{subject} · {knowledge_point}】请简要分析 {knowledge_point} 在 408 中的考查方式。",
-                "standard_answer": f"{knowledge_point} 通常考查：概念理解、过程推导、边界条件辨析。",
-                "explanation": f"408 对 {knowledge_point} 的考查兼顾定义理解和应用能力。",
+                "question_text": f"【{subject} · {kp_normalized}】请简要分析 {kp_normalized} 在 408 中的考查方式。",
+                "standard_answer": f"{kp_normalized} 通常考查：概念理解、过程推导、边界条件辨析。",
+                "explanation": f"408 对 {kp_normalized} 的考查兼顾定义理解和应用能力。",
                 "hints": ["从概念、过程和边界三个维度回答。", "结合一道典型题目说明。"],
                 "quality_flag": "deprecated",
             } for _ in range(count)
@@ -252,30 +277,57 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
     if vt == "comprehensive":
         return [
             {
-                "question_text": f"【{subject} · {knowledge_point}】综合题",
+                "question_text": f"【{subject} · {kp_normalized}】综合题",
                 "sub_questions": [
-                    {"title": f"简述 {knowledge_point} 的基本概念。", "standard_answer": f"{knowledge_point} 是 {subject} 中的重要知识点。"},
-                    {"title": f"在实际题目中，{knowledge_point} 的常见考法有哪些？", "options": ["A. 概念辨析", "B. 过程计算", "C. 边界条件", "D. 以上都是"], "standard_answer": "D"},
+                    {"title": f"简述 {kp_normalized} 的基本概念。", "standard_answer": f"{kp_normalized} 是 {subject} 中的重要知识点。"},
+                    {"title": f"在实际题目中，{kp_normalized} 的常见考法有哪些？", "options": ["A. 概念辨析", "B. 过程计算", "C. 边界条件", "D. 以上都是"], "standard_answer": "D"},
                 ],
-                "explanation": f"综合题考查 {knowledge_point} 的多角度理解。",
+                "explanation": f"综合题考查 {kp_normalized} 的多角度理解。",
                 "hints": ["先回答概念部分。", "再分析具体应用。"],
                 "quality_flag": "deprecated",
             } for _ in range(count)
         ]
     # choice 的兜底：使用选择题通用模板（避免返回空列表导致前端无可用题）
-    kp_label = (knowledge_point or "该知识点").strip() or "该知识点"
+    # 注：模板必须保证 count 道题彼此不同（题干问法/选项内容/答案都要有变化），
+    #     否则会被下游 dedup 标记为重复,导致「3 道题一模一样」的现象
+    kp_label = (kp_normalized or "该知识点").strip() or "该知识点"
     sub_label = (subject or "408 考研").strip() or "408 考研"
-    choice_options = ["A. 概念辨析方向", "B. 过程推导方向", "C. 边界条件方向", "D. 综合应用方向"]
-    return [
+    choice_templates = [
         {
-            "question_text": f"【{sub_label} · {kp_label}】下列关于 {kp_label} 的说法中，最准确的一项是？",
-            "options": choice_options,
-            "standard_answer": "D",
-            "explanation": f"本题考查 {kp_label} 的综合理解。{kp_label} 属于 {sub_label} 的重要考点，复习时建议从概念、推导、边界条件三个维度展开。",
-            "hints": [f"先回忆 {kp_label} 的核心定义。", "结合一道典型真题对比四个选项。"],
-            "quality_flag": "deprecated",
-        } for _ in range(count)
+            "stem": f"【{sub_label} · {kp_label}】下列关于 {kp_label} 的核心概念，说法最准确的一项是？",
+            "options": ["A. 仅考查定义背诵", "B. 兼顾概念理解与边界条件辨析", "C. 只考计算过程", "D. 只考综合应用"],
+            "answer": "B",
+            "hints": [f"先回忆 {kp_label} 的核心定义。", "再考虑定义成立的前提条件。"],
+            "explain": f"本题考查 {kp_label} 的概念理解与适用条件，408 历年真题多从「定义+边界」角度设问。",
+        },
+        {
+            "stem": f"【{sub_label} · {kp_label}】关于 {kp_label} 的过程/步骤，下列描述中正确的是？",
+            "options": ["A. 仅有 1 个固定步骤", "B. 步骤顺序不可调整", "C. 包含多个有序子过程，且依赖关系明确", "D. 步骤之间无任何关联"],
+            "answer": "C",
+            "hints": [f"画出 {kp_label} 的执行流程图。", "标注每一步的前后依赖。"],
+            "explain": f"{kp_label} 通常由若干有序子过程构成，理解子过程之间的依赖是解题关键。",
+        },
+        {
+            "stem": f"【{sub_label} · {kp_label}】在 408 历年真题中，关于 {kp_label} 的典型命题方向是？",
+            "options": ["A. 仅以选择题形式出现", "B. 仅以大题形式出现", "C. 选择题与大题均常见，且常结合其他考点综合命题", "D. 不属于 408 考纲范围"],
+            "answer": "C",
+            "hints": ["回顾近 5 年真题。", "留意 {kp_label} 的常见组合考点。".format(kp_label=kp_label)],
+            "explain": f"408 命题对 {kp_label} 的考查兼顾选择与大题，且常与相近考点联合出题，复习时需注意知识体系。",
+        },
     ]
+    out: list[dict] = []
+    for i in range(count):
+        t = choice_templates[i % len(choice_templates)]
+        out.append({
+            "question_text": t["stem"],
+            "options": list(t["options"]),
+            "standard_answer": t["answer"],
+            "explanation": t["explain"],
+            "hints": list(t["hints"]),
+            "easy_mistakes": f"易把 {kp_label} 的概念理解片面化，请注意概念成立的前提与边界。",
+            "quality_flag": "deprecated",
+        })
+    return out
 
 
 def _with_target_prefix(text: str, subject: str, knowledge_point: str) -> str:
@@ -286,13 +338,19 @@ def _with_target_prefix(text: str, subject: str, knowledge_point: str) -> str:
 def _questions_match_target(items: list[dict], subject: str, knowledge_point: str) -> bool:
     if not items:
         return False
-    target_keywords = {subject, knowledge_point}
-    if knowledge_point == "页面置换算法":
+    kp_normalized = _normalize_kp(knowledge_point)
+    target_keywords = {subject, kp_normalized}
+    if kp_normalized == "页面置换算法":
         target_keywords.update({"页面", "置换", "缺页", "LRU", "FIFO", "OPT", "Clock"})
-    if knowledge_point == "传输层":
+    if kp_normalized == "传输层":
         target_keywords.update({"TCP", "UDP", "传输层", "握手", "挥手"})
-    if knowledge_point == "树与二叉树":
+    if kp_normalized == "树与二叉树":
         target_keywords.update({"树", "二叉树", "遍历", "前序", "中序", "后序"})
+    # 指令集体系结构 / 指令系统 KP 关键词兜底
+    if kp_normalized == "指令集体系结构" or kp_normalized == "指令系统":
+        target_keywords.update({"指令", "ISA", "RISC", "CISC", "寻址", "指令字", "操作码", "微程序"})
+    if kp_normalized == "计算机组成原理":
+        target_keywords.update({"CPU", "指令", "存储器", "总线", "微程序", "数据通路", "控制器", "运算器", "寄存器", "Cache"})
     text = "\n".join(str(item.get("question_text", "")) for item in items)
     return any(keyword and keyword in text for keyword in target_keywords)
 
@@ -536,6 +594,8 @@ def generate_questions_node(state: QuestionState) -> dict:
         mistake_summary=mistake_summary,
         recommend_mode=mode or "自由选择",
         kb_context=kb_context,
+        reference_text=state.get("reference_text", "") or "",
+        reference_answer=state.get("reference_answer", "") or "",
     )
 
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -627,6 +687,7 @@ def deduplicate_questions(state: QuestionState) -> dict:
     db = _get_db()
     existing_texts: list[str] = []
     if db and subject and knowledge_point:
+        # 1) 已 verified 的种子题（参考池）
         rows = (
             db.query(Question)
             .filter(
@@ -640,6 +701,23 @@ def deduplicate_questions(state: QuestionState) -> dict:
             .all()
         )
         existing_texts = [r.question_text for r in rows if r.question_text]
+        # 2) 用户近 30 天自己生成的未 verified 题（避免同一知识点连续出题时出现重复题）
+        from datetime import datetime, timedelta
+        recent_cutoff = datetime.utcnow() - timedelta(days=30)
+        recent_rows = (
+            db.query(Question)
+            .filter(
+                Question.subject == subject,
+                Question.knowledge_point == knowledge_point,
+                Question.is_deleted == False,
+                Question.is_verified == False,
+                Question.create_time >= recent_cutoff,
+            )
+            .order_by(Question.create_time.desc())
+            .limit(30)
+            .all()
+        )
+        existing_texts.extend(r.question_text for r in recent_rows if r.question_text)
 
     # 拼成批量 embedding 输入：已有题 + 当前新题
     new_texts = [str(it.get("question_text", ""))[:200] for it in raw_questions]

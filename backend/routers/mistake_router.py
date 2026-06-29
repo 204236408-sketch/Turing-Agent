@@ -40,6 +40,39 @@ def _ocr_question_text(error_reason: str) -> str:
     return text.strip()
 
 
+def _dedup_mistakes(mistakes: list, db: Session = None) -> list:
+    """错题按 (subject, knowledge_point, 题干特征) 去重,只保留最新一条。
+
+    用于题本展示场景:同一道题多次被 OCR 导入 / 答错时,不会在题本里重复刷屏。
+    """
+    if not mistakes:
+        return []
+    import re
+    # 一次性把关联 Question 的题干预热,避免 N+1
+    qid_text: dict = {}
+    if db is not None:
+        qids = {m.question_id for m in mistakes if m.question_id}
+        if qids:
+            for r in db.query(Question).filter(Question.id.in_(qids)).all():
+                qid_text[r.id] = r.question_text or ""
+    seen: dict[str, object] = {}
+    for m in mistakes:
+        if m.question_id and m.question_id in qid_text:
+            q_text = qid_text[m.question_id]
+        else:
+            q_text = _ocr_question_text(m.error_reason or "")
+        # 归一化:去除空格/标点,只保留前 80 字符作 key
+        norm = re.sub(r"\s+", "", q_text)[:80]
+        if not norm:
+            # 退化到 subject+kp 作 key,避免空 key 把所有题都并掉
+            norm = f"{(m.subject or '').strip()}|{(m.knowledge_point or '').strip()}"
+        key = f"{(m.subject or '').strip()}|{(m.knowledge_point or '').strip()}|{norm}"
+        existing = seen.get(key)
+        if existing is None or (m.create_time and existing.create_time and m.create_time > existing.create_time):
+            seen[key] = m
+    return list(seen.values())
+
+
 @router.get("")
 def list_mistakes(
     page: int = Query(default=1, ge=1),
@@ -99,7 +132,13 @@ def notebook(
         Mistake.status == "active",
         Mistake.mastery_status.in_(status_list),
     )
-    total = base_filter.count()
+    # 先把符合状态的所有错题拉出来,按题干归一化去重,再分页返回,
+    # 避免同一道题在「不会题本/不熟题本」中重复出现(OCR 同图重复导入/同一题答错多次)
+    all_matching = base_filter.order_by(Mistake.create_time.desc()).all()
+    unique_mistakes = _dedup_mistakes(all_matching, db=db)
+    total = len(unique_mistakes)
+    start = (page - 1) * page_size
+    mistakes = unique_mistakes[start:start + page_size]
 
     all_user_mistakes = db.query(Mistake).filter(
         Mistake.user_id == user.id,
@@ -108,7 +147,6 @@ def notebook(
     total_unfamiliar = sum(1 for m in all_user_mistakes if m.mastery_status == "不熟")
     total_unknown = sum(1 for m in all_user_mistakes if m.mastery_status == "不会")
     total_all = len(all_user_mistakes)
-    mistakes = base_filter.order_by(Mistake.create_time.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     q_ids = [m.question_id for m in mistakes if m.question_id]
     questions = {q.id: q for q in db.query(Question).filter(Question.id.in_(q_ids)).all()} if q_ids else {}

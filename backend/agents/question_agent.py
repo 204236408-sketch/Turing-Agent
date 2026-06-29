@@ -15,6 +15,9 @@ def generate_questions(
     question_type: str,
     count: int,
     recommendation_reason: str = "",
+    reference_text: str = "",
+    reference_answer: str = "",
+    source: str = "manual",
 ) -> dict:
     """生成考题，支持自由出题和智能推荐出题。
 
@@ -28,6 +31,9 @@ def generate_questions(
         question_type: 题型。
         count: 题目数量。
         recommendation_reason: 推荐原因（智能推荐模式）。
+        reference_text: OCR 错题场景下携带的原始识别文本（用作 LLM 出题参考）
+        reference_answer: OCR 错题场景下 Agent 推断的标准答案（用作 LLM 出题参考）
+        source: 出题来源 manual/ocr/smart/weak_kp
 
     Returns:
         dict: 包含 session_id, questions, agent_steps, llm_used, llm_error。
@@ -47,6 +53,9 @@ def generate_questions(
         "agent_steps": [],
         "llm_used": False,
         "llm_error": "",
+        "reference_text": reference_text or "",
+        "reference_answer": reference_answer or "",
+        "source": source or "manual",
     }
 
     result = get_question_graph().invoke(initial_state)

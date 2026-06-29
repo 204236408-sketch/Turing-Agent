@@ -48,6 +48,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.chroma = chroma
     with SessionLocal() as db:
         seed_all(db)
+    # 后台预热 OCR 引擎，避免首次上传冷启动卡顿
+    try:
+        from services.ocr_service import warmup_ocr_engines
+        warmup_ocr_engines()
+    except Exception as exc:
+        print(f"[main] OCR 引擎预热跳过：{exc}")
     yield
 
 

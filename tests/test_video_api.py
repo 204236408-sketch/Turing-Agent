@@ -75,3 +75,70 @@ def test_recommend_zero_video_fallback_no_500(anon_client):
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert len(data["items"]) == 0
+
+
+# 场景4：_wangdao_match_score 的 section 专属术语匹配
+# 修复前：KP section="数组和特殊矩阵" → 视频"3.4.1-3.4.4_特殊矩阵的压缩存储" 得 0 分
+# 修复后：因 '特殊矩阵' (4字专属术语) 命中 → 应得 ≥ 60 分
+class _StubVideo:
+    """轻量 VideoResource 替身，绕过 ORM 构造"""
+    def __init__(self, kp, title=""):
+        self.knowledge_point = kp
+        self.title = title
+
+
+def test_wangdao_match_section_specific_term():
+    """section 中的 3+ 字专属术语命中 v_kp 应得到 60+ 分"""
+    from services.video_service import _wangdao_match_score
+
+    # 1) 核心场景：数组和特殊矩阵 → 特殊矩阵的压缩存储（之前为 0 分）
+    video = _StubVideo("3.4.1-3.4.4_特殊矩阵的压缩存储", "王道计算机考研 数据结构 - 3.4.1-3.4.4_特殊矩阵的压缩存储")
+    score = _wangdao_match_score(video, "栈、队列和数组", "数组和特殊矩阵", "数据结构")
+    assert score >= 60, f"特殊矩阵 专属术语应得高分，实际={score}"
+
+    # 2) 错配防护："next数组" 不应被 "数组" 误判为 2 字泛指的强相关
+    video = _StubVideo("求next数组", "王道计算机考研 数据结构 - 求next数组")
+    score = _wangdao_match_score(video, "栈、队列和数组", "数组和特殊矩阵", "数据结构")
+    assert score < 50, f"next数组 不应被 '数组' section 误判为强相关，实际={score}"
+
+    # 3) 父章节上下文不应压过 section 匹配：
+    #    KP "传输层/TCP" 下，"传输层提供的服务"（父章节匹配）应低于
+    #    "TCP的流量控制"（section 术语匹配）
+    video_parent = _StubVideo("传输层提供的服务", "王道计算机考研 计算机网络 - 5.1 传输层提供的服务")
+    video_section = _StubVideo("TCP的流量控制", "王道计算机考研 计算机网络 - 5.3.5 TCP的流量控制")
+    s_parent = _wangdao_match_score(video_parent, "传输层", "TCP", "计算机网络")
+    s_section = _wangdao_match_score(video_section, "传输层", "TCP", "计算机网络")
+    assert s_section > s_parent, (
+        f"section 专属术语匹配 ({s_section}) 应高于父章节匹配 ({s_parent})"
+    )
+
+
+# 场景5：王道推荐：存在强命中时不应回退到泛相关种子视频
+def test_wangdao_recommend_no_padding_when_strong_match(anon_client):
+    """当 recommend_wangdao_for_knowledge_point 找到强命中时，结果应仅含强命中，
+    不应回退到 recommend_videos_v2 补足"""
+    from services.video_service import recommend_wangdao_for_knowledge_point
+    from database import SessionLocal
+    from models import KnowledgePoint
+
+    db = SessionLocal()
+    try:
+        # 找一个有 section 的 KP（数组和特殊矩阵 已确认能命中专属视频）
+        point = db.query(KnowledgePoint).filter(
+            KnowledgePoint.section == "数组和特殊矩阵",
+            KnowledgePoint.is_deleted == False,
+        ).first()
+        if not point:
+            pytest.skip("需要 seed_knowledge_points.json 中有 '数组和特殊矩阵' 知识点")
+        result = recommend_wangdao_for_knowledge_point(db, point.id, limit=5)
+        # 强命中时只返回 1 条（数据库中只有 1 条特殊矩阵的压缩存储），
+        # 不应回退到 4 条不相关的"栈、队列和数组"视频
+        assert result["wangdao_matched"] >= 1
+        if result["wangdao_matched"] >= 1:
+            for it in result["items"]:
+                # 王道强匹配条目的 source 必须是 wangdao_db，不能是 wangdao_db_fallback_*
+                assert it["source"].startswith("wangdao_db"), (
+                    f"存在强命中时不应回退，但 source={it['source']}"
+                )
+    finally:
+        db.close()

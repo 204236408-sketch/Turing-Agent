@@ -342,63 +342,71 @@ class ForumPost(Base):
 
 # -------------------------- 30. 论坛AI回答 ForumAiAnswer --------------------------
 class ForumAiAnswer(Base):
-    """AI 对论坛主帖的回答。"""
+    """AI 对论坛主帖的回答（schema 与实际表对齐）。"""
     __tablename__ = "forum_ai_answer"
     id = Column(Integer, primary_key=True, autoincrement=True)
     post_id = Column(Integer, ForeignKey("forum_post.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
-    content = Column(Text, nullable=False)
+    subject = Column(String(64), default="")
     knowledge_point = Column(String(128), default="")
-    confidence = Column(Float, default=0.0)
-    model_name = Column(String(64), default="")
-    is_accepted = Column(Boolean, default=False)
-    like_count = Column(Integer, default=0)
-    status = Column(String(32), default="active")
-    is_deleted = Column(Boolean, default=False)
+    structured_json = Column(Text, default="")
+    analysis = Column(Text, default="")
+    easy_trap = Column(Text, default="")
+    extend_exercise = Column(Text, default="")
+    review_plan = Column(Text, default="")
+    recommend_questions = Column(Text, default="")
+    recommend_video = Column(String(512), default="")
+    memory_tip = Column(Text, default="")
+    need_follow_up = Column(Boolean, default=False)
+    sources_json = Column(Text, default="")
+    retrieval_confidence = Column(String(32), default="")
+    agent_steps_json = Column(Text, default="")
+    llm_used = Column(Boolean, default=False)
+    llm_error = Column(String(512), default="")
+    is_active = Column(Boolean, default=True)
     create_time = Column(DateTime, default=datetime.utcnow)
     update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_ai_answer_post", "post_id"),
         Index("idx_ai_answer_user", "user_id"),
-        Index("idx_ai_answer_del", "is_deleted"),
     )
 
 
 # -------------------------- 31. 论坛AI回答点赞 ForumAiAnswerLike --------------------------
 class ForumAiAnswerLike(Base):
-    """用户对 AI 回答的点赞记录。"""
+    """用户对 AI 回答的点赞/反馈记录。"""
     __tablename__ = "forum_ai_answer_like"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     answer_id = Column(Integer, ForeignKey("forum_ai_answer.id", ondelete="CASCADE"), nullable=False)
-    is_deleted = Column(Boolean, default=False)
+    is_helpful = Column(Boolean, default=True)
+    feedback = Column(String(512), default="")
     create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint("user_id", "answer_id", name="uk_ai_answer_like_uid_aid"),
         Index("idx_ai_answer_like_uid", "user_id"),
-        Index("idx_ai_answer_like_del", "is_deleted"),
     )
 
 
 # -------------------------- 32. 论坛AI追问 ForumAiFollowup --------------------------
 class ForumAiFollowup(Base):
-    """用户对 AI 回答的追问对话记录。"""
+    """用户对 AI 回答的追问对话记录（每条 message 一行：user/assistant）。"""
     __tablename__ = "forum_ai_followup"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    answer_id = Column(Integer, ForeignKey("forum_ai_answer.id", ondelete="CASCADE"), nullable=False)
+    post_id = Column(Integer, ForeignKey("forum_post.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
-    question = Column(Text, nullable=False)
-    answer = Column(Text, nullable=False)
-    knowledge_point = Column(String(128), default="")
-    is_deleted = Column(Boolean, default=False)
+    answer_id = Column(Integer, ForeignKey("forum_ai_answer.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(16), nullable=False, default="user")  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+    structured_json = Column(Text, default="")
+    parent_id = Column(Integer, ForeignKey("forum_ai_followup.id", ondelete="SET NULL"), nullable=True)
     create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_ai_followup_answer", "answer_id"),
         Index("idx_ai_followup_user", "user_id"),
-        Index("idx_ai_followup_del", "is_deleted"),
     )
 
 # -------------------------- 16. 论坛评论 ForumComment --------------------------
@@ -478,6 +486,7 @@ class VideoResource(Base):
     play_count = Column(Integer, default=0)
     author = Column(String(128), default="")
     crawl_source = Column(String(16), default="seed")
+    keywords = Column(Text, default="")  # LLM 离线提取的关键词（JSON 数组字符串），用于视频-KP 语义匹配
     is_active = Column(Boolean, default=True)
     is_deleted = Column(Boolean, default=False)
     last_verify_time = Column(DateTime, nullable=True)

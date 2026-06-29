@@ -35,7 +35,19 @@ router = APIRouter(prefix="/api/questions", tags=["questions"])
 
 @router.post("/generate")
 def generate(payload: QuestionGenerateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    data = generate_questions(db, user.id, payload.mode, payload.subject, payload.knowledge_point, payload.difficulty, payload.question_type, payload.count)
+    data = generate_questions(
+        db,
+        user.id,
+        payload.mode,
+        payload.subject,
+        payload.knowledge_point,
+        payload.difficulty,
+        payload.question_type,
+        payload.count,
+        reference_text=payload.reference_text or "",
+        reference_answer=payload.reference_answer or "",
+        source=payload.source or "manual",
+    )
     db.commit()
     return success(data)
 

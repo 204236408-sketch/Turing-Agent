@@ -48,6 +48,9 @@ QUESTION_PROMPT_TEMPLATE = """
 用户最近错题摘要：{mistake_summary}
 智能推荐模式：{recommend_mode}
 
+# 【参考题目】（OCR 错题场景下携带：用户上传照片识别出的原题 + Agent 推断的标准答案）
+{reference_block}
+
 # 【知识库参考资料】（这是你出题的唯一事实来源）
 {kb_context}
 
@@ -189,8 +192,10 @@ def render_question_prompt(
     mistake_summary: str = "无历史错题",
     recommend_mode: str = "自由选择",
     kb_context: str = "",
+    reference_text: str = "",
+    reference_answer: str = "",
 ) -> str:
-    """组装出题 prompt（注入知识库片段）。"""
+    """组装出题 prompt（注入知识库片段 + OCR 参考题）。"""
     vt_map = {"选择题": "choice", "填空题": "fill", "简答题": "essay", "综合题": "comprehensive"}
     vt = vt_map.get(question_type, "choice")
     schema_def = QTYPE_FIELD_SCHEMA[vt]
@@ -203,6 +208,19 @@ def render_question_prompt(
     )
 
     fields_list = "\n".join(f"- {f}" for f in schema_def["fields"])
+
+    # 拼接参考题目段（仅在 OCR 场景注入；为空则写"无"避免 LLM 误以为有）
+    if reference_text or reference_answer:
+        ref_lines = []
+        if reference_text:
+            # 截断到 800 字避免 prompt 过长
+            ref_text_trim = reference_text.strip()[:800]
+            ref_lines.append(f"原题（OCR 识别）:\n{ref_text_trim}")
+        if reference_answer:
+            ref_lines.append(f"Agent 推断标准答案（仅作参考，事实以知识库为准）:\n{reference_answer.strip()[:400]}")
+        reference_block = "\n\n".join(ref_lines)
+    else:
+        reference_block = "（无 OCR 参考题）"
 
     return QUESTION_PROMPT_TEMPLATE.format(
         subject=subject,
@@ -218,4 +236,5 @@ def render_question_prompt(
         qtype_schema=schema_def["schema"],
         qtype_fields=fields_list,
         output_template=schema_def["template"],
+        reference_block=reference_block,
     )

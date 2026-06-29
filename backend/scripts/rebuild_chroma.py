@@ -1,5 +1,8 @@
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import BASE_DIR
 from services.chroma_service import chroma_status, get_or_create_collection, delete_collection, upsert_document
