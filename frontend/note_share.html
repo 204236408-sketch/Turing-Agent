@@ -8,43 +8,91 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{min-height:100vh;background:linear-gradient(135deg,#0f1f3d 0%,#1d3473 100%);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;color:#fff}
 .share-wrap{max-width:560px;width:100%}
+
+/* 顶部 Logo */
 .share-logo{display:flex;align-items:center;gap:10px;margin-bottom:24px;justify-content:center;color:rgba(255,255,255,.85);font-size:13px;font-weight:600;letter-spacing:1px}
 .share-logo span.emoji{font-size:24px}
-.share-card{background:#fff;color:#1f2937;border-radius:18px;padding:32px;box-shadow:0 30px 80px rgba(0,0,0,.35);position:relative;overflow:hidden}
+
+/* 卡片：上下三段布局（head / body / foot） */
+.share-card{background:#fff;color:#1f2937;border-radius:18px;padding:32px;box-shadow:0 30px 80px rgba(0,0,0,.35);position:relative;overflow:hidden;display:flex;flex-direction:column}
 .share-card::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#3b82f6,#8b5cf6)}
-.share-title{font-size:22px;font-weight:800;line-height:1.4;margin-bottom:14px;color:#0f172a}
-.share-meta{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+
+/* 头部：标题 + 标签 */
+.share-head{margin-bottom:18px;flex-shrink:0}
+.share-title{font-size:22px;font-weight:800;line-height:1.4;margin-bottom:12px;color:#0f172a}
+.share-meta{display:flex;flex-wrap:wrap;gap:8px}
 .share-tag{background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:600;padding:5px 12px;border-radius:99px}
 .share-tag.chapter{background:#fef3c7;color:#b45309}
 .share-tag.kp{background:#dcfce7;color:#166534}
-.share-summary{font-size:14px;line-height:1.8;color:#475569;background:#f8fafc;border-left:3px solid #3b82f6;padding:14px 18px;border-radius:8px;margin-bottom:18px;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow-y:auto}
-.share-footer{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;padding-top:14px;border-top:1px dashed #e2e8f0}
-.share-author{font-weight:700;color:#1e40af}
-.share-qr{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f8fafc;border-radius:12px;padding:14px;margin-bottom:18px;text-align:center}
-.share-qr .qr-box{width:120px;height:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b;position:relative;overflow:hidden}
-.share-qr .qr-box::before{content:"";position:absolute;inset:8px;background:repeating-linear-gradient(0deg,#0f172a 0 4px,transparent 4px 8px),repeating-linear-gradient(90deg,#0f172a 0 4px,transparent 4px 8px);border-radius:4px;opacity:.85}
-.share-qr small{font-size:10px;color:#64748b;margin-top:6px}
-.share-actions{display:flex;gap:10px;margin-top:20px}
-.share-btn{flex:1;border:0;border-radius:10px;padding:12px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:transform .15s,box-shadow .15s}
+
+/* 中部：笔记正文（视觉主体） */
+.share-body{flex:1;min-height:200px;display:flex;align-items:stretch;margin-bottom:18px}
+.share-summary{flex:1;font-size:15px;line-height:1.85;color:#1f2937;background:linear-gradient(135deg,#f8fafc 0%,#eef2ff 100%);border-left:4px solid #3b82f6;padding:18px 22px;border-radius:10px;white-space:pre-wrap;word-break:break-word;overflow-y:auto;max-height:380px;font-weight:500;box-shadow:inset 0 0 0 1px rgba(59,130,246,.08)}
+
+/* 底部：作者信息在左，二维码在右 */
+.share-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:18px;border-top:1px dashed #e2e8f0;flex-shrink:0}
+.share-author-block{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.share-author{font-weight:800;color:#1e40af;font-size:13px;letter-spacing:.3px}
+.share-time{font-size:11px;color:#94a3b8}
+
+/* 右下角二维码 */
+.share-qr{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#eff6ff 0%,#f0f9ff 100%);border-radius:10px;padding:10px;border:1px solid rgba(59,130,246,.15)}
+.share-qr .qr-box{width:100px;height:100px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.share-qr .qr-box canvas,
+.share-qr .qr-box img{display:block;width:100%;height:100%;padding:4px}
+.share-qr small{font-size:10px;color:#475569;margin-top:6px;letter-spacing:.3px;white-space:nowrap;font-weight:600}
+
+/* 按钮区 */
+.share-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+.share-btn{flex:1;border:0;border-radius:10px;padding:12px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:transform .15s,box-shadow .15s;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0}
 .share-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.15)}
 .share-btn.primary{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff}
+.share-btn.success{background:linear-gradient(135deg,#10b981,#059669);color:#fff}
 .share-btn.ghost{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2)}
+.share-btn.gray{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
+
+/* 状态文案 */
 .share-loading{text-align:center;padding:60px 0;color:rgba(255,255,255,.7);font-size:13px}
 .share-error{background:#fee2e2;color:#991b1b;padding:14px 18px;border-radius:10px;font-size:13px;text-align:center}
+.share-tips{font-size:11px;color:rgba(255,255,255,.55);text-align:center;margin-top:14px;line-height:1.6}
+
+/* 移动端 */
+@media (max-width:480px){
+ .share-card{padding:22px}
+ .share-title{font-size:18px}
+ .share-qr .qr-box{width:80px;height:80px}
+ .share-summary{font-size:14px;line-height:1.7;padding:14px 16px;max-height:280px}
+ .share-foot{flex-direction:row;gap:12px}
+ .share-qr{padding:8px}
+ .share-qr small{font-size:9px}
+ .share-btn{font-size:12px;padding:10px 12px}
+}
 </style>
 </head>
 <body>
 <div class="share-wrap">
 <div class="share-logo"><span class="emoji">🎓</span><span>408 AI 学习助手 · 笔记分享</span></div>
 <div id="shareContent"><div class="share-loading">正在加载笔记内容…</div></div>
+<p class="share-tips">扫码下载「408 AI 学习助手」APP / 访问主站继续学习<br>这张分享卡片可点击「保存为图片」下载到本地</p>
 </div>
+
+<!-- CDN：qrcode.js 用于生成二维码，html2canvas 用于把卡片截图 -->
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs2@0.0.2/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
 <script>
 const params=new URLSearchParams(location.search);
 const shareId=params.get("share_id");
 
+// 主站地址：二维码指向这里（而不是当前分享页）
+// 部署到线上时改成你的真实域名
+const SITE_URL = (location.origin || "https://turing-408.example.com").replace(/\/note_share\.html$/, "");
+
+let currentNoteData = null;   // 缓存数据，给"下载图片"用
+
 async function loadShare(){
  const box=document.getElementById("shareContent");
- if(!shareId){box.innerHTML='<div class="share-error">分享链接无效</div>';return}
+ if(!shareId){box.innerHTML='<div class="share-card"><div class="share-error">分享链接无效</div></div>';return}
  try{
   const token=localStorage.getItem("turing408_token")||"";
   const res=await fetch(`/api/notes/share/${shareId}`,{headers:{Authorization:`Bearer ${token}`}});
@@ -52,29 +100,136 @@ async function loadShare(){
   if(!res.ok||!json.data)throw new Error(json.message||"分享不存在");
   const s=json.data.share;
   const n=s.note||{};
-  const shareUrl=location.href;
+  const shareUrl=location.href;   // 当前分享页 URL（用于"复制链接"按钮）
+  currentNoteData = { share: s, note: n, shareUrl };
+
+  // 渲染卡片：标题 + 标签在上方，笔记正文居中，二维码在右下角
   box.innerHTML=`
-   <div class="share-card">
-    <div class="share-title">${escapeHtml(s.title||n.title||"未命名笔记")}</div>
-    <div class="share-meta">
-     ${n.subject?`<span class="share-tag">📚 ${escapeHtml(n.subject)}</span>`:""}
-     ${n.chapter?`<span class="share-tag chapter">📖 ${escapeHtml(n.chapter)}</span>`:""}
-     ${n.knowledge_point?`<span class="share-tag kp">🎯 ${escapeHtml(n.knowledge_point)}</span>`:""}
+   <div class="share-card" id="shareCard">
+    <div class="share-head">
+     <div class="share-title">${escapeHtml(s.title||n.title||"未命名笔记")}</div>
+     <div class="share-meta">
+      ${n.subject?`<span class="share-tag">📚 ${escapeHtml(n.subject)}</span>`:""}
+      ${n.chapter?`<span class="share-tag chapter">📖 ${escapeHtml(n.chapter)}</span>`:""}
+      ${n.knowledge_point?`<span class="share-tag kp">🎯 ${escapeHtml(n.knowledge_point)}</span>`:""}
+     </div>
     </div>
-    <div class="share-qr"><div class="qr-box"></div><small>扫码查看此分享</small></div>
-    <div class="share-summary">${escapeHtml(n.content||s.summary||"")}</div>
-    <div class="share-footer"><span class="share-author">@ ${escapeHtml(s.author||"408 同学")}</span><span>${escapeHtml(s.create_time||"")}</span></div>
-    <div class="share-actions">
-     <button class="share-btn ghost" onclick="navigator.clipboard?.writeText('${shareUrl}').then(()=>alert('链接已复制'))">复制链接</button>
-     <button class="share-btn primary" onclick="window.close()||history.back()">返回</button>
+    <div class="share-body">
+     <div class="share-summary">${escapeHtml(n.content||s.summary||"")}</div>
+    </div>
+    <div class="share-foot">
+     <div class="share-author-block">
+      <div class="share-author">@ ${escapeHtml(s.author||"408 同学")}</div>
+      <div class="share-time">${escapeHtml(s.create_time||"")}</div>
+     </div>
+     <div class="share-qr" id="shareQrWrap">
+      <div class="qr-box" id="shareQrBox"></div>
+      <small>扫码访问主站</small>
+     </div>
     </div>
    </div>
+   <div class="share-actions" id="shareActions">
+    <button class="share-btn success" id="btnDownload">⬇ 保存为图片</button>
+    <button class="share-btn primary" id="btnCopyLink">🔗 复制链接</button>
+    <button class="share-btn gray" id="btnOpenSite">🌐 打开主站</button>
+   </div>
   `;
+
+  // 1) 生成二维码（指向主站）
+  renderQrCode(SITE_URL);
+
+  // 2) 绑定按钮事件
+  document.getElementById("btnDownload").onclick = downloadCardAsImage;
+  document.getElementById("btnCopyLink").onclick = () => copyToClipboard(shareUrl, "分享链接已复制，去发给同学吧～");
+  document.getElementById("btnOpenSite").onclick = () => window.open(SITE_URL, "_blank");
  }catch(e){
   box.innerHTML=`<div class="share-card"><div class="share-error">笔记加载失败：${escapeHtml(e.message||"")}</div></div>`;
  }
 }
+
+// ============ 二维码生成 ============
+function renderQrCode(text){
+ const box=document.getElementById("shareQrBox");
+ box.innerHTML="";
+ try{
+  // qrcodejs2 会在 box 里塞一个 canvas + 一个 img
+  new QRCode(box,{
+   text: text,
+   width: 160,
+   height: 160,
+   colorDark: "#0f172a",
+   colorLight: "#ffffff",
+   correctLevel: QRCode.CorrectLevel.M,
+  });
+ }catch(e){
+  // CDN 加载失败时的兜底：给个外部 QR 服务
+  console.warn("QRCode 库加载失败，使用兜底", e);
+  const img=document.createElement("img");
+  img.src=`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(text)}`;
+  img.alt="QR Code";
+  box.appendChild(img);
+ }
+}
+
+// ============ 下载卡片为图片 ============
+async function downloadCardAsImage(){
+ const card=document.getElementById("shareCard");
+ if(!card){alert("找不到卡片");return}
+ const btn=document.getElementById("btnDownload");
+ const originalText=btn.innerHTML;
+ btn.disabled=true;
+ btn.innerHTML="⏳ 正在生成图片…";
+ try{
+  // 用 html2canvas 把卡片节点截图
+  const canvas=await html2canvas(card,{
+   backgroundColor:"#ffffff",
+   scale:2,                // 2x 高清
+   useCORS:true,           // 允许加载跨域图片
+   logging:false,
+  });
+  // 转成 blob → 下载
+  canvas.toBlob(blob=>{
+   if(!blob){throw new Error("生成图片失败")}
+   const url=URL.createObjectURL(blob);
+   const a=document.createElement("a");
+   const noteTitle=(currentNoteData?.note?.title||"笔记").replace(/[\\/:*?"<>|]/g,"_");
+   a.href=url;
+   a.download=`408笔记-${noteTitle}-${Date.now()}.png`;
+   document.body.appendChild(a);
+   a.click();
+   document.body.removeChild(a);
+   setTimeout(()=>URL.revokeObjectURL(url), 1000);
+   btn.innerHTML="✅ 已下载";
+   setTimeout(()=>{btn.innerHTML=originalText;btn.disabled=false},1500);
+  },"image/png");
+ }catch(e){
+  console.error(e);
+  alert("下载失败："+e.message+"。可能是浏览器拦截了跨域资源。");
+  btn.innerHTML=originalText;
+  btn.disabled=false;
+ }
+}
+
+// ============ 工具函数 ============
+async function copyToClipboard(text, msg){
+ try{
+  if(navigator.clipboard){
+   await navigator.clipboard.writeText(text);
+  }else{
+   // 兜底
+   const ta=document.createElement("textarea");
+   ta.value=text;ta.style.position="fixed";ta.style.opacity="0";
+   document.body.appendChild(ta);ta.select();
+   document.execCommand("copy");document.body.removeChild(ta);
+  }
+  alert(msg||"已复制");
+ }catch(e){
+  prompt("复制失败，请手动复制：", text);
+ }
+}
+
 function escapeHtml(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c])}
+
 loadShare();
 </script>
 </body>

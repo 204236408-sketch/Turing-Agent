@@ -221,10 +221,23 @@
     document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id==="personalCenter"));
     document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page==="personal-center"));
     const title=document.getElementById("pageTitle"),sub=document.getElementById("pageSub");
-    if(title)title.textContent="早上好，继续向目标前进 👋";
+    if(title){
+      // 优先用 app.js 全局提供的 getTimeBasedGreeting，未加载时回落到本地实现
+      const greeting = (typeof getTimeBasedGreeting === "function") ? getTimeBasedGreeting() : (function(){
+        let h;
+        try{ h = Number(new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",hour:"numeric",hour12:false}).format(new Date())); }
+        catch(e){ h = new Date().getHours(); }
+        if(h >= 6 && h <= 11) return "早上好，继续向目标前进 ☀️";
+        if(h >= 12 && h <= 13) return "中午好，记得午休 🍱";
+        if(h >= 14 && h <= 17) return "下午好，保持节奏 ☕";
+        if(h >= 18 && h <= 22) return "晚上好，回顾一下今天 🌆";
+        return "夜深了，注意休息 🌙";
+      })();
+      title.textContent = greeting;
+    }
     if(sub){
       const days=document.getElementById("countdownDays")?.textContent||"180";
-      sub.textContent=`距离 408 初试还有 ${Number(days)} 天 · 今日计划完成 3 / 5`;
+      sub.textContent=`距离 408 初试还有 ${Number(days)} 天`;
     }
     window.scrollTo(0,0);
     loadPersonalCenterData();

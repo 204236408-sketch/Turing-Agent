@@ -90,7 +90,6 @@ def point_related(knowledge_id: int, db: Session = Depends(get_db), user: User =
                 items.append({
                     "id": child["id"],
                     "name": child["name"],
-                    "mastery_score": child.get("mastery_score", 0),
                     "status": child["status"],
                     "status_label": child["status_label"],
                     "style": child["style"],

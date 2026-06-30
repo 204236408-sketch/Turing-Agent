@@ -289,11 +289,10 @@ def _chapter_payload(subject: Subject, chapter_name: str, points: list[Knowledge
             {
                 "id": point.id,
                 "name": point_name,
-                "mastery_score": mastery.mastery_score,
+                # 三级节点不再返回 mastery_score，只保留 5 档状态
                 "status": mastery.status,
                 "status_label": STATUS_META[mastery.status]["label"],
                 "style": status_style(mastery.status),
-                "source_scores": mastery.source_scores,
                 "content": point.content or "",
                 "keywords": point.keywords or "",
                 "common_mistakes": point.common_mistakes or "",
@@ -478,11 +477,10 @@ def find_point_detail(db: Session, user_id: int, knowledge_id: int) -> dict:
             "subject_id": subject.id,
             "subject_name": subject.name,
             "chapter_name": chapter_name,
-            "mastery_score": mastery.mastery_score,
+            # 三级节点不再返回 mastery_score，只保留 5 档状态
             "status": mastery.status,
             "status_label": STATUS_META[mastery.status]["label"],
             "style": status_style(mastery.status),
-            "source_scores": mastery.source_scores,
             "content": point.content or "",
             "keywords": point.keywords or "",
             "common_mistakes": point.common_mistakes or "",
