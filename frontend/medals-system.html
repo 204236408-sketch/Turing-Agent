@@ -1040,6 +1040,15 @@
       return `<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" class="medal-svg">${ROUGH}${hexFrame()}${m.ill()}</svg>`;
     }
 
+    function isOwned(m) {
+      if (!m) return false;
+      const progress = Number(m.progress ?? m.current ?? 0);
+      const total = Number(m.total ?? m.target ?? 1);
+      if (m.unlocked === true || m.owned === true) return true;
+      if (total > 0 && progress >= total) return true;
+      return false;
+    }
+
     function render(list) {
       grid.innerHTML = "";
       if (!list.length) { empty.dataset.show = "true"; return; }
@@ -1050,9 +1059,14 @@
         card.type = "button";
         card.className = "card";
         card.dataset.id = m.id;
-        card.dataset.locked = String(!m.owned);
+        const owned = isOwned(m);
+        m.owned = owned;
+        if (owned && (!m.total || Number(m.progress || 0) < Number(m.total || 0))) {
+          m.progress = m.total ?? m.progress ?? 1;
+        }
+        card.dataset.locked = String(!owned);
         card.setAttribute("aria-label",
-          `${m.name},${m.owned ? "已获得" : "未解锁"},${m.rarity}勋章,价值${m.points}积分`);
+          `${m.name},${owned ? "已获得" : "未解锁"},${m.rarity}勋章,价值${m.points}积分`);
 
         const inner = `
           <div class="medal-wrap">${makeMedalSVG(m)}</div>
@@ -1069,7 +1083,10 @@
               type: "pc-open-medal-modal",
               medal: {
                 name: m.name,
-                owned: m.owned,
+                owned,
+                unlocked: owned,
+                progress: m.progress ?? 0,
+                total: m.total ?? 0,
                 desc: m.desc,
                 svg: makeMedalSVG(m)
               }
@@ -1089,7 +1106,7 @@
       let list = medals.slice();
       if (f === "learning") list = list.filter(m => m.category === "learning");
       else if (f === "rank")   list = list.filter(m => m.category === "rank");
-      else if (f === "locked") list = list.filter(m => !m.owned);
+      else if (f === "locked") list = list.filter(m => !isOwned(m));
       if (q) list = list.filter(m => m.name.toLowerCase().includes(q));
       render(list);
     }
@@ -1103,13 +1120,13 @@
     /* =========================================================
        Stats
        ========================================================= */
-    const owned = medals.filter(m => m.owned);
+    const owned = medals.filter(m => isOwned(m));
     const points = owned.reduce((a, b) => a + b.points, 0);
     const fmt = new Intl.NumberFormat("zh-CN");
     document.getElementById("stat-owned").innerHTML = `${owned.length}<span class="unit">/ ${medals.length}</span>`;
     document.getElementById("stat-points").textContent = fmt.format(points);
     document.getElementById("stat-rank").textContent = "知识探索者";
-    const next = medals.find(m => !m.owned);
+    const next = medals.find(m => !isOwned(m));
     document.getElementById("stat-next").textContent = next ? next.name : "已封顶";
     document.getElementById("ownedCount").textContent = `${owned.length} / ${medals.length}`;
 
@@ -1123,23 +1140,28 @@
 
     function openModal(m) {
       currentMedal = m;
+      const owned = isOwned(m);
+      m.owned = owned;
+      if (owned && (!m.total || Number(m.progress || 0) < Number(m.total || 0))) {
+        m.progress = m.total ?? m.progress ?? 1;
+      }
       const container = document.getElementById("medalContainer");
       container.innerHTML = `<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" class="medal-svg" style="width:100%;height:100%;display:block">${ROUGH}${hexFrame()}${m.ill()}</svg>`;
 
       document.getElementById("m-meta").textContent = m.name;
-      document.getElementById("m-title").innerHTML = `${m.owned ? "恭喜解锁新勋章！" : "继续努力解锁新勋章！"}<span class="trophy">🏆</span>`;
-      document.getElementById("m-desc").textContent = m.owned
+      document.getElementById("m-title").innerHTML = `${owned ? "恭喜解锁新勋章！" : "继续努力解锁新勋章！"}<span class="trophy">🏆</span>`;
+      document.getElementById("m-desc").textContent = owned
         ? m.desc
         : `还差一点就能点亮这枚勋章。${m.desc}`;
       document.getElementById("m-points").textContent = m.points;
       document.getElementById("m-rarity").textContent = m.rarity;
-      document.getElementById("m-status").textContent = m.owned ? "已获得" : `${m.progress}/${m.total}`;
+      document.getElementById("m-status").textContent = owned ? "已获得" : `${m.progress}/${m.total}`;
 
       const list = document.getElementById("m-criteria");
       list.innerHTML = "";
       m.criteria.forEach((c, i) => {
         const li = document.createElement("li");
-        if (m.owned) li.className = "done";
+        if (owned) li.className = "done";
         const num = String(i + 1).padStart(2, "0");
         li.innerHTML = `<span class="num">${num}</span><span>${c}</span>`;
         list.appendChild(li);
@@ -1169,7 +1191,7 @@
 
     document.getElementById("m-share").addEventListener("click", async () => {
       if (!currentMedal) return;
-      const text = `我${currentMedal.owned ? "已获得" : "正在解锁"}「${currentMedal.name}」勋章 ✨ Hall of Honors`;
+      const text = `我${isOwned(currentMedal) ? "已获得" : "正在解锁"}「${currentMedal.name}」勋章 ✨ Hall of Honors`;
       if (navigator.share) {
         try { await navigator.share({ title: "我的勋章", text }); }
         catch (_) { /* user cancelled */ }
@@ -1206,17 +1228,18 @@
       medals.forEach(m => {
         const data = byId[m.id];
         if (!data) return;
-        m.owned = !!data.unlocked;
         m.progress = Number(data.current || 0);
         m.total = Number(data.target || 0);
+        m.owned = !!data.unlocked || m.progress >= m.total;
+        if (m.owned && m.total > 0) m.progress = m.total;
         if (m.owned) m.date = (data.achieved_at || new Date().toISOString().slice(0, 10)).replaceAll("-", ".");
       });
-      const owned = medals.filter(m => m.owned);
+      const owned = medals.filter(m => isOwned(m));
       const points = Number(overview.account?.total_earned || 0);
       document.getElementById("stat-owned").innerHTML = `${owned.length}<span class="unit">/ ${medals.length}</span>`;
       document.getElementById("stat-points").textContent = new Intl.NumberFormat("zh-CN").format(points);
       document.getElementById("stat-rank").textContent = owned.at(-1)?.name || "暂未获得";
-      document.getElementById("stat-next").textContent = medals.find(m => !m.owned)?.name || "已封顶";
+      document.getElementById("stat-next").textContent = medals.find(m => !isOwned(m))?.name || "已封顶";
       document.getElementById("ownedCount").textContent = `${owned.length} / ${medals.length}`;
       render(medals);
     }

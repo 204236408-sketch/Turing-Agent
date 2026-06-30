@@ -21,7 +21,8 @@
     {name:"钻石",threshold:5000,tone:"#38bdf8",hex:3},
     {name:"图灵之光",threshold:10000,tone:"#7c3aed",hex:4}
   ];
-  const PLAN_PRICES={"月度会员":"12.9/月","学期会员":"29.9/季","年度会员":"99.9/年"};
+  const PLAN_PRICES={"月度会员":"12.9/月","学期会员":"29.9/季","季度会员":"29.9/季","年度会员":"99.9/年"};
+  const PLAN_DISPLAY_NAMES={"月度会员":"月度会员","学期会员":"季度会员","季度会员":"季度会员","年度会员":"年度会员","普通用户":"普通用户"};
   const SPEND_COSTS={
     ai_chat:{label:"知识问答",cost:1,desc:"每次一问一答消耗 1 积分",silent:true},
     ai_deep_analysis:{label:"AI 小助手深度解析",cost:1,desc:"长回答 / 综合解释"},
@@ -276,7 +277,7 @@
     setText("pcBalance",fmtPoint(account.balance??0));
     setText("pcTotalEarned",account.total_earned??0);
     setText("pcStreak",o.streak_days??0);
-    setText("pcUserLevel",member.name||"普通用户");
+    setText("pcUserLevel",displayPlanName(member));
     const checkBtn=document.getElementById("pcCheckinBtn");
     if(checkBtn){checkBtn.disabled=!!o.today_checkin;checkBtn.textContent=o.today_checkin?"今日已打卡":"立即打卡"}
   }
@@ -297,7 +298,7 @@
         const backend=backendModule[m.type]||{};
         const value=Number(backend.current ?? moduleValues[m.type] ?? 0);
         const target=Number(backend.target ?? m.target);
-        const unlocked=backend.unlocked ?? value>=target;
+        const unlocked=backend.unlocked===true || value>=target;
         const achievedAt=backend.achieved_at||medalDate();
         const rule=backend.rule||m.rule;
         const medal={...m,current:value,target,unlocked,rule,achieved_at:unlocked?achievedAt:null,category:"module"};
@@ -315,7 +316,7 @@
       const backend=backendPoints[type]||{};
       const value=Number(backend.current ?? totalEarned);
       const target=Number(backend.target ?? m.threshold);
-      const unlocked=backend.unlocked ?? value>=target;
+      const unlocked=backend.unlocked===true || value>=target;
       const achievedAt=backend.achieved_at||medalDate();
       const rule=backend.rule||`累计获得 ${target} 积分`;
       const medal={...m,type,current:value,target,unlocked,rule,achieved_at:unlocked?achievedAt:null,category:"points"};
@@ -342,7 +343,7 @@
     wrap.innerHTML=state.plans.map(plan=>{
       const active=plan.name===currentName;
       const price=plan.price_label||PLAN_PRICES[plan.name]||"";
-      const displayName=plan.display_name||(plan.name==="学期会员"?"季度会员":plan.name);
+      const displayName=displayPlanName(plan);
       return `<article class="pc-plan ${active?"active":""}">
         <div class="pc-plan-header">
           <h4>${escapeSafe(displayName)}</h4>
@@ -472,7 +473,7 @@
   function getDiscountInfo(overview=state.overview){
     const membership=overview?.membership||{};
     const rate=Number(membership.discount_rate||1);
-    const name=membership.name||"普通用户";
+    const name=displayPlanName(membership);
     return {rate,name,label:rate>=1?"无折扣":`${Math.round(rate*10)} 折`};
   }
 
@@ -609,7 +610,7 @@
     const plan=state.plans.find(p=>Number(p.id)===Number(planId));
     if(!plan)return;
     paymentState={plan,order:null,timer:null};
-    const displayName=plan.display_name||(plan.name==="学期会员"?"季度会员":plan.name);
+    const displayName=displayPlanName(plan);
     const amount=plan.price||String(plan.price_label||PLAN_PRICES[plan.name]||"").split("/")[0]||"0";
     const qrMap={"12.9":"assets/membership-payment-12_9.jpg","29.9":"assets/membership-payment-29_9.jpg","99.9":"assets/membership-payment-99_9.jpg"};
     const qr=document.getElementById("pcRealQr");
@@ -643,7 +644,7 @@
   async function startQrPayment(){
     if(!paymentState.plan)return;
     if(paymentState.order?.order_no){
-      await completeQrPayment();
+      await checkQrPaymentStatus();
       return;
     }
     const agreed=document.getElementById("pcPayAgree")?.checked;
@@ -653,38 +654,54 @@
       paymentState.order=order;
       const wrap=document.getElementById("pcQrWrap");
       wrap?.classList.add("paying");
-      setText("pcQrMask","正在支付中…");
-      setText("pcPayStatus",`请扫码支付 ￥${order.amount}，付款成功后点击下方按钮开通`);
+      setText("pcQrMask","等待付款确认");
+      setText("pcPayStatus",`请扫码支付 ￥${order.amount}。系统确认到账后才会开通会员。`);
       const btn=document.getElementById("pcPayStart");
-      if(btn){btn.disabled=false;btn.textContent="我已完成支付，开通会员"}
+      if(btn){btn.disabled=false;btn.textContent="我已付款，检查支付状态"}
+      if(paymentState.timer)clearInterval(paymentState.timer);
+      paymentState.timer=setInterval(checkQrPaymentStatus,3000);
     }catch(err){
       toastSafe(err.message||"创建支付订单失败");
     }
   }
 
-  async function completeQrPayment(){
+  async function checkQrPaymentStatus(){
     if(!paymentState.order?.order_no)return;
     try{
       const btn=document.getElementById("pcPayStart");
-      if(btn){btn.disabled=true;btn.textContent="正在确认支付"}
-      const data=await api("/api/membership/payment/complete",{method:"POST",body:JSON.stringify({order_no:paymentState.order.order_no})});
-      document.getElementById("pcQrWrap")?.classList.add("paid");
-      setText("pcQrMask","支付成功");
-      setText("pcPayStatus","支付成功，会员已开通");
-      toastSafe(`已开通 ${data.membership?.name||"会员"}`);
-      setTimeout(()=>{closePaymentModal();loadPersonalCenterData()},700);
+      if(btn){btn.disabled=true;btn.textContent="正在检查支付状态"}
+      const data=await api(`/api/membership/payment/status/${encodeURIComponent(paymentState.order.order_no)}`);
+      if(data.paid&&data.activated){
+        if(paymentState.timer){clearInterval(paymentState.timer);paymentState.timer=null}
+        document.getElementById("pcQrWrap")?.classList.add("paid");
+        setText("pcQrMask","支付成功");
+        setText("pcPayStatus","支付已确认，会员已开通");
+        toastSafe(`已开通 ${displayPlanName(data.membership)||"会员"}`);
+        setTimeout(()=>{closePaymentModal();loadPersonalCenterData()},700);
+        return;
+      }
+      setText("pcQrMask","等待付款确认");
+      setText("pcPayStatus","系统暂未确认到账，请完成支付后稍等，会员不会提前开通。");
+      if(btn){btn.disabled=false;btn.textContent="我已付款，检查支付状态"}
     }catch(err){
-      setText("pcPayStatus",err.message||"支付确认失败，请重试");
+      setText("pcPayStatus",err.message||"支付状态检查失败，请稍后重试");
       const btn=document.getElementById("pcPayStart");
-      if(btn){btn.disabled=false;btn.textContent="重新支付"}
+      if(btn){btn.disabled=false;btn.textContent="重新检查支付状态"}
     }
   }
 
   function openMedalDetail(medal){
+    const unlocked=normalizeMedalOwned(medal);
+    medal.unlocked=unlocked;
+    if(unlocked&&!medal.achieved_at)medal.achieved_at=medalDate();
     setText("pcDetailMedalName",medal.name);
     setText("pcDetailMedalRule",medal.rule);
     setText("pcDetailMedalProgress",`${Number(medal.current||0)} / ${Number(medal.target||0)}`);
-    setText("pcDetailMedalStatus",medal.unlocked?`已获得 · ${medal.achieved_at||medalDate()}`:"暂未获得");
+    setText("pcDetailMedalStatus",unlocked?`已获得 · ${medal.achieved_at||medalDate()}`:"暂未获得");
+    const progress=document.querySelector("#pcMedalModal .pc-detail-progress");
+    const status=document.getElementById("pcDetailMedalStatus");
+    if(progress)progress.hidden=false;
+    if(status)status.hidden=false;
     const percent=Math.min(100,Math.round(Number(medal.current||0)/Math.max(1,Number(medal.target||1))*100));
     const bar=document.getElementById("pcDetailMedalBar");
     if(bar)bar.style.width=`${percent}%`;
@@ -696,19 +713,23 @@
   function closeMedalDetail(){document.getElementById("pcMedalModal")?.classList.remove("show")}
 
   function openParentMedalModal(medal){
-    setText("pcDetailMedalName",`${medal?.owned?"恭喜解锁新勋章！":"继续努力解锁新勋章！"}🏆`);
+    const owned=normalizeMedalOwned(medal);
+    setText("pcDetailMedalName",`${owned?"恭喜解锁新勋章！":"继续努力解锁新勋章！"}🏆`);
     setText("pcDetailMedalRule",medal?.desc||"七天不间断,日日点灯。一支微笑的小火苗,记录你与知识之间最稳定的约定。");
     const progress=document.querySelector("#pcMedalModal .pc-detail-progress");
     const status=document.getElementById("pcDetailMedalStatus");
     if(progress)progress.hidden=true;
-    if(status)status.hidden=true;
+    if(status){
+      status.hidden=false;
+      status.textContent=owned?"已获得":"暂未获得";
+    }
     const icon=document.getElementById("pcDetailMedalIcon");
     if(icon){icon.className="pc-detail-medal-icon pc-parent-medal-icon";icon.innerHTML=medal?.svg||""}
     document.getElementById("pcMedalModal")?.classList.add("show");
   }
 
   function showNewMedalCongrats(){
-    const medals=[...document.querySelectorAll(".pc-medal-item[data-medal]")].map(el=>JSON.parse(el.dataset.medal)).filter(m=>m.unlocked);
+    const medals=[...document.querySelectorAll(".pc-medal-item[data-medal]")].map(el=>JSON.parse(el.dataset.medal)).filter(m=>normalizeMedalOwned(m));
     const found=medals.find(m=>{
       const key=`pc_medal_seen_${m.type||m.name}`;
       if(localStorage.getItem(key))return false;
@@ -749,6 +770,18 @@
   function hideUpgradeModal(){document.getElementById("pcUpgradeModal")?.classList.remove("show")}
   function setText(id,value){const el=document.getElementById(id);if(el)el.textContent=value}
   function toastSafe(message){if(typeof window.toast==="function")window.toast(message);else console.log(message)}
+  function displayPlanName(plan){
+    const raw=plan?.display_name||plan?.name||"普通用户";
+    return PLAN_DISPLAY_NAMES[raw]||raw;
+  }
+  function normalizeMedalOwned(medal){
+    if(!medal)return false;
+    const current=Number(medal.current??medal.progress??0);
+    const target=Number(medal.target??medal.total??1);
+    if(medal.unlocked===true||medal.owned===true)return true;
+    if(target>0&&current>=target)return true;
+    return false;
+  }
   function escapeSafe(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
   function escapeAttr(value){return escapeSafe(value).replace(/`/g,"&#096;")}
 

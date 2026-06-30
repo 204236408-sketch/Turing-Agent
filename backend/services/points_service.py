@@ -26,6 +26,19 @@ POINT_RULES: dict[str, dict[str, dict[str, Any]]] = _load_json(
     {"earn": {}, "spend": {}},
 )
 
+PLAN_DISPLAY_NAMES = {
+    "月度会员": "月度会员",
+    "学期会员": "季度会员",
+    "季度会员": "季度会员",
+    "年度会员": "年度会员",
+    "普通用户": "普通用户",
+}
+
+
+def _display_plan_name(name: str | None) -> str:
+    raw = name or "普通用户"
+    return PLAN_DISPLAY_NAMES.get(raw, raw)
+
 
 def ensure_point_tables(db: Session) -> None:
     db.execute(text("""
@@ -143,7 +156,11 @@ def get_active_membership(db: Session, user_id: int) -> dict[str, Any] | None:
         """),
         {"user_id": user_id, "now": now},
     ).mappings().first()
-    return dict(row) if row else None
+    if not row:
+        return None
+    membership = dict(row)
+    membership["display_name"] = _display_plan_name(membership.get("name"))
+    return membership
 
 
 def earn_points(
@@ -222,7 +239,7 @@ def spend_points(
     membership = get_active_membership(db, user_id)
     discount = float(membership["discount_rate"]) if membership else 1.0
     final_cost = round(cost * discount, 1) if cost > 0 else 0
-    membership_name = membership["name"] if membership else "普通用户"
+    membership_name = _display_plan_name(membership["name"]) if membership else "普通用户"
     feature_name = rule.get("label", action_type)
     balance_before = float(account["balance"])
 
@@ -348,7 +365,7 @@ def grant_daily_membership_points(db: Session, user_id: int) -> dict[str, Any]:
         target_type="membership_daily",
         target_id=day_id,
         transaction_type="grant",
-        description=f"{membership['name']}每日赠送积分",
+        description=f"{_display_plan_name(membership['name'])}每日赠送积分",
     )
 
 
@@ -438,6 +455,7 @@ def account_overview(db: Session, user_id: int) -> dict[str, Any]:
         "medals": stats["medals"],
         "membership": membership or {
             "name": "普通用户",
+            "display_name": "普通用户",
             "daily_points": 0,
             "discount_rate": 1.0,
             "description": "基础功能",

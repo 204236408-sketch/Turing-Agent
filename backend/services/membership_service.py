@@ -130,25 +130,83 @@ def complete_payment_order(db: Session, user_id: int, order_no: str) -> dict[str
     ).mappings().first()
     if not order:
         raise AppError("ORDER_NOT_FOUND", "支付订单不存在", status_code=404)
-    if order["status"] == "paid":
-        return {"paid": True, "order_no": order_no, "status": "paid", "overview": account_overview(db, user_id)}
-    result = subscribe_plan(db, user_id, int(order["plan_id"]))
-    db.execute(
+    if order["status"] in {"paid", "activated"}:
+        result = subscribe_plan(db, user_id, int(order["plan_id"])) if order["status"] == "paid" else {"membership": get_active_membership(db, user_id)}
+        if order["status"] == "paid":
+            db.execute(
+                text("""
+                    UPDATE membership_payment_order
+                    SET status = 'activated', paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP)
+                    WHERE order_no = :order_no AND user_id = :user_id
+                """),
+                {"order_no": order_no, "user_id": user_id},
+            )
+            db.commit()
+        return {
+            "paid": True,
+            "activated": True,
+            "order_no": order_no,
+            "status": "activated",
+            "membership": result.get("membership"),
+            "overview": account_overview(db, user_id),
+            "message": "支付已确认，会员已开通",
+        }
+    return {
+        "paid": False,
+        "activated": False,
+        "order_no": order_no,
+        "status": order["status"],
+        "message": "支付尚未确认，请稍后刷新支付状态",
+    }
+
+
+def payment_order_status(db: Session, user_id: int, order_no: str) -> dict[str, Any]:
+    ensure_payment_table(db)
+    order = db.execute(
         text("""
-            UPDATE membership_payment_order
-            SET status = 'paid', paid_at = CURRENT_TIMESTAMP
+            SELECT order_no, user_id, plan_id, amount, status
+            FROM membership_payment_order
             WHERE order_no = :order_no AND user_id = :user_id
         """),
         {"order_no": order_no, "user_id": user_id},
-    )
-    db.commit()
+    ).mappings().first()
+    if not order:
+        raise AppError("ORDER_NOT_FOUND", "支付订单不存在", status_code=404)
+    if order["status"] in {"paid", "activated"}:
+        return complete_payment_order(db, user_id, order_no)
     return {
-        "paid": True,
+        "paid": False,
+        "activated": False,
         "order_no": order_no,
-        "status": "paid",
-        "membership": result.get("membership"),
-        "overview": account_overview(db, user_id),
+        "status": order["status"],
+        "amount": order["amount"],
+        "message": "支付尚未确认",
     }
+
+
+def mark_payment_order_paid(db: Session, order_no: str) -> dict[str, Any]:
+    ensure_payment_table(db)
+    order = db.execute(
+        text("""
+            SELECT order_no, status
+            FROM membership_payment_order
+            WHERE order_no = :order_no
+        """),
+        {"order_no": order_no},
+    ).mappings().first()
+    if not order:
+        raise AppError("ORDER_NOT_FOUND", "支付订单不存在", status_code=404)
+    if order["status"] == "pending":
+        db.execute(
+            text("""
+                UPDATE membership_payment_order
+                SET status = 'paid', paid_at = CURRENT_TIMESTAMP
+                WHERE order_no = :order_no
+            """),
+            {"order_no": order_no},
+        )
+        db.commit()
+    return {"order_no": order_no, "status": "paid", "message": "支付已确认，等待用户侧开通"}
 
 
 def subscribe_plan(db: Session, user_id: int, plan_id: int) -> dict[str, Any]:
