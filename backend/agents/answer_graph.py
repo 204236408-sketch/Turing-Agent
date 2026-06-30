@@ -15,7 +15,7 @@ from agents.graph_utils import _make_step, _safe_node, _with_timeout
 from config import settings
 from models import AnswerRecord, Question
 from services.llm_service import LLMResult, chat_json, chat_completion
-from services.mastery_service import recalculate_mastery
+from services.mastery_service import recalculate_mastery, resolve_mastery_point
 from utils.response import AppError
 
 logger = logging.getLogger("answer_graph")
@@ -50,13 +50,18 @@ def load_question(state: AnswerCheckState) -> dict:
     if not question:
         raise AppError("QUESTION_NOT_FOUND", "题目不存在", status_code=404)
 
-    meta = f"subject={question.subject}, kp={question.knowledge_point}, type={question.question_type}"
+    knowledge_point = resolve_mastery_point(db, question.subject, question.knowledge_point, question.id) if db else question.knowledge_point
+    if knowledge_point != question.knowledge_point:
+        question.knowledge_point = knowledge_point
+        db.flush()
+
+    meta = f"subject={question.subject}, kp={knowledge_point}, type={question.question_type}"
     step = _make_step("load_question", f"question_id={question_id}", meta, "success", start)
     return {
         "question": {
             "id": question.id,
             "subject": question.subject,
-            "knowledge_point": question.knowledge_point,
+            "knowledge_point": knowledge_point,
             "question_type": question.question_type,
             "variant_type": question.variant_type,
             "question_text": question.question_text,

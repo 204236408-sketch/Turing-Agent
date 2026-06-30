@@ -19,6 +19,8 @@ from services.knowledge_graph_service import (
     build_subject_graph,
     find_chapter_detail,
     find_point_detail,
+    status_style,
+    point_name_of,
 )
 from services.mastery_service import synchronize_user_mastery
 from services.recommendation_service import build_smart_recommendations
@@ -28,21 +30,8 @@ from utils.response import success
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
-STATUS_STYLE = {
-    "未学": {"color": "#9aa5b1", "class_name": "unlearned", "label": "未学"},
-    "掌握": {"color": "#27a978", "class_name": "mastered", "label": "掌握"},
-    "不熟": {"color": "#d9a441", "class_name": "unfamiliar", "label": "不熟"},
-    "不会": {"color": "#e17843", "class_name": "unknown", "label": "不会"},
-    "薄弱点": {"color": "#e95f52", "class_name": "weak", "label": "薄弱点"},
-}
-
-STATUS_ORDER = ["薄弱点", "不会", "不熟", "掌握", "未学"]
-
-
-def _safe_status(row: KnowledgeMastery | None) -> str:
-    if row is None:
-        return "未学"
-    return row.final_status or "未学"
+# 与后端 _score_to_status 阈值一致，供前端兜底展示
+STATUS_STYLE_FALLBACK = status_style("unlearned")
 
 
 @router.get("/overview")
@@ -155,78 +144,89 @@ def graph(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """知识图谱：与 build_knowledge_overview 同源，避免再写一遍判定逻辑。"""
     rows = db.query(KnowledgePoint).filter(KnowledgePoint.is_deleted == False).order_by(KnowledgePoint.subject, KnowledgePoint.id).all()
-    mastery_map_data: dict[tuple[str, str], KnowledgeMastery] = {}
     if scope in ("user", "tree"):
-        synchronize_user_mastery(db, user.id, [(r.subject, r.name) for r in rows])
+        # KP key 统一用 (subject, section)（与 knowledge_graph_service 一致）
+        synchronize_user_mastery(db, user.id, [(r.subject, point_name_of(r)) for r in rows])
         db.flush()
-        mastery_rows = db.query(KnowledgeMastery).filter(KnowledgeMastery.user_id == user.id).all()
-        for m in mastery_rows:
-            mastery_map_data[(m.subject, m.knowledge_point)] = m
 
     if scope == "tree":
-        subjects: dict[str, dict] = {}
-        for row in rows:
-            if row.subject not in subjects:
-                subjects[row.subject] = {"name": row.subject, "children": []}
-            section_name = row.section or row.name
-            parent_node = None
-            for child in subjects[row.subject]["children"]:
-                if child["name"] == section_name:
-                    parent_node = child
-                    break
-            if parent_node is None:
-                parent_node = {"name": section_name, "children": []}
-                subjects[row.subject]["children"].append(parent_node)
-            node = {"name": row.section or row.name, "knowledge_point": row.name, "content": row.content, "keywords": row.keywords}
-            mastery_row = mastery_map_data.get((row.subject, row.name))
-            status = _safe_status(mastery_row)
-            node["status"] = status
-            node["style"] = STATUS_STYLE.get(status, STATUS_STYLE["未学"])
-            parent_node["children"].append(node)
+        # 树状结构：复用 overview，转换为嵌套树
+        overview = build_knowledge_overview(db, user.id)
+        return success(_convert_to_tree(overview))
 
-        for subject_data in subjects.values():
-            for parent_node in subject_data["children"]:
-                child_statuses = [c["status"] for c in parent_node.get("children", []) if c.get("status")]
-                if child_statuses:
-                    worst = min(child_statuses, key=lambda s: STATUS_ORDER.index(s) if s in STATUS_ORDER else 99)
-                    parent_node["status"] = worst
-                    parent_node["style"] = STATUS_STYLE.get(worst, STATUS_STYLE["未学"])
-        return success({"subjects": list(subjects.values()), "status_style": STATUS_STYLE})
+    # 扁平章节列表 / 总览
+    overview = build_knowledge_overview(db, user.id)
+    return success({
+        "subjects": _convert_to_grouped(overview),
+        "summary": _compute_summary(overview),
+        "status_style": overview["status_style"],
+    })
 
-    SUBJECTS = ["数据结构", "计算机组成原理", "操作系统", "计算机网络"]
-    grouped: dict[str, list[dict]] = {s: [] for s in SUBJECTS}
-    seen: dict[tuple[str, str], bool] = {}
-    for p in rows:
-        key = (p.subject, p.name)
-        if key in seen:
-            continue
-        seen[key] = True
-        if p.subject not in grouped:
-            grouped[p.subject] = []
-        mastery_row = mastery_map_data.get(key)
-        status = _safe_status(mastery_row) if scope == "user" else "未学"
-        grouped[p.subject].append({
-            "id": f"{p.subject}-{p.name}",
-            "subject": p.subject,
-            "name": p.name,
-            "content": p.content or "",
-            "parent_name": p.parent_name or p.subject,
-            "level": 2,
-            "is_high_frequency": p.is_high_frequency,
-            "status": status,
-            "weak_score": mastery_row.weak_score if mastery_row else 0,
-            "total_answer_count": mastery_row.total_answer_count if mastery_row else 0,
-            "style": STATUS_STYLE.get(status, STATUS_STYLE["未学"]),
+
+def _convert_to_grouped(overview: dict) -> dict[str, list[dict]]:
+    """将 build_knowledge_overview 的 list 形态转成首页期望的 dict[科目] → list[chapter]"""
+    grouped: dict[str, list[dict]] = {}
+    for subject in overview.get("subjects", []):
+        sname = subject["subject_name"]
+        grouped.setdefault(sname, [])
+        for chapter in subject.get("chapters", []):
+            grouped[sname].append({
+                "id": f"{sname}-{chapter['chapter_name']}",
+                "subject": sname,
+                "name": chapter["chapter_name"],
+                "content": "",
+                "parent_name": sname,
+                "level": 2,
+                "is_high_frequency": False,
+                "status": chapter["status"],
+                "mastery_percent": chapter["mastery_percent"],
+                "knowledge_count": chapter["knowledge_count"],
+                "learned_count": chapter.get("learned_count", 0),
+                "style": chapter["style"],
+            })
+    return grouped
+
+
+def _convert_to_tree(overview: dict) -> dict:
+    """转成 { subjects: [{ name, children: [{ name, children: [{ name, status, style }] }] }] }"""
+    subjects: list[dict] = []
+    for subject in overview.get("subjects", []):
+        chapter_nodes = []
+        for chapter in subject.get("chapters", []):
+            chapter_node = {
+                "name": chapter["chapter_name"],
+                "status": chapter["status"],
+                "mastery_percent": chapter["mastery_percent"],
+                "style": chapter["style"],
+                "children": [
+                    {
+                        "name": child["name"],
+                        "knowledge_point": child["name"],
+                        "status": child["status"],
+                        "style": child["style"],
+                        "mastery_score": child.get("mastery_score", 0),
+                    }
+                    for child in chapter.get("children", [])
+                ],
+            }
+            chapter_nodes.append(chapter_node)
+        subjects.append({
+            "name": subject["subject_name"],
+            "mastery_percent": subject["mastery_percent"],
+            "style": subject["style"],
+            "children": chapter_nodes,
         })
-    for s in SUBJECTS:
-        if s not in grouped:
-            grouped[s] = []
-    summary = {status: 0 for status in STATUS_STYLE}
-    for items in grouped.values():
-        for item in items:
-            summary[item["status"]] += 1
-    return success({"subjects": grouped, "summary": summary, "status_style": STATUS_STYLE})
+    return {"subjects": subjects, "status_style": overview["status_style"]}
+
+
+def _compute_summary(overview: dict) -> dict[str, int]:
+    summary = {"mastered": 0, "unfamiliar": 0, "unknown": 0, "weak": 0, "unlearned": 0}
+    for subject in overview.get("subjects", []):
+        for chapter in subject.get("chapters", []):
+            summary[chapter["status"]] = summary.get(chapter["status"], 0) + 1
+    return summary
 
 
 @router.get("/high-frequency")

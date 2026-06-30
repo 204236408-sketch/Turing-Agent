@@ -34,6 +34,11 @@ class QuestionState(TypedDict, total=False):
     mode: str
     subject: str
     knowledge_point: str
+    scope: str
+    chapter: str
+    chapter_id: int | None
+    prompt_knowledge_point: str
+    target_points: list[str]
     difficulty: str
     question_type: str
     count: int

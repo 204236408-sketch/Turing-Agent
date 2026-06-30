@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from agents.graph_state import QuestionState
 from agents.graph_utils import _make_step, _safe_node, _with_timeout
 from config import settings
-from models import Question, QuestionGenerationSession, KnowledgeMastery
+from models import KnowledgePoint, Question, QuestionGenerationSession, KnowledgeMastery
 from services.llm_service import LLMResult, chat_json, chat_completion
 from services.serialization import question_to_dict
 from prompts.hallucination_guard_prompt import render_self_check_prompt
@@ -235,10 +235,190 @@ def _get_db() -> Session | None:
 
 def _to_variant_type(question_type: str) -> str:
     mapping = {
-        "选择题": "choice", "填空题": "fill", "简答题": "essay", "综合题": "comprehensive",
+        "选择题": "choice", "填空题": "fill", "简答题": "essay", "综合题": "comprehensive", "混合": "choice",
         "choice": "choice", "fill": "fill", "essay": "essay", "comprehensive": "comprehensive",
     }
     return mapping.get(question_type, "choice")
+
+
+def _kp_point_name(point: KnowledgePoint) -> str:
+    return (point.section or point.name or "").strip()
+
+
+def _kp_chapter_name(point: KnowledgePoint) -> str:
+    return (point.name or point.parent_name or point.section or "").strip()
+
+
+def _is_chapter_training(scope: str, mode: str) -> bool:
+    return scope == "chapter" or "章节" in (mode or "")
+
+
+def _chapter_children(db: Session, subject: str, chapter: str = "", chapter_id: int | None = None) -> list[KnowledgePoint]:
+    if not db or not subject:
+        return []
+    chapter_point = None
+    if chapter_id:
+        chapter_point = (
+            db.query(KnowledgePoint)
+            .filter(KnowledgePoint.id == chapter_id, KnowledgePoint.is_deleted == False)
+            .first()
+        )
+    if not chapter_point and chapter:
+        chapter_point = (
+            db.query(KnowledgePoint)
+            .filter(
+                KnowledgePoint.subject == subject,
+                KnowledgePoint.name == chapter,
+                KnowledgePoint.is_deleted == False,
+            )
+            .order_by(KnowledgePoint.level.asc(), KnowledgePoint.id.asc())
+            .first()
+        )
+
+    candidates = []
+    if chapter_point:
+        chapter_name = _kp_chapter_name(chapter_point)
+        candidates = (
+            db.query(KnowledgePoint)
+            .filter(
+                KnowledgePoint.subject == chapter_point.subject,
+                KnowledgePoint.name == chapter_name,
+                KnowledgePoint.is_deleted == False,
+            )
+            .order_by(KnowledgePoint.is_high_frequency.desc(), KnowledgePoint.id.asc())
+            .all()
+        )
+    elif chapter:
+        candidates = (
+            db.query(KnowledgePoint)
+            .filter(
+                KnowledgePoint.subject == subject,
+                KnowledgePoint.name == chapter,
+                KnowledgePoint.is_deleted == False,
+            )
+            .order_by(KnowledgePoint.is_high_frequency.desc(), KnowledgePoint.id.asc())
+            .all()
+        )
+
+    seen: set[str] = set()
+    children = []
+    for point in candidates:
+        kp = _kp_point_name(point)
+        if not kp or kp in seen:
+            continue
+        seen.add(kp)
+        children.append(point)
+    return children
+
+
+def _point_exists(db: Session, subject: str, point_name: str) -> bool:
+    if not db or not subject or not point_name:
+        return False
+    return (
+        db.query(KnowledgePoint.id)
+        .filter(
+            KnowledgePoint.subject == subject,
+            KnowledgePoint.section == point_name,
+            KnowledgePoint.is_deleted == False,
+        )
+        .first()
+        is not None
+    )
+
+
+def _rank_target_points(db: Session, user_id: int, subject: str, points: list[KnowledgePoint], count: int) -> list[str]:
+    if not points:
+        return []
+    names = [_kp_point_name(point) for point in points if _kp_point_name(point)]
+    rows = (
+        db.query(KnowledgeMastery)
+        .filter(
+            KnowledgeMastery.user_id == user_id,
+            KnowledgeMastery.subject == subject,
+            KnowledgeMastery.knowledge_point.in_(names),
+        )
+        .all()
+        if db and user_id and names
+        else []
+    )
+    by_name = {row.knowledge_point: row for row in rows}
+
+    def priority(point: KnowledgePoint) -> tuple[int, int, int]:
+        name = _kp_point_name(point)
+        row = by_name.get(name)
+        has_behavior = bool(row and (row.total_answer_count or row.user_mark_status or row.last_answer_time or (row.mastery_score or 0) > 0))
+        score = int(row.mastery_score or 0) if row else 0
+        weak = int(row.weak_score or 0) if row else 0
+        return (0 if not has_behavior else 1, score, -weak)
+
+    ordered = sorted(points, key=priority)
+    picked = [_kp_point_name(point) for point in ordered if _kp_point_name(point)]
+    return picked[: max(1, min(count, len(picked)))]
+
+
+def _resolve_generation_target(state: QuestionState) -> dict:
+    db = _get_db()
+    user_id = state.get("user_id", 0)
+    subject = state.get("subject", "")
+    knowledge_point = (state.get("knowledge_point", "") or "").strip()
+    chapter = (state.get("chapter", "") or "").strip()
+    chapter_id = state.get("chapter_id")
+    scope = (state.get("scope", "") or "").strip()
+    mode = state.get("mode", "")
+    count = state.get("count", 3)
+
+    explicit_chapter = _is_chapter_training(scope, mode)
+    chapter_name = chapter or knowledge_point
+    children = _chapter_children(db, subject, chapter_name, chapter_id) if db and chapter_name else []
+    implicit_chapter = bool(children) and not _point_exists(db, subject, knowledge_point)
+
+    if explicit_chapter or implicit_chapter:
+        target_points = _rank_target_points(db, user_id, subject, children, count) if db else []
+        if target_points:
+            prompt_kp = f"{chapter_name}章节（本组题分别覆盖：{'、'.join(target_points)}）"
+            return {
+                "scope": "chapter",
+                "chapter": chapter_name,
+                "target_points": target_points,
+                "prompt_knowledge_point": prompt_kp,
+            }
+
+    return {
+        "scope": scope or "point",
+        "chapter": chapter,
+        "target_points": [knowledge_point] if knowledge_point else [],
+        "prompt_knowledge_point": knowledge_point,
+    }
+
+
+def _prompt_kp(state: QuestionState) -> str:
+    return state.get("prompt_knowledge_point") or state.get("knowledge_point", "")
+
+
+def _target_for_question(state: QuestionState, item: dict, index: int) -> str:
+    targets = [p for p in state.get("target_points", []) if p]
+    if not targets:
+        return state.get("knowledge_point", "")
+    raw = (item.get("knowledge_point") or item.get("target_knowledge_point") or "").strip()
+    if raw in targets:
+        return raw
+    return targets[index % len(targets)]
+
+
+def _build_target_fallback(state: QuestionState, vt: str, subject: str, count: int) -> list[dict]:
+    targets = [p for p in state.get("target_points", []) if p] or [state.get("knowledge_point", "")]
+    if not targets:
+        return _build_fallback(vt, subject, "", count)
+    out: list[dict] = []
+    per_target = max(1, (count + len(targets) - 1) // len(targets))
+    pools = {target: _build_fallback(vt, subject, target, per_target) for target in targets}
+    for i in range(count):
+        target = targets[i % len(targets)]
+        pool = pools.get(target) or _build_fallback(vt, subject, target, 1)
+        item = dict(pool[(i // len(targets)) % len(pool)])
+        item["target_knowledge_point"] = target
+        out.append(item)
+    return out
 
 
 def _prompt_schema_for(vt: str) -> str:
@@ -418,22 +598,33 @@ def _questions_match_target(items: list[dict], subject: str, knowledge_point: st
     return any(keyword and keyword in text for keyword in target_keywords)
 
 
+def _questions_match_state_targets(items: list[dict], state: QuestionState, subject: str, fallback_kp: str) -> bool:
+    targets = [p for p in state.get("target_points", []) if p]
+    if not targets:
+        return _questions_match_target(items, subject, fallback_kp)
+    return any(_questions_match_target(items, subject, target) for target in targets)
+
+
 def _get_mastery_text(state: QuestionState) -> str:
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
+    target_points = state.get("target_points", []) or [knowledge_point]
     db = _get_db()
-    if db and subject and knowledge_point and state.get("user_id"):
-        row = (
+    if db and subject and target_points and state.get("user_id"):
+        rows = (
             db.query(KnowledgeMastery)
             .filter(
                 KnowledgeMastery.user_id == state["user_id"],
                 KnowledgeMastery.subject == subject,
-                KnowledgeMastery.knowledge_point == knowledge_point,
+                KnowledgeMastery.knowledge_point.in_(target_points),
             )
-            .first()
+            .all()
         )
-        if row:
-            return f"掌握度={row.final_status}, 正确率={row.correct_count/max(row.total_answer_count,1):.0%}"
+        if rows:
+            return "；".join(
+                f"{row.knowledge_point}: 掌握度={row.final_status}, 正确率={row.correct_count/max(row.total_answer_count,1):.0%}"
+                for row in rows[:5]
+            )
     return "暂无掌握度数据"
 
 
@@ -443,7 +634,8 @@ def _get_user_recent_mistakes(state: QuestionState, limit: int = 5) -> str:
     user_id = state.get("user_id", 0)
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
-    if not db or not user_id or not subject or not knowledge_point:
+    target_points = state.get("target_points", []) or [knowledge_point]
+    if not db or not user_id or not subject or not target_points:
         return "无历史错题"
 
     try:
@@ -453,7 +645,7 @@ def _get_user_recent_mistakes(state: QuestionState, limit: int = 5) -> str:
             .filter(
                 Mistake.user_id == user_id,
                 Mistake.subject == subject,
-                Mistake.knowledge_point == knowledge_point,
+                Mistake.knowledge_point.in_(target_points),
                 Mistake.status == "active",
             )
             .order_by(Mistake.create_time.desc())
@@ -578,9 +770,20 @@ def select_target(state: QuestionState) -> dict:
     knowledge_point = state.get("knowledge_point", "")
     difficulty = state.get("difficulty", "中等")
     question_type = state.get("question_type", "选择题")
+    target_info = _resolve_generation_target(state)
+    target_points = target_info.get("target_points", [])
+    prompt_kp = target_info.get("prompt_knowledge_point") or knowledge_point
 
-    step = _make_step("select_target", f"subject={subject}, kp={knowledge_point}", f"type={question_type}, diff={difficulty}", "success", start)
+    step = _make_step(
+        "select_target",
+        f"subject={subject}, kp={knowledge_point}",
+        f"type={question_type}, diff={difficulty}, targets={target_points or [knowledge_point]}",
+        "success",
+        start,
+    )
     return {
+        **target_info,
+        "prompt_knowledge_point": prompt_kp,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -590,15 +793,16 @@ def retrieve_question_context(state: QuestionState) -> dict:
     start = time.time()
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
+    target_points = state.get("target_points", []) or [knowledge_point]
 
     context = []
-    if db and subject and knowledge_point:
+    if db and subject and target_points:
         # 只参考"已验证 + 质量分 ≥ 60"的题，避免 LLM 自噬 + 排除被反馈有误的题
         existing = (
             db.query(Question)
             .filter(
                 Question.subject == subject,
-                Question.knowledge_point == knowledge_point,
+                Question.knowledge_point.in_(target_points),
                 Question.is_deleted == False,
                 Question.is_verified == True,
                 Question.quality_flag != "deprecated",
@@ -622,26 +826,28 @@ def _build_rag_text(state: QuestionState) -> tuple[str, list[str]]:
     """调用 Chroma RAG 检索，返回格式化文本 + 原始片段列表（用于自检节点复用）。"""
     db = _get_db()
     subject = state.get("subject", "")
-    knowledge_point = state.get("knowledge_point", "")
-    if not db or not subject or not knowledge_point:
+    target_points = [p for p in state.get("target_points", []) if p] or [state.get("knowledge_point", "")]
+    if not db or not subject or not target_points:
         return "", []
     try:
         from services.rag_service import retrieve_knowledge
-        rag_result = retrieve_knowledge(
-            db=db,
-            query=f"{subject} {knowledge_point}",
-            limit=3,
-            subject_filter=subject,
-            kp_filter=knowledge_point,
-        )
         docs = []
-        if rag_result and rag_result.get("documents"):
-            raw_docs = rag_result["documents"][:3]
+        for target in target_points[:3]:
+            rag_result = retrieve_knowledge(
+                db=db,
+                query=f"{subject} {target}",
+                limit=2,
+                subject_filter=subject,
+                kp_filter=target,
+            )
+            raw_docs = (rag_result or {}).get("documents", [])[:2]
             for d in raw_docs:
                 if isinstance(d, dict):
                     docs.append(d.get("content", "") or d.get("text", ""))
                 else:
                     docs.append(str(d))
+            if len(docs) >= 4:
+                break
         if not docs:
             return "", []
         rag_text = "\n\n【知识库参考资料】（这是你出题的唯一事实来源）\n"
@@ -675,7 +881,7 @@ def _build_question_bank_text(context: list[dict]) -> str:
 def generate_questions_node(state: QuestionState) -> dict:
     start = time.time()
     subject = state.get("subject", "")
-    knowledge_point = state.get("knowledge_point", "")
+    knowledge_point = _prompt_kp(state)
     difficulty = state.get("difficulty", "中等")
     question_type = state.get("question_type", "选择题")
     count = state.get("count", 3)
@@ -684,7 +890,7 @@ def generate_questions_node(state: QuestionState) -> dict:
     mastery_text = state.get("mastery_text", "暂无掌握度数据")
     mistake_summary = state.get("mistake_summary", "无历史错题")
     vt = _to_variant_type(question_type)
-    fallback_data = {"questions": _build_fallback(vt, subject, knowledge_point, count)}
+    fallback_data = {"questions": _build_target_fallback(state, vt, subject, count)}
 
     # 1. 知识库 RAG（注入 prompt 用作事实约束）
     rag_text, rag_docs = _build_rag_text(state)
@@ -734,7 +940,7 @@ def generate_questions_node(state: QuestionState) -> dict:
     # 最终兜底：如果 LLM 和 fallback 加起来都不足 count 道，用 _build_fallback 补齐（choice 类型已有通用模板）
     if len(raw_questions) < count:
         need = count - len(raw_questions)
-        supplemental = _build_fallback(vt, subject, knowledge_point, count + need)
+        supplemental = _build_target_fallback(state, vt, subject, count + need)
         existing = {_question_identity(item) for item in raw_questions}
         additions = [item for item in supplemental if _question_identity(item) not in existing]
         if additions:
@@ -749,7 +955,7 @@ def generate_questions_node(state: QuestionState) -> dict:
         llm.used_llm = False
         llm.error = f"知识库暂无 {knowledge_point} 资料，已使用权威题库"
         raw_questions = fallback_data["questions"][:count]
-    elif llm.used_llm and not _questions_match_target(raw_questions, subject, knowledge_point):
+    elif llm.used_llm and not _questions_match_state_targets(raw_questions, state, subject, knowledge_point):
         llm.used_llm = False
         llm.error = "AI 题目与指定科目/知识点不匹配，已自动降级为本地保底题。"
         raw_questions = fallback_data["questions"][:count]
@@ -1055,7 +1261,7 @@ def validate_questions(state: QuestionState) -> dict:
         if not _assess_difficulty_match(item, difficulty):
             reasons.append(f"#{idx+1} 难度信号与 {difficulty} 不匹配")
 
-    if valid and not _questions_match_target(raw_questions, subject, knowledge_point):
+    if valid and not _questions_match_state_targets(raw_questions, state, subject, knowledge_point):
         valid = False
         reasons.append("知识点不匹配")
 
@@ -1086,7 +1292,7 @@ def _refill_questions(state: QuestionState) -> dict:
         }
 
     need = count - len(raw_questions)
-    pool = _build_fallback(vt, subject, knowledge_point, count + need)
+    pool = _build_target_fallback(state, vt, subject, count + need)
     # 题干去重：新题和已有题不能重复
     existing_sigs = {_text_signature(str(it.get("question_text", ""))) for it in raw_questions}
     filled = 0
@@ -1124,6 +1330,8 @@ def save_questions(state: QuestionState) -> dict:
     llm = state.get("llm_result", None)
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
+    prompt_knowledge_point = _prompt_kp(state)
+    target_points = [p for p in state.get("target_points", []) if p] or [knowledge_point]
     difficulty = state.get("difficulty", "中等")
     question_type = state.get("question_type", "选择题")
     count = state.get("count", 3)
@@ -1140,27 +1348,29 @@ def save_questions(state: QuestionState) -> dict:
         difficulty=difficulty,
         question_type=question_type,
         question_count=count,
-        reason=f"{mode}：围绕 {subject} / {knowledge_point} 生成 {count} 道 {difficulty} {question_type}。",
+        reason=f"{mode}：围绕 {subject} / {prompt_knowledge_point} 生成 {count} 道 {difficulty} {question_type}。",
     )
     db.add(session)
     db.flush()
 
     questions = []
-    fallback_data = _build_fallback(vt, subject, knowledge_point, max(count, 1))
+    fallback_data = _build_target_fallback(state, vt, subject, max(count, 1))
     for idx, item in enumerate(raw_questions):
         sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if vt == "comprehensive" else "[]"
         fallback_item = fallback_data[idx % len(fallback_data)]
+        question_kp = _target_for_question(state, item, idx)
+        item.setdefault("target_knowledge_point", question_kp)
         question = Question(
             session_id=session.id,
             subject=subject,
-            knowledge_point=knowledge_point,
+            knowledge_point=question_kp,
             difficulty=difficulty,
             question_type=question_type,
             variant_type=vt,
             question_text=_with_target_prefix(
                 item.get("question_text") or fallback_item["question_text"],
                 subject,
-                knowledge_point,
+                question_kp,
             ),
             options_json=json.dumps(item.get("options") or [], ensure_ascii=False),
             sub_questions_json=sub_qs,
@@ -1168,7 +1378,7 @@ def save_questions(state: QuestionState) -> dict:
             explanation=item.get("explanation") or "解析暂缺。",
             hints_json=json.dumps(item.get("hints") or ["先定位知识点。", "再按步骤推导。"], ensure_ascii=False),
             easy_mistakes=(item.get("easy_mistakes") or "").strip()[:500],
-            recommend_reason=session.reason,
+            recommend_reason=f"{session.reason} 本题定位：{question_kp}。",
             source="llm" if (llm and llm.used_llm) else "agent_fallback",
         )
         db.add(question)
@@ -1181,6 +1391,7 @@ def save_questions(state: QuestionState) -> dict:
         "session_id": session.id,
         "questions": questions,
         "config": session.reason,
+        "target_points": target_points,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -1190,13 +1401,14 @@ def fallback_questions(state: QuestionState) -> dict:
     start = time.time()
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
+    prompt_knowledge_point = _prompt_kp(state)
     difficulty = state.get("difficulty", "中等")
     question_type = state.get("question_type", "选择题")
     count = state.get("count", 3)
     mode = state.get("mode", "")
     user_id = state.get("user_id", 0)
     vt = _to_variant_type(question_type)
-    fallback_data = _unique_question_items(_build_fallback(vt, subject, knowledge_point, count))[:count]
+    fallback_data = _unique_question_items(_build_target_fallback(state, vt, subject, count))[:count]
 
     is_smart = mode != "自由选择"
     session = QuestionGenerationSession(
@@ -1208,7 +1420,7 @@ def fallback_questions(state: QuestionState) -> dict:
         difficulty=difficulty,
         question_type=question_type,
         question_count=count,
-        reason=f"{mode}：{subject} / {knowledge_point} fallback 生成 {count} 道。",
+        reason=f"{mode}：{subject} / {prompt_knowledge_point} fallback 生成 {count} 道。",
     )
     db.add(session)
     db.flush()
@@ -1218,15 +1430,16 @@ def fallback_questions(state: QuestionState) -> dict:
         sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if vt == "comprehensive" else "[]"
         # 识别"抽自 seed 题库的题"：seed 题天然带 source=seed 字段
         is_seed_pick = item.get("source") == "seed"
+        question_kp = _target_for_question(state, item, idx)
         question = Question(
             session_id=session.id,
             subject=subject,
-            knowledge_point=knowledge_point,
+            knowledge_point=question_kp,
             difficulty=item.get("difficulty") or difficulty,
             question_type=question_type,
             variant_type=vt,
             question_text=_with_target_prefix(
-                item.get("question_text", ""), subject, knowledge_point,
+                item.get("question_text", ""), subject, question_kp,
             ),
             options_json=json.dumps(item.get("options") or [], ensure_ascii=False),
             sub_questions_json=sub_qs,
@@ -1234,7 +1447,7 @@ def fallback_questions(state: QuestionState) -> dict:
             explanation=item.get("explanation") or "解析暂缺。",
             hints_json=json.dumps(item.get("hints") or ["先定位知识点。", "再按步骤推导。"], ensure_ascii=False),
             easy_mistakes=(item.get("easy_mistakes") or "").strip()[:500],
-            recommend_reason=session.reason,
+            recommend_reason=f"{session.reason} 本题定位：{question_kp}。",
             source=item.get("source") or "agent_fallback",
             is_verified=True if is_seed_pick else False,
             quality_score=100 if is_seed_pick else 0,
@@ -1244,7 +1457,7 @@ def fallback_questions(state: QuestionState) -> dict:
         db.flush()
         questions.append(question_to_dict(question))
 
-    step = _make_step("fallback_questions", f"fallback for {subject}/{knowledge_point}", f"saved {len(questions)} template questions", "success", start)
+    step = _make_step("fallback_questions", f"fallback for {subject}/{prompt_knowledge_point}", f"saved {len(questions)} template questions", "success", start)
     return {
         "session_id": session.id,
         "questions": questions,
@@ -1278,9 +1491,9 @@ def _build_question_graph() -> StateGraph:
     ]:
         workflow.add_node(name, _safe_node(fn))
 
-    workflow.set_entry_point("analyze_user_state")
-    workflow.add_edge("analyze_user_state", "select_target")
-    workflow.add_edge("select_target", "retrieve_question_context")
+    workflow.set_entry_point("select_target")
+    workflow.add_edge("select_target", "analyze_user_state")
+    workflow.add_edge("analyze_user_state", "retrieve_question_context")
     workflow.add_edge("retrieve_question_context", "generate_questions")
     # 生成 → 去重 → 自检 → 补足 → 校验 → 保存/降级
     workflow.add_edge("generate_questions", "deduplicate")

@@ -26,7 +26,12 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
 from models import AnswerRecord, KnowledgeMastery, KnowledgePoint, Mistake, User, UserMemory, UserProfile
-from services.mastery_service import synchronize_user_mastery
+from services.mastery_service import (
+    normalize_status,
+    status_label,
+    synchronize_user_mastery,
+)
+from services.knowledge_graph_service import build_knowledge_overview, status_style
 from services.recommendation_service import build_smart_recommendations, choose_today_plan as choose_recommended_plan
 from utils.response import success
 
@@ -36,14 +41,12 @@ router = APIRouter(prefix="/api/home", tags=["home"])
 
 SUBJECTS = ["数据结构", "计算机组成原理", "操作系统", "计算机网络"]
 DEFAULT_TARGET_DATE = "2026-12-19"
-STATUS_ORDER = ["薄弱点", "不会", "不熟", "掌握", "未学"]
-STATUS_STYLE = {
-    "未学": {"color": "#9aa5b1", "class_name": "unlearned", "label": "未学"},
-    "掌握": {"color": "#27a978", "class_name": "mastered", "label": "掌握"},
-    "不熟": {"color": "#d9a441", "class_name": "unfamiliar", "label": "不熟"},
-    "不会": {"color": "#e17843", "class_name": "unknown", "label": "不会"},
-    "薄弱点": {"color": "#e95f52", "class_name": "weak", "label": "薄弱点"},
-}
+
+# 状态判定阈值（与 mastery_service._score_to_status 严格一致）
+SCORE_THRESHOLDS = {"mastered": 80, "unfamiliar": 50, "unknown": 20, "weak": 1}
+
+# 兼容旧字段 final_status 存中文标签：保留一份中文状态档位表
+STATUS_LABELS = ["未学", "薄弱点", "不会", "不熟", "掌握"]
 
 KNOWLEDGE_FALLBACK = {
     "数据结构": ["线性表", "栈和队列", "树与二叉树", "图", "查找与排序"],
@@ -157,6 +160,7 @@ def current_week_range() -> tuple[datetime, datetime]:
 
 
 def mastery_map(rows: list[KnowledgeMastery]) -> dict[tuple[str, str], KnowledgeMastery]:
+    """对同一 (subject, kp) 多行进行去重，选择 mastery_score 最高的行（与 knowledge_graph_service 一致）"""
     result: dict[tuple[str, str], KnowledgeMastery] = {}
     for row in rows:
         key = (clean_text(row.subject), clean_text(row.knowledge_point))
@@ -164,11 +168,7 @@ def mastery_map(rows: list[KnowledgeMastery]) -> dict[tuple[str, str], Knowledge
         if not existing:
             result[key] = row
             continue
-        row_status = _safe_status(row)
-        existing_status = _safe_status(existing)
-        row_rank = STATUS_ORDER.index(row_status)
-        existing_rank = STATUS_ORDER.index(existing_status)
-        if row_rank < existing_rank or (row_rank == existing_rank and (row.weak_score or 0) > (existing.weak_score or 0)):
+        if (row.mastery_score or 0) > (existing.mastery_score or 0):
             result[key] = row
     return result
 
@@ -179,10 +179,11 @@ def compute_point_status(subject: str, point: str, rows: dict[tuple[str, str], K
 
 
 def sorted_mastery_candidates(rows: list[KnowledgeMastery]) -> list[KnowledgeMastery]:
+    """按掌握度从低到高（最薄弱在前）排序，weak_score 高的优先"""
     return sorted(
         rows,
         key=lambda r: (
-            STATUS_ORDER.index(_safe_status(r)) if _safe_status(r) in STATUS_ORDER else 99,
+            -(r.mastery_score or 0),  # 综合分低的优先
             -(r.weak_score or 0),
             -(r.wrong_count or 0),
             -((r.qa_count or 0) + (r.forum_count or 0)),
@@ -322,64 +323,62 @@ def build_memory_list(memories: list[UserMemory], rows: list[KnowledgeMastery]) 
 
 
 def _worst_status(statuses: list[str]) -> str:
-    """取状态列表中最差的一个（按 STATUS_ORDER 优先级）"""
+    """取状态列表中最差的一个（按 STATUS_LABELS 顺序：未学 < 薄弱点 < 不会 < 不熟 < 掌握）"""
     if not statuses:
         return "未学"
-    return min(statuses, key=lambda s: STATUS_ORDER.index(s) if s in STATUS_ORDER else 99)
+    return min(statuses, key=lambda s: STATUS_LABELS.index(s) if s in STATUS_LABELS else 99)
 
 
-def build_graph(points: list[KnowledgePoint], rows: list[KnowledgeMastery]) -> dict:
-    by_mastery = mastery_map(rows)
-    grouped: dict[str, list[dict]] = {subject: [] for subject in SUBJECTS}
+def _kp_key(point: KnowledgePoint) -> tuple[str, str]:
+    """与 knowledge_graph_service.point_name_of 保持一致：section → name。"""
+    return (point.subject, clean_text(point.section) or clean_text(point.name))
 
-    sections: dict[tuple[str, str], dict] = {}
-    for p in points:
-        sec = clean_text(p.section) or clean_text(p.name)
-        key = (p.subject, sec)
-        if key not in sections:
-            sections[key] = {"section": sec, "subject": p.subject, "kps": [], "is_high_frequency": False}
-        sections[key]["kps"].append(p)
-        if p.is_high_frequency:
-            sections[key]["is_high_frequency"] = True
 
-    order = sorted(sections.items(), key=lambda x: x[1]["kps"][0].id)
-    for (subject, section_name), info in order:
-        if len(grouped.get(subject, [])) >= 8:
-            continue
+def _kp_name(point: KnowledgePoint) -> str:
+    return clean_text(point.section) or clean_text(point.name)
 
-        child_statuses: list[str] = []
-        weak_score = 0
-        total_count = 0
-        for kp in info["kps"]:
-            mastery = by_mastery.get((subject, kp.name))
-            if mastery:
-                child_statuses.append(mastery.final_status or "未学")
-                weak_score = max(weak_score, mastery.weak_score or 0)
-                total_count += mastery.total_answer_count or 0
 
-        status = _worst_status(child_statuses)
+def build_graph(db: Session, user_id: int, points: list[KnowledgePoint]) -> dict:
+    """首页图谱：直接复用 knowledge_graph_service.build_knowledge_overview，保证两页面同源。
 
-        grouped.setdefault(subject, []).append({
-            "id": f"{subject}-{section_name}",
-            "subject": subject,
-            "name": section_name,
-            "section": section_name,
-            "parent_name": subject,
-            "level": 2,
-            "is_high_frequency": info["is_high_frequency"],
-            "status": status,
-            "weak_score": weak_score,
-            "total_answer_count": total_count,
-            "style": STATUS_STYLE.get(status, STATUS_STYLE["未学"]),
-        })
+    返回结构适配首页前端：
+      - subjects: { 科目: [chapter_item, ...] }，每个 chapter_item 含 status / mastery_percent / style
+      - summary: { 状态key: 计数 } 供前端分布条
+      - status_style: { 状态key: { color, label, class_name } }
+    """
+    overview = build_knowledge_overview(db, user_id)
+    # overview["subjects"] 是 list 形态，首页期望 dict 形态，转换之
+    grouped: dict[str, list[dict]] = {s: [] for s in SUBJECTS}
+    summary: dict[str, int] = {key: 0 for key in ("mastered", "unfamiliar", "unknown", "weak", "unlearned")}
+
+    for subject in overview.get("subjects", []):
+        sname = subject["subject_name"]
+        for chapter in subject.get("chapters", []):
+            grouped.setdefault(sname, []).append({
+                "id": f"{sname}-{chapter['chapter_name']}",
+                "subject": sname,
+                "name": chapter["chapter_name"],
+                "section": chapter["chapter_name"],
+                "parent_name": sname,
+                "level": 2,
+                "is_high_frequency": False,
+                "status": chapter["status"],
+                "status_label": chapter["status_label"],
+                "mastery_percent": chapter["mastery_percent"],
+                "knowledge_count": chapter["knowledge_count"],
+                "learned_count": chapter.get("learned_count", 0),
+                "style": chapter["style"],
+            })
+            summary[chapter["status"]] = summary.get(chapter["status"], 0) + 1
 
     for s in SUBJECTS:
         grouped.setdefault(s, [])
-    summary = {status: 0 for status in STATUS_STYLE}
-    for items in grouped.values():
-        for item in items:
-            summary[item["status"]] += 1
-    return {"subjects": grouped, "summary": summary, "status_style": STATUS_STYLE}
+
+    return {
+        "subjects": grouped,
+        "summary": summary,
+        "status_style": {key: status_style(key) for key in ("mastered", "unfamiliar", "unknown", "weak", "unlearned")},
+    }
 
 
 @router.get("/overview")
@@ -420,7 +419,10 @@ def home_overview(db: Session = Depends(get_db), user: User = Depends(get_curren
     raw_recommendations = build_smart_recommendations(db, user.id)
     recommendations = sorted(raw_recommendations, key=lambda item: (not item["available"], raw_recommendations.index(item)))
     stats = build_stats(mastery_rows, memories, all_answers, weekly_answers, last_week_answers)
-    graph = build_graph(points, mastery_rows)
+    # 关键修复：与导航页同源；synchronize_user_mastery 用 (subject, section) 作为 KP key
+    synchronize_user_mastery(db, user.id, [_kp_key(p) for p in points])
+    db.flush()
+    graph = build_graph(db, user.id, points)
     db.commit()
     return success(
         {

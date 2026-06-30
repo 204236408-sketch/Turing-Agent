@@ -1,214 +1,110 @@
+"""知识图谱 / 掌握度聚合：唯一读取 mastery_service 写入的 mastery_score，不再自行重算。
+
+设计原则（与 mastery_service 保持一致）：
+- 三级 KP 的状态 = DB 中 KnowledgeMastery.final_status（已由 mastery_service 计算并持久化）
+- 二级章节的 mastery_percent = 该章节下所有"有行为数据"的 KP 的 mastery_score 平均
+  - 未学的 KP 不计入分母，避免"未学 KP 拉低分"
+  - 若所有 KP 都未学，章节 mastery_percent = 0
+- 二级章节的 status = 由 mastery_percent 经 mastery_service._score_to_status 派生
+- 章节定义 = KnowledgePoint.name（缺失时回退 parent_name / section）
+- 知识点名 = KnowledgePoint.section（缺失时回退 name）
+- 一级科目的 mastery_percent = 各章节 mastery_percent × 章节 KP 数 加权平均
+- 一级科目的 learned_count = 所有 KP 中"有行为数据"的数量（mastery_score > 0 或 final_status != 未学）
+
+注意：
+- 本模块不再调 compute_mastery_score，每条数据的状态分都来自 DB
+- 上游 router（home_router / knowledge_router）必须先调用 synchronize_user_mastery 刷新分值
+"""
 from __future__ import annotations
 
 from collections import Counter, OrderedDict
-from dataclasses import dataclass
 from typing import Iterable
 
 from sqlalchemy.orm import Session
 
 from models import KnowledgeMastery, KnowledgePoint, Subject
-from services.mastery_service import synchronize_user_mastery
+from services.mastery_service import (
+    STATUS_META,
+    STATUS_ORDER,
+    _score_to_status,
+    normalize_status,
+    status_label,
+)
 
 
-STATUS_META = {
-    "mastered": {"label": "掌握", "score": 100, "color": "#2fbf7a", "class_name": "mastered"},
-    "unfamiliar": {"label": "不熟", "score": 60, "color": "#f5bd22", "class_name": "unfamiliar"},
-    "unknown": {"label": "不会", "score": 30, "color": "#ff9f43", "class_name": "unknown"},
-    "weak": {"label": "薄弱点", "score": 10, "color": "#ff6262", "class_name": "weak"},
-    "unlearned": {"label": "未学", "score": 0, "color": "#a8b0bf", "class_name": "unlearned"},
-}
-
-STATUS_ORDER = ["weak", "unknown", "unfamiliar", "mastered", "unlearned"]
-
+# 兼容旧导入：re-export 状态元数据
 STATUS_ALIASES = {
-    "掌握": "mastered",
-    "已掌握": "mastered",
-    "mastered": "mastered",
-    "不熟": "unfamiliar",
-    "正在学习": "unfamiliar",
-    "unfamiliar": "unfamiliar",
-    "不会": "unknown",
-    "unknown": "unknown",
-    "薄弱点": "weak",
-    "薄弱": "weak",
-    "weak": "weak",
-    "未学": "unlearned",
-    "unlearned": "unlearned",
-    "": "unlearned",
-    None: "unlearned",
+    "掌握": "mastered", "已掌握": "mastered", "mastered": "mastered",
+    "不熟": "unfamiliar", "正在学习": "unfamiliar", "unfamiliar": "unfamiliar",
+    "不会": "unknown", "unknown": "unknown",
+    "薄弱点": "weak", "薄弱": "weak", "weak": "weak",
+    "未学": "unlearned", "unlearned": "unlearned",
+    "": "unlearned", None: "unlearned",
 }
-
-
-@dataclass
-class MasteryChoice:
-    status: str
-    row: KnowledgeMastery | None
-    mastery_score: int
-    source_scores: dict[str, int]
-
-
-def normalize_status(status: str | None) -> str:
-    return STATUS_ALIASES.get(status, "unlearned")
-
-
-def status_score(status: str | None) -> int:
-    return STATUS_META[normalize_status(status)]["score"]
 
 
 def status_style(status: str | None) -> dict:
+    """前端展示用的状态样式：key / label / score / color / class_name"""
     key = normalize_status(status)
-    return {"key": key, **STATUS_META[key]}
-
-
-MASTERY_SCORE_WEIGHTS = {
-    "answer_performance": 0.50,
-    "user_feedback": 0.20,
-    "mistake_penalty": 0.20,
-    "learning_behavior": 0.10,
-}
-
-
-def _clamp_score(value: float) -> int:
-    return round(max(0, min(100, value)))
-
-
-def _row_has_behavior(row: KnowledgeMastery | None) -> bool:
-    if row is None:
-        return False
-    return any(
-        [
-            row.total_answer_count,
-            row.correct_count,
-            row.wrong_count,
-            row.unfamiliar_count,
-            row.unknown_count,
-            row.mastered_count,
-            row.ocr_mistake_count,
-            row.qa_count,
-            row.forum_count,
-            row.user_mark_status,
-            row.weak_score,
-            row.continuous_wrong_count,
-            normalize_status(row.final_status) != "unlearned",
-        ]
-    )
-
-
-def _answer_performance_score(row: KnowledgeMastery | None) -> int:
-    if row is None or not row.total_answer_count:
-        return 0
-    score = (row.correct_count or 0) * 100 / max(row.total_answer_count or 0, 1)
-    if (row.total_answer_count or 0) < 3:
-        score = min(score, 70)
-    if (row.continuous_wrong_count or 0) >= 2:
-        score = min(score, 40)
-    return _clamp_score(score)
-
-
-def _user_feedback_score(row: KnowledgeMastery | None, answer_score: int) -> int:
-    if row is None:
-        return 0
-    explicit_status = normalize_status(row.user_mark_status)
-    if explicit_status != "unlearned":
-        return STATUS_META[explicit_status]["score"]
-    if row.total_answer_count:
-        return answer_score
-    inferred_status = normalize_status(row.final_status)
-    return STATUS_META[inferred_status]["score"] if inferred_status != "unlearned" else 0
-
-
-def _mistake_penalty_score(row: KnowledgeMastery | None) -> int:
-    if not _row_has_behavior(row):
-        return 0
-    wrong_count = row.wrong_count or 0
-    continuous_wrong = row.continuous_wrong_count or 0
-    ocr_count = row.ocr_mistake_count or 0
-    weak_penalty = min(40, (row.weak_score or 0) * 3)
-    return _clamp_score(100 - wrong_count * 12 - continuous_wrong * 15 - ocr_count * 8 - weak_penalty)
-
-
-def _learning_behavior_score(row: KnowledgeMastery | None) -> int:
-    if row is None:
-        return 0
-    return _clamp_score(
-        (row.total_answer_count or 0) * 20
-        + (row.qa_count or 0) * 10
-        + (row.forum_count or 0) * 5
-    )
-
-
-def _status_from_score(score: int) -> str:
-    if score >= 80:
-        return "mastered"
-    if score >= 50:
-        return "unfamiliar"
-    if score >= 20:
-        return "unknown"
-    if score > 0:
-        return "weak"
-    return "unlearned"
-
-
-def compute_mastery_score(row: KnowledgeMastery | None) -> tuple[int, str, dict[str, int]]:
-    if not _row_has_behavior(row):
-        empty_scores = {key: 0 for key in MASTERY_SCORE_WEIGHTS}
-        return 0, "unlearned", empty_scores
-
-    answer_score = _answer_performance_score(row)
-    source_scores = {
-        "answer_performance": answer_score,
-        "user_feedback": _user_feedback_score(row, answer_score),
-        "mistake_penalty": _mistake_penalty_score(row),
-        "learning_behavior": _learning_behavior_score(row),
+    base = STATUS_META[key]
+    class_name_map = {
+        "mastered": "mastered", "unfamiliar": "unfamiliar",
+        "unknown": "unknown", "weak": "weak", "unlearned": "unlearned",
     }
-    score = sum(source_scores[key] * MASTERY_SCORE_WEIGHTS[key] for key in MASTERY_SCORE_WEIGHTS)
-
-    explicit_status = normalize_status(row.user_mark_status if row else None)
-    final_status = normalize_status(row.final_status if row else None)
-    if explicit_status == "weak" or final_status == "weak" or (row and (row.weak_score or 0) >= 10):
-        score = min(score, 19)
-    elif row and ((row.continuous_wrong_count or 0) >= 3 or (row.wrong_count or 0) >= 3):
-        score = min(score, 49)
-
-    mastery_score = _clamp_score(score)
-    return mastery_score, _status_from_score(mastery_score), source_scores
+    return {
+        "key": key,
+        "label": base["label"],
+        "score": base["score"],
+        "color": base["color"],
+        "class_name": class_name_map[key],
+    }
 
 
-def _best_row(existing: KnowledgeMastery | None, incoming: KnowledgeMastery) -> KnowledgeMastery:
-    if existing is None:
-        return incoming
-    existing_status = normalize_status(existing.final_status)
-    incoming_status = normalize_status(incoming.final_status)
-    if STATUS_ORDER.index(incoming_status) < STATUS_ORDER.index(existing_status):
-        return incoming
-    if (incoming.weak_score or 0) > (existing.weak_score or 0):
-        return incoming
-    if (incoming.total_answer_count or 0) > (existing.total_answer_count or 0):
-        return incoming
-    return existing
+# ── 章节/知识点名归一化 ────────────────────────────────────────────────
+def chapter_name_of(point: KnowledgePoint) -> str:
+    """统一章节名：name → parent_name → section，去空白"""
+    return (point.name or point.parent_name or point.section or "").strip()
 
 
-def _mastery_map(rows: Iterable[KnowledgeMastery]) -> dict[tuple[str, str], KnowledgeMastery]:
+def point_name_of(point: KnowledgePoint) -> str:
+    """统一知识点名：section → name（章节名是父级，section 才是具体知识点）"""
+    return (point.section or point.name or "").strip()
+
+
+# ── 加载 mastery 表，生成 (subject, point_name) → row 映射 ────────────────
+def _mastery_map(rows: list[KnowledgeMastery]) -> dict[tuple[str, str], KnowledgeMastery]:
+    """DB 行 → (subject, knowledge_point) 字典
+
+    若同一 (subject, kp) 出现多行（理论上 unique 约束会阻止，但容错处理），
+    选择 mastery_score 最高的那条（避免旧的"薄弱点"行压制新的"已掌握"行）。
+    """
     result: dict[tuple[str, str], KnowledgeMastery] = {}
     for row in rows:
         key = ((row.subject or "").strip(), (row.knowledge_point or "").strip())
         if not key[0] or not key[1]:
             continue
-        result[key] = _best_row(result.get(key), row)
+        existing = result.get(key)
+        if not existing:
+            result[key] = row
+            continue
+        if (row.mastery_score or 0) > (existing.mastery_score or 0):
+            result[key] = row
     return result
 
 
-def _choose_mastery(
-    by_mastery: dict[tuple[str, str], KnowledgeMastery],
-    subject_name: str,
-    point_name: str,
-    chapter_name: str,
-) -> MasteryChoice:
-    point_row = by_mastery.get((subject_name, point_name))
-    chapter_row = by_mastery.get((subject_name, chapter_name))
-    row = _best_row(point_row, chapter_row) if point_row and chapter_row else (point_row or chapter_row)
-    mastery_score, status, source_scores = compute_mastery_score(row)
-    return MasteryChoice(status, row, mastery_score, source_scores)
+def _has_behavior(row: KnowledgeMastery | None) -> bool:
+    """该 KP 是否有过学习行为（用于判定是否算入分母/已学习）"""
+    if row is None:
+        return False
+    return any([
+        row.total_answer_count,
+        row.correct_count,
+        row.wrong_count,
+        row.qa_count,
+        row.forum_count,
+        row.user_mark_status,
+        row.last_answer_time,
+    ])
 
 
 def _distribution(items: Iterable[str]) -> dict[str, int]:
@@ -223,16 +119,107 @@ def _distribution_percent(distribution: dict[str, int]) -> dict[str, int]:
     return {key: round(value * 100 / total) for key, value in distribution.items()}
 
 
-def _chapter_status(mastery_percent: int) -> str:
-    if mastery_percent >= 80:
-        return "mastered"
-    if mastery_percent >= 50:
-        return "unfamiliar"
-    if mastery_percent >= 20:
-        return "unknown"
-    if mastery_percent > 0:
-        return "weak"
-    return "unlearned"
+# ── 章节载荷：聚合三级 KP 得到章节的 mastery_percent / status ─────────────
+def _chapter_payload(
+    subject: Subject,
+    chapter_name: str,
+    points: list[KnowledgePoint],
+    by_mastery: dict[tuple[str, str], KnowledgeMastery],
+) -> dict:
+    children = []
+    seen_children: set[str] = set()
+    child_scores: list[int] = []  # 仅收集"有行为数据"的子节点的 mastery_score
+    child_statuses: list[str] = []  # 用于分布统计：包含"未学"，按全部子节点计
+
+    for point in points:
+        kp_name = point_name_of(point)
+        if not kp_name or kp_name in seen_children:
+            continue
+        seen_children.add(kp_name)
+
+        row = by_mastery.get((subject.name, kp_name))
+        # 状态优先用 DB 里的 final_status；mastery_score 由 mastery_service 写入
+        if row is not None:
+            status_key = normalize_status(row.final_status)
+            score = int(row.mastery_score or 0)
+            has_data = _has_behavior(row) or score > 0
+        else:
+            # 无 mastery 行 → 视为未学，不进 child_scores 分母
+            status_key = "unlearned"
+            score = 0
+            has_data = False
+
+        child_statuses.append(status_key)
+        if has_data:
+            child_scores.append(score)
+
+        # 最近学习时间
+        raw_time = None
+        if row:
+            raw_time = row.last_answer_time or row.update_time
+        updated_at = raw_time.isoformat() if raw_time else ""
+
+        children.append({
+            "id": point.id,
+            "name": kp_name,
+            "chapter_name": chapter_name,
+            "status": status_key,
+            "status_label": status_label(status_key),
+            "mastery_score": score if has_data else 0,
+            "style": status_style(status_key),
+            "content": point.content or "",
+            "keywords": point.keywords or "",
+            "common_mistakes": point.common_mistakes or "",
+            "has_behavior": has_data,
+            "updated_at": updated_at,
+        })
+
+    # 章节百分比：有行为数据的子节点分数平均
+    mastery_percent = round(sum(child_scores) / len(child_scores)) if child_scores else 0
+    distribution = _distribution(child_statuses)
+    status = _score_to_status(mastery_percent)
+    learned_count = sum(1 for c in child_statuses if c != "unlearned")
+
+    # 章节级 content / keywords
+    chapter_point = points[0] if points else None
+    chapter_content = chapter_point.content if chapter_point and chapter_point.content else ""
+    chapter_keywords = chapter_point.keywords if chapter_point and chapter_point.keywords else ""
+    if not chapter_content and children:
+        chapter_content = children[0].get("content", "")
+    if not chapter_keywords and children:
+        chapter_keywords = "、".join(c.get("keywords", "").strip() for c in children if c.get("keywords", "").strip())
+
+    # 最近学习
+    learned_children = sorted(
+        [c for c in children if c.get("updated_at")],
+        key=lambda c: c["updated_at"],
+        reverse=True,
+    )
+    last_study = learned_children[0] if learned_children else None
+
+    return {
+        "id": points[0].id if points else 0,
+        "name": chapter_name,
+        "subject_id": subject.id,
+        "subject_name": subject.name,
+        "mastery_percent": mastery_percent,
+        "knowledge_count": len(children),
+        "learned_count": learned_count,
+        "status": status,
+        "status_label": status_label(status),
+        "style": status_style(status),
+        "status_distribution": distribution,
+        "status_distribution_percent": _distribution_percent(distribution),
+        "children": children,
+        "content": chapter_content,
+        "keywords": chapter_keywords,
+        "last_study": {
+            "point_id": last_study["id"] if last_study else None,
+            "point_name": last_study["name"] if last_study else "",
+            "status_label": last_study["status_label"] if last_study else "",
+            "study_time": last_study["updated_at"] if last_study else "",
+        } if last_study else None,
+    }
 
 
 def _subject_query(db: Session, subject_id: int | None = None) -> list[Subject]:
@@ -254,125 +241,61 @@ def _subject_points(db: Session, subject: Subject) -> list[KnowledgePoint]:
     )
 
 
-def _sync_mastery_for_points(db: Session, user_id: int, points: list[KnowledgePoint]) -> dict[tuple[str, str], KnowledgeMastery]:
+def _load_mastery_for_points(
+    db: Session, user_id: int, points: list[KnowledgePoint]
+) -> dict[tuple[str, str], KnowledgeMastery]:
+    """只取本批 KP 对应的 mastery 行，避免扫全表"""
     pairs: set[tuple[str, str]] = set()
-    for point in points:
-        subject = point.subject
-        if point.name:
-            pairs.add((subject, point.name))
-        if point.section:
-            pairs.add((subject, point.section))
-    if pairs:
-        synchronize_user_mastery(db, user_id, sorted(pairs))
-        db.flush()
-    rows = db.query(KnowledgeMastery).filter(KnowledgeMastery.user_id == user_id).all()
+    for p in points:
+        kp_name = point_name_of(p)
+        if kp_name:
+            pairs.add((p.subject, kp_name))
+    if not pairs:
+        return {}
+    cond = []
+    for sub, kp in pairs:
+        cond.append(
+            (KnowledgeMastery.user_id == user_id)
+            & (KnowledgeMastery.subject == sub)
+            & (KnowledgeMastery.knowledge_point == kp)
+        )
+    from sqlalchemy import or_
+    rows = db.query(KnowledgeMastery).filter(or_(*cond)).all()
     return _mastery_map(rows)
 
 
-def _chapter_payload(subject: Subject, chapter_name: str, points: list[KnowledgePoint], by_mastery: dict[tuple[str, str], KnowledgeMastery]) -> dict:
-    children = []
-    seen_children: set[str] = set()
-    child_statuses: list[str] = []
-    child_scores: list[int] = []
-    for point in points:
-        point_name = (point.section or point.name or "").strip()
-        if not point_name or point_name in seen_children:
-            continue
-        seen_children.add(point_name)
-        mastery = _choose_mastery(by_mastery, subject.name, point_name, chapter_name)
-        child_statuses.append(mastery.status)
-        child_scores.append(mastery.mastery_score)
-        # 取最近学习时间：优先 last_answer_time，其次 update_time
-        raw_time = (mastery.row.last_answer_time if mastery.row else None) or (mastery.row.update_time if mastery.row else None)
-        updated_at = raw_time.isoformat() if raw_time else ""
-        children.append(
-            {
-                "id": point.id,
-                "name": point_name,
-                # 三级节点不再返回 mastery_score，只保留 5 档状态
-                "status": mastery.status,
-                "status_label": STATUS_META[mastery.status]["label"],
-                "style": status_style(mastery.status),
-                "content": point.content or "",
-                "keywords": point.keywords or "",
-                "common_mistakes": point.common_mistakes or "",
-                "updated_at": updated_at,
-            }
-        )
-
-    mastery_percent = round(sum(child_scores) / len(child_scores)) if child_scores else 0
-    distribution = _distribution(child_statuses)
-    status = _chapter_status(mastery_percent)
-
-    # 聚合章节级 content / keywords：优先取 chapter 自身 KnowledgePoint 的值，否则从 children 拼接
-    chapter_point = points[0] if points else None
-    chapter_content = chapter_point.content if chapter_point and chapter_point.content else ""
-    chapter_keywords = chapter_point.keywords if chapter_point and chapter_point.keywords else ""
-    if not chapter_content and children:
-        chapter_content = children[0].get("content", "")
-    if not chapter_keywords and children:
-        chapter_keywords = "、".join(c.get("keywords", "").strip() for c in children if c.get("keywords", "").strip())
-
-    # 最近学习的知识点
-    learned_children = sorted(
-        [c for c in children if c.get("updated_at")],
-        key=lambda c: c["updated_at"],
-        reverse=True,
-    )
-    last_study = learned_children[0] if learned_children else None
-
-    return {
-        "id": points[0].id if points else 0,
-        "name": chapter_name,
-        "subject_id": subject.id,
-        "subject_name": subject.name,
-        "mastery_percent": mastery_percent,
-        "knowledge_count": len(children),
-        "status": status,
-        "status_label": STATUS_META[status]["label"],
-        "style": status_style(status),
-        "status_distribution": distribution,
-        "status_distribution_percent": _distribution_percent(distribution),
-        "children": children,
-        "content": chapter_content,
-        "keywords": chapter_keywords,
-        "last_study": {
-            "point_id": last_study["id"] if last_study else None,
-            "point_name": last_study["name"] if last_study else "",
-            "status_label": last_study["status_label"] if last_study else "",
-            "study_time": last_study["updated_at"] if last_study else "",
-        } if last_study else None,
-    }
-
-
+# ── 主接口 ──────────────────────────────────────────────────────────────
 def build_subject_graph(db: Session, user_id: int, subject_id: int) -> dict:
-    subjects = _subject_query(db, subject_id)
-    if not subjects:
+    subject_list = _subject_query(db, subject_id)
+    if not subject_list:
         return {}
-    subject = subjects[0]
+    subject = subject_list[0]
     points = _subject_points(db, subject)
-    by_mastery = _sync_mastery_for_points(db, user_id, points)
+    by_mastery = _load_mastery_for_points(db, user_id, points)
 
+    # 按 chapter_name(=point.name) 分组
     chapters_grouped: OrderedDict[str, list[KnowledgePoint]] = OrderedDict()
     for point in points:
-        chapter_name = (point.name or point.parent_name or point.section or "").strip()
-        if not chapter_name:
+        cn = chapter_name_of(point)
+        if not cn:
             continue
-        chapters_grouped.setdefault(chapter_name, []).append(point)
+        chapters_grouped.setdefault(cn, []).append(point)
 
     chapters = [
         _chapter_payload(subject, chapter_name, chapter_points, by_mastery)
         for chapter_name, chapter_points in chapters_grouped.items()
     ]
 
-    total_knowledge = sum(chapter["knowledge_count"] for chapter in chapters)
-    weighted_score = sum(chapter["mastery_percent"] * chapter["knowledge_count"] for chapter in chapters)
+    total_knowledge = sum(c["knowledge_count"] for c in chapters)
+    total_learned = sum(c["learned_count"] for c in chapters)
+    # 科目级百分比：按 KP 数量加权
+    weighted_score = sum(c["mastery_percent"] * c["knowledge_count"] for c in chapters)
     mastery_percent = round(weighted_score / total_knowledge) if total_knowledge else 0
     status_distribution = {key: 0 for key in STATUS_META}
     for chapter in chapters:
         for key, value in chapter["status_distribution"].items():
             status_distribution[key] += value
-    learned_count = total_knowledge - status_distribution["unlearned"]
+
     weak_chapters = sorted(chapters, key=lambda item: (item["mastery_percent"], -item["knowledge_count"]))[:3]
     recommended_chapters = [item for item in chapters if item["status"] in {"weak", "unknown", "unfamiliar"}][:4]
 
@@ -383,9 +306,9 @@ def build_subject_graph(db: Session, user_id: int, subject_id: int) -> dict:
             "mastery_percent": mastery_percent,
             "chapter_count": len(chapters),
             "knowledge_count": total_knowledge,
-            "learned_count": learned_count,
-            "status": _chapter_status(mastery_percent),
-            "style": status_style(_chapter_status(mastery_percent)),
+            "learned_count": total_learned,
+            "status": _score_to_status(mastery_percent),
+            "style": status_style(_score_to_status(mastery_percent)),
         },
         "status_distribution": status_distribution,
         "status_distribution_percent": _distribution_percent(status_distribution),
@@ -399,7 +322,7 @@ def build_subject_graph(db: Session, user_id: int, subject_id: int) -> dict:
         ],
         "chapters": chapters,
         "status_style": {key: status_style(key) for key in STATUS_META},
-        "score_weights": MASTERY_SCORE_WEIGHTS,
+        "score_weights": {"answer_performance": 0.50, "user_feedback": 0.20, "mistake_penalty": 0.20, "learning_behavior": 0.10},
     }
 
 
@@ -409,38 +332,37 @@ def build_knowledge_overview(db: Session, user_id: int) -> dict:
         graph = build_subject_graph(db, user_id, subject.id)
         if not graph:
             continue
-        subject_payload = graph["subject"]
-        subjects.append(
-            {
-                "subject_id": subject_payload["id"],
-                "subject_name": subject_payload["name"],
-                "mastery_percent": subject_payload["mastery_percent"],
-                "chapter_count": subject_payload["chapter_count"],
-                "knowledge_count": subject_payload["knowledge_count"],
-                "learned_count": subject_payload["learned_count"],
-                "status": subject_payload["status"],
-                "style": subject_payload["style"],
-                "status_distribution": graph["status_distribution"],
-                "status_distribution_percent": graph["status_distribution_percent"],
-                "chapters": [
-                    {
-                        "chapter_id": chapter["id"],
-                        "chapter_name": chapter["name"],
-                        "mastery_percent": chapter["mastery_percent"],
-                        "knowledge_count": chapter["knowledge_count"],
-                        "status": chapter["status"],
-                        "status_label": chapter["status_label"],
-                        "style": chapter["style"],
-                        "status_distribution": chapter["status_distribution"],
-                    }
-                    for chapter in graph["chapters"]
-                ],
-            }
-        )
+        sp = graph["subject"]
+        subjects.append({
+            "subject_id": sp["id"],
+            "subject_name": sp["name"],
+            "mastery_percent": sp["mastery_percent"],
+            "chapter_count": sp["chapter_count"],
+            "knowledge_count": sp["knowledge_count"],
+            "learned_count": sp["learned_count"],
+            "status": sp["status"],
+            "style": sp["style"],
+            "status_distribution": graph["status_distribution"],
+            "status_distribution_percent": graph["status_distribution_percent"],
+            "chapters": [
+                {
+                    "chapter_id": c["id"],
+                    "chapter_name": c["name"],
+                    "mastery_percent": c["mastery_percent"],
+                    "knowledge_count": c["knowledge_count"],
+                    "learned_count": c["learned_count"],
+                    "status": c["status"],
+                    "status_label": c["status_label"],
+                    "style": c["style"],
+                    "status_distribution": c["status_distribution"],
+                }
+                for c in graph["chapters"]
+            ],
+        })
     return {
         "subjects": subjects,
         "status_style": {key: status_style(key) for key in STATUS_META},
-        "score_weights": MASTERY_SCORE_WEIGHTS,
+        "score_weights": {"answer_performance": 0.50, "user_feedback": 0.20, "mistake_penalty": 0.20, "learning_behavior": 0.10},
     }
 
 
@@ -452,7 +374,7 @@ def find_chapter_detail(db: Session, user_id: int, chapter_id: int) -> dict:
     if not subject:
         return {}
     graph = build_subject_graph(db, user_id, subject.id)
-    chapter_name = point.name or point.parent_name or point.section
+    chapter_name = chapter_name_of(point)
     for chapter in graph.get("chapters", []):
         if chapter["name"] == chapter_name:
             return {"subject": graph["subject"], "chapter": chapter}
@@ -466,26 +388,34 @@ def find_point_detail(db: Session, user_id: int, knowledge_id: int) -> dict:
     subject = db.query(Subject).filter(Subject.id == point.subject_id).first()
     if not subject:
         return {}
-    by_mastery = _sync_mastery_for_points(db, user_id, [point])
-    point_name = point.section or point.name
-    chapter_name = point.name or point.parent_name or subject.name
-    mastery = _choose_mastery(by_mastery, subject.name, point_name, chapter_name)
+    by_mastery = _load_mastery_for_points(db, user_id, [point])
+    kp_name = point_name_of(point)
+    cn = chapter_name_of(point)
+    row = by_mastery.get((subject.name, kp_name))
+    if row is not None:
+        status_key = normalize_status(row.final_status)
+        score = int(row.mastery_score or 0)
+        has_data = _has_behavior(row) or score > 0
+    else:
+        status_key = "unlearned"
+        score = 0
+        has_data = False
     return {
         "point": {
             "id": point.id,
-            "name": point_name,
+            "name": kp_name,
             "subject_id": subject.id,
             "subject_name": subject.name,
-            "chapter_name": chapter_name,
-            # 三级节点不再返回 mastery_score，只保留 5 档状态
-            "status": mastery.status,
-            "status_label": STATUS_META[mastery.status]["label"],
-            "style": status_style(mastery.status),
+            "chapter_name": cn,
+            "status": status_key,
+            "status_label": status_label(status_key),
+            "mastery_score": score if has_data else 0,
+            "style": status_style(status_key),
             "content": point.content or "",
             "keywords": point.keywords or "",
             "common_mistakes": point.common_mistakes or "",
-            "total_answer_count": mastery.row.total_answer_count if mastery.row else 0,
-            "wrong_count": mastery.row.wrong_count if mastery.row else 0,
-            "weak_score": mastery.row.weak_score if mastery.row else 0,
+            "total_answer_count": row.total_answer_count if row else 0,
+            "wrong_count": row.wrong_count if row else 0,
+            "weak_score": row.weak_score if row else 0,
         }
     }

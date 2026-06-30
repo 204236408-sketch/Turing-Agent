@@ -15,6 +15,9 @@ def generate_questions(
     question_type: str,
     count: int,
     recommendation_reason: str = "",
+    scope: str = "",
+    chapter: str = "",
+    chapter_id: int | None = None,
     reference_text: str = "",
     reference_answer: str = "",
     source: str = "manual",
@@ -31,6 +34,9 @@ def generate_questions(
         question_type: 题型。
         count: 题目数量。
         recommendation_reason: 推荐原因（智能推荐模式）。
+        scope: 出题范围，point/chapter；为空时自动推断。
+        chapter: 章节训练时的章节名。
+        chapter_id: 章节训练时的章节 ID。
         reference_text: OCR 错题场景下携带的原始识别文本（用作 LLM 出题参考）
         reference_answer: OCR 错题场景下 Agent 推断的标准答案（用作 LLM 出题参考）
         source: 出题来源 manual/ocr/smart/weak_kp
@@ -47,6 +53,11 @@ def generate_questions(
         "difficulty": difficulty,
         "question_type": question_type,
         "count": count,
+        "scope": scope or "",
+        "chapter": chapter or "",
+        "chapter_id": chapter_id,
+        "prompt_knowledge_point": "",
+        "target_points": [],
         "context": [],
         "questions": [],
         "session_id": None,

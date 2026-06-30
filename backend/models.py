@@ -210,8 +210,14 @@ class KnowledgeMastery(Base):
     qa_count = Column(Integer, default=0)
     forum_count = Column(Integer, default=0)
     user_mark_status = Column(String(32), default="")
+    user_mark_at = Column(DateTime, nullable=True)
     weak_score = Column(Float, default=0.0)
     continuous_wrong_count = Column(Integer, default=0)
+    # 0~100 综合分（与 final_status 严格一致），由 mastery_service.compute_mastery_score 唯一计算
+    mastery_score = Column(Integer, default=0)
+    # 近 7 天窗口内的错题数 / 答题数（仅参与综合分计算，不入历史统计）
+    recent_wrong_7d = Column(Integer, default=0)
+    recent_answer_7d = Column(Integer, default=0)
     last_answer_time = Column(DateTime, nullable=True)
     update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
