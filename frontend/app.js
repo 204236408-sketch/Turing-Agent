@@ -3,6 +3,43 @@ const themeName={cockpit:"智能学习驾驶舱",workspace:"轻量学习工作�
 const pages=[
  ["home","⌂","学习首页"],["knowledge","◈","知识点导航"],["qa","✦","知识问答"],["question","✎","智能出题"],["mistake","!","错题本"],["forum","◎","学习论坛"],["report","▥","学习报告"]
 ];
+
+// ============ 实时动态问候语（按东八区/Asia/Shanghai 时段变化） ============
+const TIME_GREETINGS = [
+ { start: 0,  end: 5,  text: "夜深了，注意休息", emoji: "🌙" },
+ { start: 6,  end: 11, text: "早上好，继续向目标前进", emoji: "☀️" },
+ { start: 12, end: 13, text: "中午好，记得午休", emoji: "🍱" },
+ { start: 14, end: 17, text: "下午好，保持节奏", emoji: "☕" },
+ { start: 18, end: 22, text: "晚上好，回顾一下今天", emoji: "🌆" },
+ { start: 23, end: 23, text: "夜深了，早点休息", emoji: "🌙" },
+];
+
+function getTimeBasedGreeting(){
+ // 强制使用东八区时间，避免用户系统时区漂移
+ let hour;
+ try{
+  hour = Number(new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",hour:"numeric",hour12:false}).format(new Date()));
+ }catch(e){
+  hour = new Date().getHours();   // 兜底：用户系统时间
+ }
+ for(const g of TIME_GREETINGS){
+  if(hour >= g.start && hour <= g.end) return `${g.text} ${g.emoji}`;
+ }
+ return "继续加油 ✨";   // 理论不会到
+}
+
+let greetingTimer = null;
+function startGreetingAutoUpdate(){
+ if(greetingTimer) return;   // 防止重复启动
+ const update = () => {
+  const t = getTimeBasedGreeting();
+  const title = document.getElementById("pageTitle");
+  if(title) title.textContent = t;
+ };
+ update();   // 立即刷一次
+ // 每 30 秒检查一次（够用，跨小时段最多 30 秒延迟）
+ greetingTimer = setInterval(update, 30 * 1000);
+}
 const questionBank=[
  {meta:"2026 模拟 · 第 1 题 · 2 分",title:"某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？",options:["A. 4 次","B. 5 次","C. 6 次","D. 7 次"],reason:"你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。",hint:"先画出 3 个页框，再按访问顺序逐项更新最近使用状态。",answer:"标准答案：C · 共发生 6 次缺页。"},
  {meta:"2026 模拟 · 第 2 题 · 2 分",title:"在请求分页系统中，若某进程访问的页面不在内存中，此时首先会发生什么？",options:["A. 进程直接终止","B. 产生缺页中断","C. 立即执行页面置换","D. 修改页表有效位"],reason:"该题用于检查你是否真正理解缺页处理流程，而不只是会计算缺页次数。",hint:"CPU 访问页表时发现有效位为 0，需要先转入操作系统处理。",answer:"标准答案：B · 首先产生缺页中断，再由操作系统判断调页与置换。"},
@@ -596,7 +633,7 @@ function renderKnTreePanel(body,graph){
         <button class="kn-tree-point" data-kn-tree-point="${pt.id}" data-kn-point-name="${escapeHtml(pt.name)}" data-kn-point-chapter="${escapeHtml(ch.name)}">
          <i class="kn-point-dot" style="background:${pt.style?.color||statusPalette(pt.status)}"></i>
          <span>${escapeHtml(pt.name)}</span>
-         <small>${pt.mastery_score||0}</small>
+         <small class="kn-point-status">${escapeHtml(pt.status_label||statusLabel(pt.status))}</small>
         </button>
        `).join("")}
      </div>
@@ -709,7 +746,7 @@ async function openSubjectChapters(subjectId){
           <span class="kn-arrow">→</span>
         </div>
       </div>
-      ${(ch.children&&ch.children.length)?`<div class="kn-chapter-row-points">${ch.children.map(pt=>`<button class="kn-point-chip" data-kn-load-point="${pt.id}" data-kn-practice-subject="${escapeHtml(subjectName)}" data-kn-practice-point="${escapeHtml(pt.name)}" title="${escapeHtml(pt.status_label||statusLabel(pt.status))} · ${pt.mastery_score||0}分"><i style="background:${pt.style?.color||statusPalette(pt.status)}"></i><span>${escapeHtml(pt.name)}</span></button>`).join("")}</div>`:""}
+      ${(ch.children&&ch.children.length)?`<div class="kn-chapter-row-points">${ch.children.map(pt=>`<button class="kn-point-chip" data-kn-load-point="${pt.id}" data-kn-practice-subject="${escapeHtml(subjectName)}" data-kn-practice-point="${escapeHtml(pt.name)}" title="${escapeHtml(pt.status_label||statusLabel(pt.status))}"><i style="background:${pt.style?.color||statusPalette(pt.status)}"></i><span>${escapeHtml(pt.name)}</span></button>`).join("")}</div>`:""}
     </div>`).join("")}
    </div>`;
   body.querySelector("[data-kn-back-graph]").onclick=()=>renderKnGraphTab(body);
@@ -763,7 +800,6 @@ async function renderKnDetailTab(body){
       chapter_id:ch.id,
       status:pt.status,
       status_label:pt.status_label||statusLabel(pt.status),
-      mastery_score:pt.mastery_score||0,
       style:pt.style||{color:statusPalette(pt.status)},
      });
     });
@@ -782,7 +818,6 @@ async function renderKnDetailTab(body){
     <div class="kn-point-card" data-kn-point-id="${pt.id}" data-kn-point-name="${escapeHtml(pt.name)}" data-kn-point-subject="${escapeHtml(pt.subject)}" data-kn-point-chapter="${escapeHtml(pt.chapter)}">
       <div class="kn-point-card-head">
         <span class="kn-point-card-status" style="background:${pt.style.color||statusPalette(pt.status)}">${escapeHtml(pt.status_label)}</span>
-        <span class="kn-point-card-score">${pt.mastery_score} 分</span>
       </div>
       <b class="kn-point-card-name">${escapeHtml(pt.name)}</b>
       <div class="kn-point-card-meta">
@@ -897,12 +932,10 @@ async function loadKnPointDetail(pointId){
  window.knDetailActive=true;
  body.innerHTML='<div class="kn-loading">加载知识点详情中…</div>';
  try{
-  /* 第一阶段：并发请求 5 个核心数据（视频推荐单独异步加载） */
-  const [detail,related,history,mistakes,notes]=await Promise.all([
+  /* 第一阶段：并发请求 3 个核心数据（视频推荐单独异步加载） */
+  const [detail,related,notes]=await Promise.all([
    apiRequest(`/api/knowledge/point/${pointId}`),
    apiRequest(`/api/knowledge/point/${pointId}/related`),
-   apiRequest(`/api/questions/history?knowledge_point_id=${pointId}&limit=8`),
-   apiRequest(`/api/mistakes?knowledge_point_id=${pointId}&page_size=8`),
    apiRequest(`/api/notes?knowledge_point_id=${pointId}`)
   ]);
   if(!detail?.point){body.innerHTML='<div class="kn-empty">知识点不存在</div>';return}
@@ -934,13 +967,11 @@ async function loadKnPointDetail(pointId){
     }
    }
   }
-  const historyItems=history.items||[];
-  const mistakeItems=mistakes.items||[];
   const noteItems=notes.items||[];
   const relatedItems=related.items||[];
 
   /* 立即渲染页面（视频部分显示 loading 状态）— 仅更新 #knDetailPanel */
-  body.innerHTML=`<div class="kd-canvas-wrap">${knowledgePointNavDetailHTML(point,graph,relatedItems,[],historyItems,mistakeItems,noteItems,true)}</div>`;
+  body.innerHTML=`<div class="kd-canvas-wrap">${knowledgePointNavDetailHTML(point,graph,relatedItems,[],noteItems,true)}</div>`;
   bindKnowledgeDetailInteractions();
 
   /* 第二阶段：异步加载视频推荐（不阻塞主页面） */
@@ -988,12 +1019,10 @@ function knowledgePointNavDetailHTML(point,graph,related,videos,history,mistakes
     <div class="kd-head-actions"><button class="primary" data-open-note="${point.id}">添加笔记</button><button class="ghost" data-kd-start-practice="${point.id}" data-kd-practice-subject="${escapeHtml(point.subject_name||"")}" data-kd-practice-point="${escapeHtml(point.name||"")}">开始练习</button></div>
    </section>
    <section class="kd-section"><h3>知识点正文</h3>${knowledgeBodyHTML(point)}</section>
-   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${related.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name)}</b><span>${item.mastery_score||0} · ${escapeHtml(item.status_label||statusLabel(item.status))}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
+   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${related.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name)}</b><span>${escapeHtml(item.status_label||statusLabel(item.status))}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
    <section class="kd-section kd-tabs-section">
-    <div class="kd-tab-bar"><button class="kd-tab active" data-kd-tab="videos">学习资源</button><button class="kd-tab" data-kd-tab="history">练习题记录</button><button class="kd-tab" data-kd-tab="mistakes">错题记录</button><button class="kd-tab" data-kd-tab="notes">学习笔记</button></div>
+    <div class="kd-tab-bar"><button class="kd-tab active" data-kd-tab="videos">学习资源</button><button class="kd-tab" data-kd-tab="notes">学习笔记</button></div>
     <div class="kd-tab-content" id="kdTabVideos">${videosContent}</div>
-    <div class="kd-tab-content" id="kdTabHistory" style="display:none"><div class="kd-record-list">${history.map(practiceRecordHTML).join("")||"<p>暂无练习记录</p>"}</div></div>
-    <div class="kd-tab-content" id="kdTabMistakes" style="display:none"><div class="kd-record-list">${mistakes.map(mistakeRecordHTML).join("")||"<p>暂无错题记录</p>"}</div></div>
     <div class="kd-tab-content" id="kdTabNotes" style="display:none"><div class="kd-note-list" id="kdNoteList">${notes.map(noteCardHTML).join("")||"<p>暂无笔记，点击右上角添加。</p>"}</div></div>
    </section>
   </main>
@@ -2154,7 +2183,7 @@ async function likeAiAnswer(postId,helpful,btn){
 /* 模块联动跳转已下线：4 个跳转按钮（生成专项题/视频讲解/错题本/深入问答）已删除。
    保留 triggerAiAction 占位以避免控制台报错。 */
 function triggerAiAction(){/* no-op: 跳转按钮已移除 */}
-function startExamCountdown(){const target=new Date("2026-12-19T00:00:00+08:00").getTime();const update=()=>{const diff=Math.max(0,target-Date.now()),days=Math.floor(diff/86400000),hours=Math.floor(diff%86400000/3600000),minutes=Math.floor(diff%3600000/60000),seconds=Math.floor(diff%60000/1000);const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=String(value).padStart(2,"0")};set("countdownDays",days);set("countdownHours",hours);set("countdownMinutes",minutes);set("countdownSeconds",seconds);const subtitle=document.getElementById("pageSub");if(subtitle&&["qa","question","mistake","forum","report"].some(id=>document.getElementById(id)?.classList.contains("active")))subtitle.textContent=`距离 408 初试还有 ${days} 天 · 今日计划完成 3 / 5`};update();if(countdownTimer)clearInterval(countdownTimer);countdownTimer=setInterval(update,1000)}
+function startExamCountdown(){const target=new Date("2026-12-19T00:00:00+08:00").getTime();const update=()=>{const diff=Math.max(0,target-Date.now()),days=Math.floor(diff/86400000),hours=Math.floor(diff%86400000/3600000),minutes=Math.floor(diff%3600000/60000),seconds=Math.floor(diff%60000/1000);const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=String(value).padStart(2,"0")};set("countdownDays",days);set("countdownHours",hours);set("countdownMinutes",minutes);set("countdownSeconds",seconds);const subtitle=document.getElementById("pageSub");if(subtitle&&["qa","question","mistake","forum","report"].some(id=>document.getElementById(id)?.classList.contains("active")))subtitle.textContent=`距离 408 初试还有 ${days} 天`};update();if(countdownTimer)clearInterval(countdownTimer);countdownTimer=setInterval(update,1000)}
 function openBookView(name){
   document.querySelectorAll(".book-view").forEach(v=>v.classList.toggle("active",v.id===`book-${name}`));
   const titles={overview:["我的题本","智能出题中标记“不熟”和“不会”的题目会自动进入对应题本"],unfamiliar:["不熟题本","理解不稳定的题目，以单列卡片形式集中巩固"],unknown:["不会题本","尚未掌握的题目，优先重新学习与练习"],ocr:["OCR 导入","PaddleOCR 识别 → 校对 → 错题分析 → 记忆更新"]};
@@ -2185,7 +2214,7 @@ function closeQuestionDrawers(){
 }
 function selectedValue(group){const selected=document.querySelector(`[data-choice-group="${group}"] .selected`);return selected?selected.dataset.value:""}
 
-function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report","knowledge"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent="早上好，继续向目标前进 👋";const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天 · 今日计划完成 3 / 5`}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="knowledge"&&!window.knDetailActive)loadKnowledgeNavPage();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();renderMapping(id);window.scrollTo(0,0);if(id!=="knowledge")window.knDetailActive=false;}
+function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report","knowledge"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent=getTimeBasedGreeting();const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天`;startGreetingAutoUpdate()}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="knowledge"&&!window.knDetailActive)loadKnowledgeNavPage();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();renderMapping(id);window.scrollTo(0,0);if(id!=="knowledge")window.knDetailActive=false;}
 function renderMapping(id){const panel=document.getElementById("devContent");if(!panel)return;const m=mapping[id];panel.innerHTML=`<div class="mapping"><h4>建议接口</h4><code>${m[0]}</code></div><div class="mapping"><h4>核心数据实体</h4><code>${m[1]}</code></div><div class="mapping"><h4>Agent / LangGraph 节点</h4><code>${m[2]}</code></div>`}
 function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){if(s===null||s===undefined)return"";return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}function escapeAttr(s){return escapeHtml(s).replace(/`/g,"&#96;")}
 
@@ -3289,7 +3318,7 @@ startExamCountdown=function(){
   const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=String(value).padStart(2,"0")};
   set("countdownDays",days);set("countdownHours",hours);set("countdownMinutes",minutes);set("countdownSeconds",seconds);
   const subtitle=document.getElementById("pageSub");
-  if(subtitle&&["qa","question","mistake","forum","report"].some(id=>document.getElementById(id)?.classList.contains("active")))subtitle.textContent=`距离 408 初试还有 ${days} 天 · 今日计划完成 3 / 5`;
+  if(subtitle&&["qa","question","mistake","forum","report"].some(id=>document.getElementById(id)?.classList.contains("active")))subtitle.textContent=`距离 408 初试还有 ${days} 天`;
  };
  update();
  if(countdownTimer)clearInterval(countdownTimer);
@@ -3823,26 +3852,17 @@ function subjectDetailHTML(data){
   <button class="primary full" data-kd-start-practice="${window.currentKnowledgePointId}" data-kd-practice-subject="${window.currentGraphPointSubject||''}" data-kd-practice-point="${window.currentGraphPointName||''}">开始针对性学习</button>`;
 }
 
-function statusDistributionRowsHTML(percent){
+function statusDistributionRowsHTML(){
  const items=[["mastered","掌握良好"],["unfamiliar","正在学习"],["unknown","不会"],["weak","薄弱点"],["unlearned","未学"]];
- return `<div class="kg-status-rows">${items.map(([key,label])=>`<div><i style="background:${statusPalette(key)}"></i><span>${label}</span><b>${Number(percent[key]||0)}%</b></div>`).join("")}</div>`;
+ return `<div class="kg-status-rows">${items.map(([key,label])=>`<div><i style="background:${statusPalette(key)}"></i><span>${label}</span></div>`).join("")}</div>`;
 }
 
 function pointDetailHTML(point){
- const source=point.source_scores||{};
  return `<h3>${escapeHtml(point.name)}</h3>
   <div class="kg-point-badge" style="--point-color:${point.style?.color||statusPalette(point.status)}">${escapeHtml(point.status_label||statusLabel(point.status))}</div>
   <div class="kg-detail-metrics">
-   <div><small>掌握分</small><b>${Number(point.mastery_score||0)}</b></div>
    <div><small>所属科目</small><b>${escapeHtml(point.subject_name||"")}</b></div>
    <div><small>所属章节</small><b>${escapeHtml(point.chapter_name||"")}</b></div>
-  </div>
-  <h4>分值来源</h4>
-  <div class="kg-score-sources">
-   <div><span>答题表现 50%</span><b>${Number(source.answer_performance||0)}</b></div>
-   <div><span>用户反馈 20%</span><b>${Number(source.user_feedback||0)}</b></div>
-   <div><span>错题惩罚 20%</span><b>${Number(source.mistake_penalty||0)}</b></div>
-   <div><span>学习行为 10%</span><b>${Number(source.learning_behavior||0)}</b></div>
   </div>
   <h4>知识点解释</h4><p>${escapeHtml(point.content||"暂无解释内容")}</p>
   <h4>常见考法 / 易错点</h4><p>${escapeHtml(point.common_mistakes||point.keywords||"暂无补充说明")}</p>
@@ -3925,8 +3945,8 @@ async function renderKnowledgePointDetailPage(point,related,videos,history,mista
     <div class="kd-head-actions"><button class="primary" data-open-note="${point.id}">添加笔记</button><button class="ghost" data-kd-start-practice="${point.id}" data-kd-practice-subject="${point.subject_name}" data-kd-practice-point="${point.name}">开始练习</button></div>
    </section>
    <section class="kd-section"><h3>知识点正文</h3>${knowledgeBodyHTML(point)}</section>
-   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${related.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name)}</b><span>${item.mastery_score||0} · ${escapeHtml(item.status_label)}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
-   <section class="kd-section kd-tabs-section"><div class="kd-tab-bar"><button class="kd-tab active" data-kd-tab="videos"><span class="kd-tab-icon">▶</span>学习资源</button><button class="kd-tab" data-kd-tab="history"><span class="kd-tab-icon">✎</span>练习题记录</button><button class="kd-tab" data-kd-tab="notes"><span class="kd-tab-icon">📝</span>学习笔记</button></div><div class="kd-tab-content" id="kdTabVideos">${videos.map(videoCardHTML).join("")||"<p>暂无匹配视频资源</p>"}</div><div class="kd-tab-content" id="kdTabHistory" style="display:none"><div class="kd-record-list">${history.map(practiceRecordHTML).join("")||"<p>暂无练习记录</p>"}</div></div><div class="kd-tab-content" id="kdTabNotes" style="display:none"><div class="kd-note-list" id="kdNoteList">${notes.map(noteCardHTML).join("")||"<p>暂无笔记，点击右上角添加。</p>"}</div></div></section>
+   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${related.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name)}</b><span>${escapeHtml(item.status_label)}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
+   <section class="kd-section kd-tabs-section"><div class="kd-tab-bar"><button class="kd-tab active" data-kd-tab="videos"><span class="kd-tab-icon">▶</span>学习资源</button><button class="kd-tab" data-kd-tab="notes"><span class="kd-tab-icon">📝</span>学习笔记</button></div><div class="kd-tab-content" id="kdTabVideos">${videos.map(videoCardHTML).join("")||"<p>暂无匹配视频资源</p>"}</div><div class="kd-tab-content" id="kdTabNotes" style="display:none"><div class="kd-note-list" id="kdNoteList">${notes.map(noteCardHTML).join("")||"<p>暂无笔记，点击右上角添加。</p>"}</div></div></section>
   </main>
  </div>${noteModalHTML(point)}`;
  if(legend)legend.innerHTML=masteryLegendHTML(false);
@@ -3979,14 +3999,6 @@ function videoCardHTML(video){
 </a>`;
 }
 
-function practiceRecordHTML(item){
- return `<article><b>${escapeHtml(item.question_text||item.knowledge_point||"练习记录")}</b><small>${escapeHtml(item.question_type||"")} · ${escapeHtml(item.difficulty||"")} · ${item.is_correct?"答对":"答错"} · ${escapeHtml(item.create_time||"")}</small><p>${escapeHtml(item.feedback||"暂无解析")}</p><button data-practice-question="${item.question_id||""}">查看解析</button></article>`;
-}
-
-function mistakeRecordHTML(item){
- return `<article><b>${escapeHtml(item.question_text||item.knowledge_point||"错题记录")}</b><small>${escapeHtml(item.error_type||"错题")} · ${escapeHtml(item.create_time||"")}</small><p>用户答案：${escapeHtml(item.user_answer||"")}；标准答案：${escapeHtml(item.standard_answer||"")}</p><p>${escapeHtml(item.suggestion||item.error_reason||"建议复盘错因并重新练习")}</p></article>`;
-}
-
 function noteCardHTML(note){
  return `<article class="kd-note-card"><b>${escapeHtml(note.title)}</b><small>${escapeHtml(note.update_time||"")}</small><p>${escapeHtml(note.summary||note.content||"")}</p><div><button data-note-view="${note.id}">查看</button><button data-note-edit="${note.id}">编辑</button><button data-note-delete="${note.id}">删除</button><button data-note-share="${note.id}">转发</button></div></article>`;
 }
@@ -4021,7 +4033,7 @@ function bindKnowledgeDetailInteractions(){
   if(!tabSection)return;
   tabSection.querySelectorAll(".kd-tab").forEach(t=>t.classList.remove("active"));
   button.classList.add("active");
-  const tabMap={videos:"kdTabVideos",history:"kdTabHistory",mistakes:"kdTabMistakes",notes:"kdTabNotes"};
+  const tabMap={videos:"kdTabVideos",notes:"kdTabNotes"};
   tabSection.querySelectorAll(".kd-tab-content").forEach(c=>c.style.display="none");
   const target=document.getElementById(tabMap[tabName]);
   if(target)target.style.display="grid";
