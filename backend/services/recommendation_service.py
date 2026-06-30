@@ -97,7 +97,8 @@ def _personalize_hint(mistake_tip: str) -> str:
     """把错题摘要转成单句建议（不调 LLM，避免引入新的幻觉）。"""
     if not mistake_tip:
         return ""
-    return f"建议关注你最近的错因：{mistake_tip[:60]}{'...' if len(mistake_tip) > 60 else ''}"
+    tip = mistake_tip[:60] + ('...' if len(mistake_tip) > 60 else '')
+    return f"建议关注你最近的错因：{tip}"
 
 
 def _format_mistake_tip(mistakes: list) -> str:
@@ -112,9 +113,13 @@ def _format_mistake_tip(mistakes: list) -> str:
         if not sample_reason and m.error_reason:
             sample_reason = m.error_reason
     top_type = max(type_counter, key=type_counter.get) if type_counter else ""
+    if sample_reason and top_type:
+        return f"{top_type}：{sample_reason}"
     if sample_reason:
-        return f"[{top_type}] {sample_reason}" if top_type else sample_reason
-    return top_type
+        return sample_reason
+    if top_type:
+        return top_type
+    return ""
 
 
 def _kp_name(point: KnowledgePoint) -> str:
@@ -258,8 +263,8 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
             used.add((m.subject, m.knowledge_point))
             weak_item = _point_payload(
                 "薄弱点强化", m.subject, m.knowledge_point,
-                f"{m.final_status} · 错 {m.wrong_count} 次 · 连续错 {m.continuous_wrong_count} 次，"
-                f"优先生成 {_to_question_type(m, '薄弱点强化')} 专项题。",
+                f"{m.final_status}·连续答错 {m.continuous_wrong_count} 次，"
+                f"建议优先做 {_to_question_type(m, '薄弱点强化')} 专项训练。",
                 _to_difficulty(m),
                 _to_question_type(m, "薄弱点强化"),
                 _to_count(m, "薄弱点强化"),
@@ -269,7 +274,7 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
             m, _ = scored_weak[0]
             weak_item = _point_payload(
                 "薄弱点强化", m.subject, m.knowledge_point,
-                f"{m.final_status} · 错 {m.wrong_count} 次 · 连续错 {m.continuous_wrong_count} 次",
+                f"{m.final_status}·连续答错 {m.continuous_wrong_count} 次",
                 _to_difficulty(m),
                 _to_question_type(m, "薄弱点强化"),
                 _to_count(m, "薄弱点强化"),

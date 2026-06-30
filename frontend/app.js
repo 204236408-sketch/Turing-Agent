@@ -4322,8 +4322,64 @@ function knowledgeTreeHTML(graph,activeChapterId,activePointId){
  </aside>`;
 }
 
+function _formatContentText(raw){
+ if(!raw)return "";
+ const blocks=[];
+ let current={type:"paragraph",lines:[]};
+ const sectionLabels=["核心概念","常见考法","易错点","解题步骤","408重点","重点","考点","考法","概念","误区","总结","概述","定义","基本概念"];
+ const lines=raw.split(/\n/);
+ for(const line of lines){
+  const trimmed=line.trim();
+  if(!trimmed){continue;}
+  const headerMatch=trimmed.match(/^【([^】]+)】\s*(.*)/);
+  if(headerMatch){
+   if(current.lines.length>0)blocks.push(current);
+   current={type:"section",title:headerMatch[1],body:headerMatch[2],lines:[]};
+   if(headerMatch[2])current.lines.push(headerMatch[2]);
+  }else{
+   const bulletMatch=trimmed.match(/^(\d+)[.、)】]\s*(.*)/);
+   if(bulletMatch){
+    if(current.lines.length>0&&current.lines[current.lines.length-1]!=="_bullet_")current.lines.push("_bullet_start_");
+    current.lines.push(bulletMatch[2]);
+   }else{
+    current.lines.push(trimmed);
+   }
+  }
+ }
+ if(current.lines.length>0)blocks.push(current);
+ return blocks;
+}
+function _renderContentBlocks(blocks){
+ if(!blocks||blocks.length===0)return "";
+ return blocks.map((block,idx)=>{
+  if(block.type==="section"){
+   const bodyHtml=block.lines.map(line=>{
+    if(line==="_bullet_start_")return "";
+    if(line.startsWith("_bullet_"))return "";
+    return `<p>${escapeHtml(line)}</p>`;
+   }).join("");
+   const isOpen=block.title.includes("核心概念")?" open":"";
+   return `<div class="kd-accordion${isOpen}" data-idx="${idx}">
+     <div class="kd-accordion-header" onclick="toggleKdAccordion(this)">
+       <h4>${escapeHtml(block.title)}</h4>
+       <span class="kd-accordion-arrow">▼</span>
+     </div>
+     <div class="kd-accordion-body">${bodyHtml}</div>
+   </div>`;
+  }
+  return `<p style="margin:8px 0">${escapeHtml(block.lines.join("  "))}</p>`;
+ }).join("");
+}
+window.toggleKdAccordion=function(header){
+ header.parentElement.classList.toggle("open");
+}
 function knowledgeBodyHTML(point){
- return `<p>${escapeHtml(point.content||`${point.name} 是 ${point.chapter_name} 章节下的三级知识点。建议先理解定义、核心概念、常见考法和易错点，再进入专项训练。`)}</p><ul class="kd-concepts"><li><b>核心概念</b><span>${escapeHtml(point.keywords||point.name)}</span></li><li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li><li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li><li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li></ul>`;
+ const raw=point.content||"";
+ if(raw){
+  const blocks=_formatContentText(raw);
+  return `<div class="kd-content-body">${_renderContentBlocks(blocks)}</div><ul class="kd-concepts"><li><b>核心概念</b><span>${escapeHtml(point.keywords||point.name)}</span></li><li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li><li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li><li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li></ul>`;
+ }
+ return `<p>${escapeHtml(`${point.name} 是 ${point.chapter_name} 章节下的三级知识点。建议先理解定义、核心概念、常见考法和易错点，再进入专项训练。`)}</p><ul class="kd-concepts"><li><b>核心概念</b><span>${escapeHtml(point.keywords||point.name)}</span></li><li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li><li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li><li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li></ul>`;
 }
 
 function videoCardHTML(video){

@@ -1,29 +1,318 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>重生之我是图灵 · Turing 408 Agent</title>
-  <style>
-    *{box-sizing:border-box}
-    body{margin:0;background:#f3f7fb;color:#14233b;font-family:"Microsoft YaHei UI","PingFang SC",sans-serif}
-    main{max-width:960px;margin:0 auto;padding:72px 24px}
-    h1{font-size:36px;margin:0 0 12px}
-    p{color:#718096;line-height:1.8}
-    .panel{margin-top:30px;background:#fff;border:1px solid #e4eaf2;border-radius:18px;padding:26px;box-shadow:0 16px 45px rgba(26,43,72,.08)}
-    a{display:inline-block;margin-top:18px;background:#2f6bff;color:white;text-decoration:none;border-radius:10px;padding:12px 16px;font-weight:800}
-    code{background:#f7f9fc;border:1px solid #e4eaf2;border-radius:8px;padding:3px 7px}
-  </style>
+  <link rel="stylesheet" href="guide.css">
 </head>
 <body>
-  <main>
-    <h1>重生之我是图灵</h1>
-    <p>面向考研 408 的 Web 智能辅导 Agent 系统。前端保持 version-b 轻量工作台，后端使用 FastAPI 提供完整接口。</p>
-    <section class="panel">
-      <h2>进入系统</h2>
-      <p>启动后端后访问 <code>http://127.0.0.1:8000/version-b.html</code>，或直接打开下方入口。</p>
-      <a href="version-b.html">打开 Turing 408 Agent</a>
-    </section>
-  </main>
+  <!-- 顶部导航 -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="#" class="nav-brand">
+        <div class="brand-mark">图</div>
+        <div class="brand-text">
+          <span>重生之我是图灵</span>
+          <small>TURING 408 AGENT</small>
+        </div>
+      </a>
+      <div class="nav-links">
+        <a href="#hero" class="active">首页</a>
+        <a href="#features">功能介绍</a>
+        <a href="#about">关于我们</a>
+      </div>
+    </div>
+    <a href="version-b.html" class="nav-login">登录 / 注册</a>
+  </nav>
+
+  <!-- Hero 区域 -->
+  <section id="hero" class="hero">
+    <div class="hero-bg"></div>
+    <div class="code-rain-card">
+      <canvas id="codeRain"></canvas>
+    </div>
+    <div class="hero-container">
+      <div class="hero-content">
+        <span class="eyebrow">TURING 408 AGENT</span>
+        <h1>重生之我是图灵</h1>
+        <p class="hero-desc">
+          面向考研 408 的 Web 智能辅导 Agent 系统。<br>
+          以艾伦·图灵的视角，将计算理论、数据结构、组成原理、操作系统与计算机网络融会贯通，<br>
+          为你打造个性化的 AI 驱动的 408 备考空间。
+        </p>
+        <div class="hero-actions">
+          <a href="version-b.html" class="btn-primary">进入学习空间</a>
+          <a href="#features" class="btn-ghost">了解功能</a>
+        </div>
+        <div class="hero-flow">
+          <span>数据结构</span>
+          <span>计算机组成原理</span>
+          <span>操作系统</span>
+          <span>计算机网络</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 功能介绍 -->
+  <section id="features" class="features">
+    <div class="section-container">
+      <div class="features-layout">
+        <!-- 左侧：标题+亮点 -->
+        <div class="features-left">
+          <span class="eyebrow">WHY TURING 408</span>
+          <h2>以图灵之名，重新定义 408 备考</h2>
+          <p>我们不只做题库，而是构建一个理解你、陪伴你、推动你的智能学习伙伴。基于 LangGraph 的多 Agent 架构，让每一次交互都产生长期价值。</p>
+          <div class="features-left-list">
+            <div class="fl-item">
+              <span class="fl-check">✓</span>
+              <div>
+                <b>长期记忆驱动</b>
+                <small>系统记录你的学习轨迹，越用越懂你</small>
+              </div>
+            </div>
+            <div class="fl-item">
+              <span class="fl-check">✓</span>
+              <div>
+                <b>多 Agent 协同</b>
+                <small>出题、答疑、诊断、报告各司其职</small>
+              </div>
+            </div>
+            <div class="fl-item">
+              <span class="fl-check">✓</span>
+              <div>
+                <b>向量知识库</b>
+                <small>RAG 检索增强，答案有据可依</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：8功能卡片 -->
+        <div class="features-right">
+          <div class="feature-grid">
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#eef2ff;--icon-color:#2f6bff;">⌂</div>
+              <h3>学习首页</h3>
+              <p>智能仪表盘聚合学习进度、考试倒计时、今日推荐与薄弱点提醒。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#f0f9f4;--icon-color:#16a878;">◈</div>
+              <h3>知识点导航</h3>
+              <p>四科全局知识图谱可视化，支持按科目筛选与掌握状态叠加。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#fff8f0;--icon-color:#e69b32;">✦</div>
+              <h3>知识问答</h3>
+              <p>基于 RAG 的 AI 问答助手，结合知识库与长期记忆。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#fff0f0;--icon-color:#e2554f;">✎</div>
+              <h3>智能出题</h3>
+              <p>根据薄弱点与历史错题，AI 动态生成针对性练习题。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#f5f0ff;--icon-color:#7c4dff;">!</div>
+              <h3>错题本</h3>
+              <p>自动收录错题，分析错误原因，生成周期性复习计划。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#e8f4ff;--icon-color:#0099ff;">◎</div>
+              <h3>学习论坛</h3>
+              <p>与备考同伴交流心得，AI 辅助总结讨论热点。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#f0f7ff;--icon-color:#2f6bff;">▥</div>
+              <h3>学习报告</h3>
+              <p>多维度数据分析，生成能力评估与复习建议。</p>
+            </div>
+            <div class="feature-card">
+              <div class="feature-icon" style="--icon-bg:#eef2ff;--icon-color:#2f6bff;">⚡</div>
+              <h3>OCR 智能识题</h3>
+              <p>拍照上传即可识别题目内容，支持手写与印刷体。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 关于我们 -->
+  <section id="about" class="about">
+    <div class="section-container">
+      <div class="section-head">
+        <span class="eyebrow">ABOUT US</span>
+        <h2>关于我们</h2>
+        <p>一个由热爱技术与教育的开发者团队打造的智能学习系统</p>
+      </div>
+      <div class="about-grid">
+        <div class="about-card story">
+          <h3>项目故事</h3>
+          <p>408 考研涵盖四门专业课、数百个知识点，考生普遍面临知识体系庞杂、错题无法系统消化、复习缺乏针对性的困境。传统刷题工具只能记录对错，无法真正理解"为什么错"以及"接下来该学什么"。</p>
+          <p>本项目以多 Agent 协同架构驱动完整学习闭环——问答→练习→批改→归因→记忆→再推荐，每一次交互都在构建你的个人学习画像。AI 不仅给出答案，更追溯知识源头、分析错误模式、动态调整复习计划，让备考从盲目刷题升级为精准进化。</p>
+        </div>
+        <div class="about-card tech">
+          <h3>技术架构</h3>
+          <div class="tech-tags">
+            <span>FastAPI</span>
+            <span>LangGraph</span>
+            <span>OpenAI API</span>
+            <span>ChromaDB</span>
+            <span>SQLite</span>
+            <span>Vanilla JS</span>
+            <span>Docker</span>
+            <span>Nginx</span>
+          </div>
+          <p>后端采用 Python FastAPI 构建，基于 LangGraph 实现多 Agent 工作流；前端保持轻量级原生 JavaScript，支持三种主题切换。</p>
+        </div>
+        <div class="about-card contact">
+          <h3>联系我们</h3>
+          <div class="contact-item">
+            <span>📧</span>
+            <p>contact@turing408.ai</p>
+          </div>
+          <div class="contact-item">
+            <span>🌐</span>
+            <p>github.com/turing408</p>
+          </div>
+          <div class="contact-item">
+            <span>📖</span>
+            <p>文档中心：/docs</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="cta-bg"></div>
+    <div class="section-container">
+      <h2>准备好开始你的 408 之旅了吗？</h2>
+      <!-- <p>加入 thousands of 考生，让图灵陪你一起征服 408。</p> -->
+      <a href="version-b.html" class="btn-primary large">立即开始学习</a>
+    </div>
+  </section>
+
+  <!-- 页脚 -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <div class="brand-mark">图</div>
+        <div>
+          <span>重生之我是图灵</span>
+          <small>TURING 408 AGENT</small>
+        </div>
+      </div>
+      <div class="footer-links">
+        <a href="#hero">首页</a>
+        <a href="#features">功能介绍</a>
+        <a href="#about">关于我们</a>
+        <a href="version-b.html">登录</a>
+      </div>
+      <div class="footer-copy">
+        <p> Turing 408 Team. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // 导航栏滚动效果
+    const navbar = document.querySelector('.navbar');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 50) {
+        navbar.classList.add('scrolled');
+      } else {
+        navbar.classList.remove('scrolled');
+      }
+    });
+
+    // 平滑滚动
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // 导航高亮
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.nav-links a');
+    window.addEventListener('scroll', () => {
+      let current = '';
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop - 100;
+        if (scrollY >= sectionTop) {
+          current = section.getAttribute('id');
+        }
+      });
+      navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === '#' + current) {
+          link.classList.add('active');
+        }
+      });
+    });
+
+
+
+    // 代码雨效果
+    (function() {
+      const canvas = document.getElementById('codeRain');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const card = canvas.parentElement;
+
+      function resize() {
+        canvas.width = card.offsetWidth;
+        canvas.height = card.offsetHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      const chars = '01ABCDEF{}[]<>/=+-*&|^~!%#@$?;:\\';
+      const fontSize = 13;
+      let columns = Math.floor(canvas.width / fontSize);
+      const drops = Array(columns).fill(1);
+
+      function draw() {
+        ctx.fillStyle = 'rgba(10, 22, 40, 0.07)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '600 ' + fontSize + 'px "JetBrains Mono", "Fira Code", monospace';
+
+        for (let i = 0; i < drops.length; i++) {
+          const char = chars[Math.floor(Math.random() * chars.length)];
+          const x = i * fontSize;
+          const y = drops[i] * fontSize;
+
+          const isHead = Math.random() > 0.92;
+          const hue = 210 + Math.random() * 40;
+          const sat = isHead ? 100 : 80;
+          const light = isHead ? 85 : 60 + Math.random() * 20;
+          ctx.fillStyle = `hsl(${hue}, ${sat}%, ${light}%)`;
+          if (isHead) {
+            ctx.shadowColor = `hsl(${hue}, 100%, 70%)`;
+            ctx.shadowBlur = 8;
+          } else {
+            ctx.shadowBlur = 0;
+          }
+
+          ctx.fillText(char, x, y);
+          ctx.shadowBlur = 0;
+
+          if (y > canvas.height && Math.random() > 0.975) {
+            drops[i] = 0;
+          }
+          drops[i]++;
+        }
+      }
+
+      setInterval(draw, 45);
+    })();
+  </script>
 </body>
 </html>
