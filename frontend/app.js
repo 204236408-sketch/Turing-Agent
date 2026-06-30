@@ -246,7 +246,7 @@ function knowledgeGraphHTML(){
   const colors={
     数据结构:"#7da2e3",组成原理:"#d9b16f",操作系统:"#df9fbb",计算机网络:"#72c2a9"
   };
-  return `<article class="card knowledge-graph-card"><div class="kg-toolbar"><div><h3>408 全局知识图谱</h3><p>按四科完整考纲展示知识点关系，可切换单科视图或总览。</p></div><div class="kg-tabs"><button class="active" data-graph-filter="all">总览</button>${Object.keys(groups).map(x=>`<button data-graph-filter="${x}">${x}</button>`).join("")}</div></div><div class="kg-actions"><button id="structureLayer" class="active">知识结构</button><button id="masteryLayer">叠加掌握状态</button><span id="layerNote">当前展示完整知识结构</span></div><div class="kg-canvas" id="knowledgeGraphCanvas">${Object.entries(groups).map(([subject,nodes],groupIndex)=>`<section class="kg-quadrant kg-q${groupIndex+1}" data-graph-group="${subject}" style="--kg-color:${colors[subject]}"><div class="kg-watermark">${subject}</div><svg class="kg-lines" viewBox="0 0 100 100" preserveAspectRatio="none">${nodes.map(n=>`<line x1="50" y1="50" x2="${n[1]}" y2="${n[2]}"></line>`).join("")}</svg><div class="kg-center">${subject}</div>${nodes.map((n,nodeIndex)=>`<button class="graph-point kg-node ${n[3]}" style="--x:${n[1]}%;--y:${n[2]}%" data-subject="${subject}" data-level="${n[3]==="hot"?"high":"key"}"><span>${n[0]}</span>${children[subject].slice(nodeIndex,nodeIndex+2).map((child,childIndex)=>`<i class="kg-child c${childIndex+1}">${child}</i>`).join("")}</button>`).join("")}</section>`).join("")}</div><div class="kg-legend"><span><i class="normal"></i>普通知识点</span><span><i class="important"></i>重点知识点</span><span><i class="weak"></i>个人薄弱点（叠加后显示）</span></div></article>`
+  return `<article class="card knowledge-graph-card"><div class="kg-toolbar"><div><h3>408 全局知识图谱</h3><p>按四科完整考纲展示知识点关系，可切换单科视图或总览。</p></div><div class="kg-tabs"><button class="active" data-graph-filter="all">总览</button>${Object.keys(groups).map(x=>`<button data-graph-filter="${x}">${x}</button>`).join("")}</div></div><div class="kg-actions"><button id="structureLayer" class="active">知识结构</button><button id="masteryLayer">叠加掌握状态</button><span id="layerNote">当前展示完整知识结构</span></div><div class="kg-canvas" id="knowledgeGraphCanvas">${Object.entries(groups).map(([subject,nodes],groupIndex)=>`<section class="kg-quadrant kg-q${groupIndex+1}" data-graph-group="${subject}" style="--kg-color:${colors[subject]}"><div class="kg-watermark">${subject}</div><svg class="kg-lines" viewBox="0 0 100 100" preserveAspectRatio="none">${nodes.map(n=>`<line x1="50" y1="50" x2="${n[1]}" y2="${n[2]}"></line>`).join("")}</svg><div class="kg-center">${subject}</div>${nodes.map((n,nodeIndex)=>`<button class="graph-point kg-node ${n[3]}" style="--x:${n[1]}%;--y:${n[2]}%" data-subject="${subject}" data-level="${n[3]==="hot"?"high":"key"}"><span>${n[0]}</span>${children[subject].slice(nodeIndex,nodeIndex+2).map((child,childIndex)=>`<i class="kg-child c${childIndex+1}">${child}</i>`).join("")}</button>`).join("")}</section>`).join("")}</div><div class="kg-legend kg-legend-status"><span><i style="background:#2fbf7a"></i>掌握 ≥80 分</span><span><i style="background:#f5bd22"></i>不熟 50~79 分</span><span><i style="background:#ff9f43"></i>不会 20~49 分</span><span><i style="background:#ff6262"></i>薄弱点 1~19 分</span><span><i style="background:#a8b0bf"></i>未学 0 分</span><span><i class="normal"></i>普通知识点</span><span><i class="important"></i>重点知识点</span></div></article>`
 }
 function enhanceKnowledgeGraph(){
   const home=document.getElementById("home")
@@ -537,6 +537,9 @@ function bindKnPageTabs(){}
 
 function renderKnowledgeTab(tabName){}
 
+/* 知识导航页:挂起的跳转目标(供 loadKnowledgeNavPage 消费,避免被默认加载覆盖) */
+let knPendingNavTarget=null;
+
 async function loadKnowledgeNavPage(){
  const main=document.getElementById("knKnowledgeLayout");
  if(!main)return;
@@ -550,8 +553,17 @@ async function loadKnowledgeNavPage(){
   }
   // 渲染顶部科目卡片
   renderSubjectBar(subjects);
-  // 默认选中第一个科目
-  await switchKnSubject(subjects[0].subject_id);
+  // 优先消费挂起目标(从知识图谱跳转而来),否则默认第一个科目
+  const pending=knPendingNavTarget;
+  knPendingNavTarget=null;
+  if(pending&&pending.subjectId){
+   const opts={};
+   if(pending.chapterId)opts.targetChapterId=pending.chapterId;
+   if(pending.pointId)opts.targetPointId=pending.pointId;
+   await switchKnSubject(pending.subjectId,opts);
+  }else{
+   await switchKnSubject(subjects[0].subject_id);
+  }
  }catch(error){
   console.error(error);
   const list=document.getElementById("knSubjectBarList");
@@ -578,8 +590,10 @@ function renderSubjectBar(subjects){
 }
 
 /* 切换当前科目：更新卡片高亮、刷新目录树、默认选中第一个知识点 */
-async function switchKnSubject(subjectId){
+async function switchKnSubject(subjectId,opts={}){
  kpNavActiveSubjectId=subjectId;
+ const targetChapterId=opts.targetChapterId?Number(opts.targetChapterId):null;
+ const targetPointId=opts.targetPointId?Number(opts.targetPointId):null;
  // 高亮当前科目卡片
  document.querySelectorAll("#knSubjectBarList [data-kn-subject-id]").forEach(btn=>{
   btn.classList.toggle("active",Number(btn.dataset.knSubjectId)===subjectId);
@@ -590,14 +604,27 @@ async function switchKnSubject(subjectId){
  try{
   const graph=await apiRequest(`/api/knowledge/subject/${subjectId}/graph`);
   activeSubjectGraph=graph;
-  renderKnTreePanel(treeBody,graph);
-  // 默认加载第一个知识点
-  const firstPoint=findFirstPoint(graph);
-  if(firstPoint){
-   await loadKnPointDetail(firstPoint.id);
+  renderKnTreePanel(treeBody,graph,{targetChapterId,targetPointId});
+  // 目标定位:知识点 → 该点;章节 → 第一节;无目标 → 第一个知识点
+  if(targetPointId){
+   await loadKnPointDetail(targetPointId);
+  }else if(targetChapterId){
+   const targetChapter=(graph.chapters||[]).find(ch=>ch.id===targetChapterId);
+   const firstPoint=targetChapter?.children?.[0];
+   if(firstPoint){
+    await loadKnPointDetail(firstPoint.id);
+   }else{
+    const detail=document.getElementById("knDetailPanel");
+    if(detail)detail.innerHTML='<div class="kn-empty">该章节暂无知识点数据</div>';
+   }
   }else{
-   const detail=document.getElementById("knDetailPanel");
-   if(detail)detail.innerHTML='<div class="kn-empty">该科目暂无知识点数据</div>';
+   const firstPoint=findFirstPoint(graph);
+   if(firstPoint){
+    await loadKnPointDetail(firstPoint.id);
+   }else{
+    const detail=document.getElementById("knDetailPanel");
+    if(detail)detail.innerHTML='<div class="kn-empty">该科目暂无知识点数据</div>';
+   }
   }
  }catch(error){
   if(treeBody)treeBody.innerHTML=`<div class="kn-empty">加载失败：${escapeHtml(error.message||"")}</div>`;
@@ -612,8 +639,10 @@ function findFirstPoint(graph){
 }
 
 /* 渲染左侧知识点目录树（带掌握度色点） */
-function renderKnTreePanel(body,graph){
+function renderKnTreePanel(body,graph,opts={}){
  const subject=graph.subject;
+ const targetChapterId=opts.targetChapterId?String(opts.targetChapterId):null;
+ const targetPointId=opts.targetPointId?String(opts.targetPointId):null;
  body.innerHTML=`
   <div class="kn-tree-subject" data-kn-tree-subject="${subject.id}">
    <i class="kn-subject-dot" style="background:${statusPalette(subject.status)}"></i>
@@ -621,26 +650,32 @@ function renderKnTreePanel(body,graph){
    <span>${subject.mastery_percent||0}%</span>
   </div>
   <div class="kn-tree-chapters">
-   ${(graph.chapters||[]).map(ch=>`
-    <div class="kn-tree-chapter" data-kn-tree-chapter="${ch.id}">
-     <div class="kn-tree-chapter-head">
+   ${(graph.chapters||[]).map(ch=>{
+    const isTargetChapter=targetChapterId!==null&&String(ch.id)===targetChapterId;
+    return `
+    <div class="kn-tree-chapter${isTargetChapter?" active":""}" data-kn-tree-chapter="${ch.id}">
+     <div class="kn-tree-chapter-head" data-kn-tree-chapter-head="${ch.id}">
        <i class="kn-chapter-dot" style="background:${ch.style?.color||statusPalette(ch.status)}"></i>
        <b>${escapeHtml(ch.name)}</b>
        <span class="kn-tree-chapter-pct">${ch.mastery_percent||0}%</span>
+       <em class="kn-chapter-toggle">▾</em>
      </div>
-     <div class="kn-tree-points">
-       ${(ch.children||[]).map(pt=>`
-        <button class="kn-tree-point" data-kn-tree-point="${pt.id}" data-kn-point-name="${escapeHtml(pt.name)}" data-kn-point-chapter="${escapeHtml(ch.name)}">
+     <div class="kn-tree-points" ${isTargetChapter?"":"hidden"}>
+       ${(ch.children||[]).map(pt=>{
+        const isTargetPoint=targetPointId!==null&&String(pt.id)===targetPointId;
+        return `
+        <button class="kn-tree-point${isTargetPoint?" active":""}" data-kn-tree-point="${pt.id}" data-kn-point-name="${escapeHtml(pt.name)}" data-kn-point-chapter="${escapeHtml(ch.name)}">
          <i class="kn-point-dot" style="background:${pt.style?.color||statusPalette(pt.status)}"></i>
          <span>${escapeHtml(pt.name)}</span>
          <small class="kn-point-status">${escapeHtml(pt.status_label||statusLabel(pt.status))}</small>
-        </button>
-       `).join("")}
+        </button>`;
+       }).join("")}
      </div>
-    </div>
-   `).join("")}
+    </div>`;
+   }).join("")}
   </div>
  `;
+ // 三级知识点点击:高亮 + 加载详情
  body.querySelectorAll("[data-kn-tree-point]").forEach(btn=>{
   btn.onclick=()=>{
    body.querySelectorAll("[data-kn-tree-point]").forEach(b=>b.classList.remove("active"));
@@ -648,6 +683,41 @@ function renderKnTreePanel(body,graph){
    loadKnPointDetail(Number(btn.dataset.knTreePoint));
   };
  });
+ // 二级章节头部点击:展开/折叠 + 高亮 + 加载第一节
+ body.querySelectorAll("[data-kn-tree-chapter-head]").forEach(head=>{
+  head.onclick=()=>{
+   const chapterEl=head.parentElement;
+   const pointsEl=chapterEl.querySelector(".kn-tree-points");
+   const isExpanded=!pointsEl.hasAttribute("hidden");
+   // 切换展开
+   pointsEl.toggleAttribute("hidden");
+   head.classList.toggle("collapsed",isExpanded);
+   // 切换高亮
+   body.querySelectorAll(".kn-tree-chapter").forEach(c=>c.classList.remove("active"));
+   chapterEl.classList.add("active");
+   // 加载本章节第一个知识点
+   if(!isExpanded){
+    const firstPoint=pointsEl.querySelector("[data-kn-tree-point]");
+    if(firstPoint){
+     body.querySelectorAll("[data-kn-tree-point]").forEach(b=>b.classList.remove("active"));
+     firstPoint.classList.add("active");
+     loadKnPointDetail(Number(firstPoint.dataset.knTreePoint));
+    }
+   }
+  };
+ });
+ // 目标点滚到可视区
+ if(targetPointId){
+  const el=body.querySelector(`[data-kn-tree-point="${targetPointId}"]`);
+  if(el){
+   el.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+ }else if(targetChapterId){
+  const el=body.querySelector(`[data-kn-tree-chapter="${targetChapterId}"]`);
+  if(el){
+   el.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+ }
  // 图例
  const legend=document.getElementById("knTreeLegend");
  if(legend){
@@ -913,7 +983,7 @@ async function autoStartPractice(btn){
  const pointId=btn.dataset.knLoadPoint||"";
  toast("正在根据"+(pointId?"知识点":"章节")+"「"+(pointId?chapter:chapter)+"」智能生成 3 道练习题，请稍候…");
  try{
-  const payload={mode:pointId?"知识点专项":"章节训练",subject:subject,knowledge_point:chapter,count:3,difficulty:"自适应",question_type:"混合"};
+  const payload={mode:pointId?"知识点专项":"章节训练",scope:pointId?"point":"chapter",subject:subject,knowledge_point:chapter,chapter:pointId?"":chapter,chapter_id:pointId?null:Number(btn.dataset.kdStartPracticeChapter||btn.dataset.knLoadChapter||0)||null,count:3,difficulty:"自适应",question_type:"混合"};
   const data=await apiRequest("/api/questions/generate",{method:"POST",body:JSON.stringify(payload)});
   if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){toast("Agent 暂未生成题目，请稍后重试","error");return}
   showPage("question");
@@ -946,10 +1016,24 @@ async function loadKnPointDetail(pointId){
   window.currentGraphPointName=point.name||"";
   window.currentGraphPointSubject=point.subject_name||"";
   window.currentKnowledgeNotes=notes.items||[];
-  // 高亮左侧目录树中当前知识点
+  // 高亮左侧目录树中当前知识点,同时展开并高亮父章节
   document.querySelectorAll("[data-kn-tree-point]").forEach(b=>{
    b.classList.toggle("active",Number(b.dataset.knTreePoint)===pointId);
   });
+  // 高亮 + 展开该知识点所属的父章节
+  const targetPointBtn=document.querySelector(`[data-kn-tree-point="${pointId}"]`);
+  if(targetPointBtn){
+   const parentChapter=targetPointBtn.closest(".kn-tree-chapter");
+   if(parentChapter){
+    const pointsEl=parentChapter.querySelector(".kn-tree-points");
+    if(pointsEl)pointsEl.removeAttribute("hidden");
+    const head=parentChapter.querySelector("[data-kn-tree-chapter-head]");
+    if(head)head.classList.remove("collapsed");
+    document.querySelectorAll(".kn-tree-chapter").forEach(c=>{
+     c.classList.toggle("active",c===parentChapter);
+    });
+   }
+  }
   // 如果当前科目与知识点所属科目不一致，自动切换到该科目
   if(kpNavActiveSubjectId!==point.subject_id){
    const subjectExists=(window.knSubjectCardsCache||[]).some(s=>s.subject_id===point.subject_id);
@@ -971,7 +1055,7 @@ async function loadKnPointDetail(pointId){
   const relatedItems=related.items||[];
 
   /* 立即渲染页面（视频部分显示 loading 状态）— 仅更新 #knDetailPanel */
-  body.innerHTML=`<div class="kd-canvas-wrap">${knowledgePointNavDetailHTML(point,graph,relatedItems,[],noteItems,true)}</div>`;
+  body.innerHTML=`<div class="kd-canvas-wrap">${knowledgePointNavDetailHTML(point,graph,relatedItems,[],[],[],noteItems,true)}</div>`;
   bindKnowledgeDetailInteractions();
 
   /* 第二阶段：异步加载视频推荐（不阻塞主页面） */
@@ -1004,26 +1088,30 @@ async function loadPointVideosAsync(pointId){
 }
 
 function knowledgePointNavDetailHTML(point,graph,related,videos,history,mistakes,notes,isVideoLoading=true){
+ const safeArr=(v)=>Array.isArray(v)?v:[];
+ const relatedSafe=safeArr(related);
+ const notesSafe=safeArr(notes);
+ const videosSafe=safeArr(videos);
  const videosContent=isVideoLoading
   ? `<div class="kd-video-loading" id="kdVideoLoading">
       <div class="kd-video-spinner"></div>
       <p>正在匹配王道官方 408 课程视频…</p>
       <small>仅展示与该知识点强相关的王道分 P，无关视频已过滤</small>
      </div>`
-  : (videos.map(videoCardHTML).join("")||"<p>暂无匹配视频资源</p>");
+  : (videosSafe.map(videoCardHTML).join("")||"<p>暂无匹配视频资源</p>");
  return `<div class="kd-layout kd-point-nav-layout">
   <main class="kd-main kd-main-full">
-   <div class="kd-breadcrumb"><button data-kg-back>返回知识目录</button><span>${escapeHtml(point.subject_name)} / ${escapeHtml(point.chapter_name)} / ${escapeHtml(point.name)}</span></div>
+   <div class="kd-breadcrumb"><button data-kg-back>返回知识目录</button><span>${escapeHtml(point.subject_name||"")} / ${escapeHtml(point.chapter_name||"")} / ${escapeHtml(point.name||"")}</span></div>
    <section class="kd-point-head">
-    <div><span class="kd-badge">${escapeHtml(point.status_label||statusLabel(point.status))}</span><h2>${escapeHtml(point.name)}</h2><p>${escapeHtml(point.subject_name)} / ${escapeHtml(point.chapter_name)}</p></div>
+    <div><span class="kd-badge">${escapeHtml(point.status_label||statusLabel(point.status))}</span><h2>${escapeHtml(point.name||"")}</h2><p>${escapeHtml(point.subject_name||"")} / ${escapeHtml(point.chapter_name||"")}</p></div>
     <div class="kd-head-actions"><button class="primary" data-open-note="${point.id}">添加笔记</button><button class="ghost" data-kd-start-practice="${point.id}" data-kd-practice-subject="${escapeHtml(point.subject_name||"")}" data-kd-practice-point="${escapeHtml(point.name||"")}">开始练习</button></div>
    </section>
    <section class="kd-section"><h3>知识点正文</h3>${knowledgeBodyHTML(point)}</section>
-   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${related.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name)}</b><span>${escapeHtml(item.status_label||statusLabel(item.status))}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
+   <section class="kd-section"><h3>相关知识点</h3><div class="kd-related">${relatedSafe.map(item=>`<button data-kd-point="${item.id}"><b>${escapeHtml(item.name||"")}</b><span>${escapeHtml(item.status_label||statusLabel(item.status))}</span></button>`).join("")||"<p>暂无相关知识点</p>"}</div></section>
    <section class="kd-section kd-tabs-section">
     <div class="kd-tab-bar"><button class="kd-tab active" data-kd-tab="videos">学习资源</button><button class="kd-tab" data-kd-tab="notes">学习笔记</button></div>
     <div class="kd-tab-content" id="kdTabVideos">${videosContent}</div>
-    <div class="kd-tab-content" id="kdTabNotes" style="display:none"><div class="kd-note-list" id="kdNoteList">${notes.map(noteCardHTML).join("")||"<p>暂无笔记，点击右上角添加。</p>"}</div></div>
+    <div class="kd-tab-content" id="kdTabNotes" style="display:none"><div class="kd-note-list" id="kdNoteList">${notesSafe.map(noteCardHTML).join("")||"<p>暂无笔记，点击右上角添加。</p>"}</div></div>
    </section>
   </main>
  </div>${noteModalHTML(point)}`;
@@ -1376,6 +1464,8 @@ async function submitBookMastery(button){
     toast(status==="掌握"?"已标记掌握，将移出题本":`已归入"${status}题本"`,"success");
     notebookCache = null;
     setTimeout(() => loadMistakeNotebook(), 300);
+    // 错题状态变化 → 全局刷新(首页统计/知识图谱/报告)
+    setTimeout(()=>refreshAfterAnswer("mastery").catch(console.error),400);
   }catch(error){
     toast(error.message, "error");
   }
@@ -1745,6 +1835,8 @@ function bindAll(){
       document.getElementById("ocrStatus").textContent="分析完成";
       setOcrStep(4);
       loadMistakeNotebook();
+      // OCR 错题写入会改变掌握度/记忆/统计 → 全局刷新
+      refreshAfterAnswer("answer").catch(console.error);
       toast(data.llm_used?"错题分析已提交并写入记忆（AI 大模型）":"错题分析已提交并写入记忆（保底规则）","success");
     }catch(error){toast(error.message,"error");document.getElementById("ocrStatus").textContent="分析失败";setOcrStep(2);}
   };
@@ -1784,7 +1876,10 @@ function bindAccountSettings(){
   apiRequest("/api/profile/update",{method:"PUT",body:JSON.stringify({nickname:name})}).then(data=>{
     const userStr=localStorage.getItem("turing408_user");
     if(userStr){try{const u=JSON.parse(userStr);u.nickname=name;localStorage.setItem("turing408_user",JSON.stringify(u))}catch(e){}}
-    input.value=name;document.getElementById("topUserName").textContent=name;document.getElementById("topAvatar").textContent=avatar;document.querySelectorAll(".learning-user-card h3").forEach(x=>x.textContent=name);toast("账号昵称已保存")
+    input.value=name;document.getElementById("topUserName").textContent=name;document.getElementById("topAvatar").textContent=avatar;document.querySelectorAll(".learning-user-card h3").forEach(x=>x.textContent=name);
+    // 报告页"学习画像"里的用户名同步刷新
+    refreshAfterAnswer("profile").catch(console.error);
+    toast("账号昵称已保存")
   }).catch(err=>{toast(err.message||"保存失败","error")})
  };
  document.getElementById("accountName").onblur=saveName;
@@ -1824,8 +1919,16 @@ function submitForumPost(){
     document.getElementById("forumContent").value="";
     document.querySelector("#forumModal .forum-modal-actions button.ghost").click();
     const post=data.post;
+    // 标记当前论坛版本已变,这样 refreshAfterAnswer 不会重复拉
+    forumDataVersion++;
+    lastSeenForumVersion=forumDataVersion;
     document.getElementById("forumFeed").insertAdjacentHTML("afterbegin",forumPostCardHTML(post));
     bindForumDynamic(document.querySelector(".forum-feed .forum-post"));
+    // 刷新热门话题(可能进 TOP)+ 打卡状态(可能解锁连续奖励)
+    loadHotTopics();
+    loadCheckinStatus();
+    // 论坛动作也会影响首页/报告统计 → 全局刷新(论坛页用 diff 跳过自己)
+    refreshAfterAnswer("forum").catch(console.error);
     toast("讨论已发布");
   }).catch(err=>toast(err.message,"error"));
 }
@@ -1889,29 +1992,48 @@ async function loadForum(){
       const keyword=document.getElementById("forumSearch").value.trim();
       loadForumPosts(cat,keyword);
     });
+    // 启动论坛轮询(每 30s diff 更新)
+    startForumPolling();
   }catch(err){console.error(err);}
 }
-async function loadForumPosts(category,search){
-  const feed=document.getElementById("forumFeed");
-  if(!feed)return;
+async function loadForumPosts(category,search,options={}){
+ const feed=document.getElementById("forumFeed");
+ if(!feed)return;
+ const silent=!!options.silent;
+ // silent 模式(轮询/diff 刷新):不显示"加载中",避免闪烁
+ // 非 silent 模式且 feed 已经有内容:也不清空,改用 diff 更新
+ const hasContent=!!feed.querySelector(".forum-post");
+ if(!silent&&!hasContent){
   feed.innerHTML="<div class='card' style='text-align:center;padding:40px;color:var(--muted);font-size:10px'>正在加载…</div>";
-  try{
-    let url="/api/forum/posts";
-    const params=[];
-    if(category&&category!=="全部")params.push(`category=${encodeURIComponent(category)}`);
-    if(search)params.push(`search=${encodeURIComponent(search)}`);
-    if(params.length)url+="?"+params.join("&");
-    const data=await apiRequest(url);
-    const items=data.items||[];
-    if(!items.length){
-      feed.innerHTML="<div class='card' style='text-align:center;padding:40px;color:var(--muted);font-size:10px'>暂无讨论，快来发布第一条吧</div>";
-      return;
-    }
-    feed.innerHTML=items.map(p=>forumPostCardHTML(p)).join("");
-    feed.querySelectorAll(".forum-post").forEach(post=>bindForumDynamic(post));
-  }catch(err){
-    feed.innerHTML=`<div class='card' style='text-align:center;padding:40px;color:var(--danger);font-size:10px'>加载失败：${escapeHtml(err.message)}</div>`;
+ }
+ try{
+  let url="/api/forum/posts";
+  const params=[];
+  if(category&&category!=="全部")params.push(`category=${encodeURIComponent(category)}`);
+  if(search)params.push(`search=${encodeURIComponent(search)}`);
+  if(params.length)url+="?"+params.join("&");
+  const data=await apiRequest(url);
+  const items=data.items||[];
+  // 标记版本:这次拉取已包含
+  lastSeenForumVersion=forumDataVersion;
+  if(!items.length){
+   if(!silent)feed.innerHTML="<div class='card' style='text-align:center;padding:40px;color:var(--muted);font-size:10px'>暂无讨论，快来发布第一条吧</div>";
+   return;
   }
+  // 已有内容 → diff 更新(不重置评论框/已展开状态)
+  if(hasContent||silent){
+   diffUpdateForumFeed(items);
+  }else{
+   feed.innerHTML=items.map(p=>forumPostCardHTML(p)).join("");
+   feed.querySelectorAll(".forum-post").forEach(post=>bindForumDynamic(post));
+  }
+ }catch(err){
+  if(!silent){
+   feed.innerHTML=`<div class='card' style='text-align:center;padding:40px;color:var(--danger);font-size:10px'>加载失败：${escapeHtml(err.message)}</div>`;
+  }else{
+   console.error("forum silent refresh failed:",err);
+  }
+ }
 }
 async function loadHotTopics(){
   const list=document.getElementById("hotList");
@@ -1956,6 +2078,8 @@ async function doForumCheckin(){
     const data=await apiRequest("/api/forum/checkin",{method:"POST"});
     if(count)count.textContent=data.weekly_count||0;
     btn.textContent="今日已打卡";
+    // 打卡影响首页统计/报告 → 全局刷新(论坛页本身已是最新的,只刷其他页)
+    refreshAfterAnswer("checkin").catch(console.error);
     toast(data.message||"打卡成功","success");
   }catch(err){
     btn.disabled=false;
@@ -2792,6 +2916,7 @@ async function submitCurrentAnswer(){
   document.getElementById("answer").querySelector("h4").textContent=data.is_correct?"批改结果：回答正确":"批改结果：回答错误";
   document.getElementById("answerText").textContent=data.feedback;
   document.getElementById("wrongAction").classList.toggle("show",!data.is_correct);
+  refreshAfterAnswer().catch(console.error);
   toast(data.is_correct?"回答正确，掌握状态已更新":"回答错误，请选择真实错因",data.is_correct?"success":"error");
  }catch(error){
   console.error(error);
@@ -2814,6 +2939,8 @@ async function confirmCurrentCause(){
  try{
   const data=await apiRequest("/api/mistakes/cause-confirm",{method:"POST",body:JSON.stringify({answer_record_id:lastAnswerRecordId,error_types:selected,user_note:note,agent_suggested_types:["计算错误"],evidence_source:"user_confirmed"})});
   document.getElementById("causeSummary").innerHTML=`<b>已形成结构化长期记忆证据</b><br>错因：${selected.join(" + ")}${note?`<br>用户说明：${escapeHtml(note)}`:""}<br>${data.message}`;
+  // 错因写入长期记忆 → 全局刷新(首页记忆流/报告页记忆权重)
+  refreshAfterAnswer("memory").catch(console.error);
   toast("错因已写入长期学习记忆","success");
  }catch(error){
   console.error(error);
@@ -2829,7 +2956,8 @@ async function submitMasteryFeedback(button){
  const q=activeQuestions[currentQuestionIndex];
  const status=button.textContent.trim();
  try{
-  await apiRequest("/api/questions/mastery",{method:"POST",body:JSON.stringify({subject:q.subject,knowledge_point:q.knowledge_point,status})});
+  await apiRequest("/api/questions/mastery",{method:"POST",body:JSON.stringify({subject:q.subject,knowledge_point:q.knowledge_point,status,question_id:q.id||null})});
+  refreshAfterAnswer().catch(console.error);
   toast(status==="掌握"?"已标记掌握":`已加入“${status}题本”，知识点状态已更新`,"success");
  }catch(error){
   console.error(error);
@@ -3153,6 +3281,159 @@ async function loadHomeOverview(){
  }
 }
 
+async function refreshAfterAnswer(){
+ return refreshAfterAnswer();
+}
+
+/* ========= 全局失效 + 智能重渲染 =========
+   范围:首页/知识图谱/知识详情/错题本/报告页/论坛
+   触发:答题/标记掌握/OCR/错因/打卡/笔记/昵称/QA 记忆写入等
+*/
+let lastAnswerAt=0;          // 最近一次答题/错题/记忆写入时间戳(ms)
+let reportCache=null;        // 报告页缓存
+let reportCacheAt=0;         // 报告页缓存时间
+let forumDataVersion=0;      // 论坛数据版本号(每次写入自增)
+let lastSeenForumVersion=0;  // 上次拉取的版本号(用于"是否过期")
+let forumPollTimer=null;     // 论坛轮询定时器
+
+async function refreshAfterAnswer(scope="all"){
+ // 1. 失效所有相关缓存
+ notebookCache=null;
+ knowledgeGraphCache=null;
+ knowledgeOverviewCache=null;
+ currentHomeOverview=null;
+ reportCache=null;
+ reportCacheAt=0;
+ forumDataVersion++;
+ // 全局答题/学习状态时间戳(供 showPage 过期检测用)
+ if(scope==="all"||scope==="answer"||scope==="mastery"||scope==="memory"){
+  lastAnswerAt=Date.now();
+ }
+
+ // 2. 重渲染当前激活页 + 已在 DOM 中的相关卡片
+ const active=document.querySelector(".page.active")?.id||"";
+ try{
+  if(active==="home"||scope==="all"){
+   await loadHomeOverview();
+  }
+  if(active==="knowledge"||scope==="all"){
+   if(activeSubjectGraph?.subject?.id){
+    await loadSubjectGraph(activeSubjectGraph.subject.id);
+   }else{
+    await loadKnowledgeOverviewGraph();
+   }
+   // 详情页打开时同步刷新
+   if(window.knDetailActive&&window.currentKnowledgePointId){
+    try{ await loadKnPointDetail(window.currentKnowledgePointId); }catch(e){}
+   }
+  }
+  if(active==="mistake"||scope==="all"){
+   await loadMistakeNotebook();
+  }
+  if(active==="report"||scope==="all"){
+   if(typeof loadReportOverview==="function")await loadReportOverview();
+  }
+  if(active==="forum"){
+   // 论坛页只在版本变化时静默拉取(避免闪烁)
+   if(forumDataVersion!==lastSeenForumVersion){
+    await loadForumPosts(getActiveForumCategory(),getForumSearchKeyword(),{silent:true});
+    loadHotTopics();
+    loadCheckinStatus();
+    lastSeenForumVersion=forumDataVersion;
+   }
+  }
+ }catch(error){
+  console.error("refreshAfterAnswer error:",error);
+ }
+}
+
+/* ===== 论坛辅助:getter ===== */
+function getActiveForumCategory(){
+ return document.querySelector("[data-forum-category].active")?.dataset.forumCategory||"全部";
+}
+function getForumSearchKeyword(){
+ return document.getElementById("forumSearch")?.value?.trim()||"";
+}
+
+/* ===== 论坛轮询(30s) ===== */
+function startForumPolling(){
+ stopForumPolling();
+ forumPollTimer=setInterval(async()=>{
+  if(document.querySelector(".page.active")?.id!=="forum")return;
+  // 仅在论坛页可见时拉取,且仅拉 feed
+  try{
+   const category=getActiveForumCategory();
+   const keyword=getForumSearchKeyword();
+   let url="/api/forum/posts";
+   const params=[];
+   if(category&&category!=="全部")params.push(`category=${encodeURIComponent(category)}`);
+   if(keyword)params.push(`search=${encodeURIComponent(keyword)}`);
+   if(params.length)url+="?"+params.join("&");
+   const data=await apiRequest(url);
+   const items=data.items||[];
+   diffUpdateForumFeed(items);
+  }catch(e){/* 静默失败,不影响用户 */}
+ },30000);
+}
+function stopForumPolling(){
+ if(forumPollTimer){clearInterval(forumPollTimer);forumPollTimer=null;}
+}
+
+/* ===== 论坛 feed diff 更新 ===== */
+function diffUpdateForumFeed(items){
+ const feed=document.getElementById("forumFeed");
+ if(!feed)return;
+ const existing=new Map();
+ feed.querySelectorAll(".forum-post").forEach(el=>{if(el.dataset.postId)existing.set(String(el.dataset.postId),el);});
+ const incomingIds=new Set(items.map(p=>String(p.id)));
+ // 删除:已不在列表中的
+ existing.forEach((el,id)=>{if(!incomingIds.has(id))el.remove();});
+ // 更新/插入:按顺序处理
+ let prev=null;
+ items.forEach(post=>{
+  const id=String(post.id);
+  const html=forumPostCardHTML(post);
+  const existingEl=existing.get(id);
+  if(existingEl){
+   // 用临时 div 解析新 HTML,按需替换评论数/点赞数(避免破坏已展开的评论)
+   const tmp=document.createElement("div");
+   tmp.innerHTML=html;
+   const newEl=tmp.firstElementChild;
+   // 评论/点赞数差异更新
+   const oldLike=existingEl.querySelector("[data-forum-like-count]")?.textContent;
+   const newLike=newEl?.querySelector("[data-forum-like-count]")?.textContent;
+   if(oldLike!==newLike&&newLike!==undefined){
+    existingEl.querySelector("[data-forum-like-count]")?.replaceWith(newEl.querySelector("[data-forum-like-count]"));
+   }
+   const oldCmt=existingEl.querySelector("[data-forum-comment-count]")?.textContent;
+   const newCmt=newEl?.querySelector("[data-forum-comment-count]")?.textContent;
+   if(oldCmt!==newCmt&&newCmt!==undefined){
+    existingEl.querySelector("[data-forum-comment-count]")?.replaceWith(newEl.querySelector("[data-forum-comment-count]"));
+   }
+   // 标题/分类/摘要变化才整块替换
+   const oldTitle=existingEl.querySelector(".forum-post-title")?.textContent;
+   const newTitle=newEl?.querySelector(".forum-post-title")?.textContent;
+   if(oldTitle!==newTitle&&newTitle){
+    const newClone=newEl.cloneNode(true);
+    bindForumDynamic(newClone);
+    existingEl.replaceWith(newClone);
+   }
+  }else{
+   // 新增:插入到正确位置(prev 之后或顶部)
+   const tmp=document.createElement("div");
+   tmp.innerHTML=html;
+   const newEl=tmp.firstElementChild;
+   bindForumDynamic(newEl);
+   if(prev&&prev.parentNode===feed){
+    prev.after(newEl);
+   }else{
+    feed.prepend(newEl);
+   }
+  }
+  prev=feed.querySelector(`.forum-post[data-post-id="${id}"]`);
+ });
+}
+
 function renderHomeOverview(data){
  renderHomePlan(data.today_plan);
  renderHomeCountdown(data.countdown);
@@ -3404,6 +3685,7 @@ async function submitMasteryFeedback(button){
  try{
   await apiRequest("/api/questions/mastery",{method:"POST",body:JSON.stringify({subject:q.subject,knowledge_point:q.knowledge_point,status,question_id:q.id||null})});
   notebookCache=null;
+  refreshAfterAnswer().catch(console.error);
   toast(status==="掌握"?"已标记掌握":`已加入${status}题本，知识点状态已更新`,"success");
  }catch(error){
   console.error(error);
@@ -3457,6 +3739,8 @@ async function submitComment(postId,content,post){
   if(data.comment_count!==undefined)updateForumPostCounts(post,{comment_count:data.comment_count});
   else await refreshForumPostCounts(postId,post);
   loadHotTopics();
+  // 评论也会让首页"论坛活跃度"等统计变化
+  refreshAfterAnswer("forum").catch(console.error);
  }catch(err){
   toast(err.message||"评论发布失败","error");
  }
@@ -3472,6 +3756,8 @@ async function loadReportOverview(){
  if(!report)return;
  try{
   const data=await apiRequest("/api/reports/overview");
+  reportCache=data;
+  reportCacheAt=Date.now();
   renderReportOverview(data);
  }catch(error){
   console.error(error);
@@ -3603,7 +3889,42 @@ function renderLearningProfile(profile){
 const reportAwareShowPage=showPage;
 showPage=function(id){
  reportAwareShowPage(id);
- if(id==="report")loadReportOverview();
+ // 智能刷新:进入关键页时,如果距上次答题/刷新已经过期,静默重拉
+ const now=Date.now();
+ const staleAnswer=lastAnswerAt&&(now-lastAnswerAt)<10*60*1000; // 10 分钟内答过题
+ if(id==="report"){
+  if(staleAnswer||(now-(reportCacheAt||0))>2*60*1000){
+   loadReportOverview();
+   reportCacheAt=now;
+  }
+ }else if(id==="home"){
+  if(staleAnswer||!currentHomeOverview){
+   loadHomeOverview();
+  }
+  stopForumPolling();
+ }else if(id==="knowledge"){
+  // 详情页打开时,如果距上次答题在窗口内,重拉详情(掌握度/相关错题)
+  if(window.knDetailActive&&window.currentKnowledgePointId&&staleAnswer){
+   loadKnPointDetail(window.currentKnowledgePointId);
+  }
+  stopForumPolling();
+ }else if(id==="mistake"){
+  if(staleAnswer||!notebookCache){
+   loadMistakeNotebook();
+  }
+  stopForumPolling();
+ }else if(id==="forum"){
+  // 论坛页进入:如果数据可能过期,先重拉一次(保持 lastSeenForumVersion 同步)
+  if(forumDataVersion!==lastSeenForumVersion){
+   loadForumPosts(getActiveForumCategory(),getForumSearchKeyword(),{silent:!!document.getElementById("forumFeed")?.querySelector(".forum-post")});
+   loadHotTopics();
+   loadCheckinStatus();
+  }
+  startForumPolling();
+ }else{
+  // 离开论坛页时停止轮询
+  stopForumPolling();
+ }
 };
 
 /* ========= 408 知识图谱：总览二级环形结构 + 单科三层结构 ========= */
@@ -3703,14 +4024,14 @@ function subjectOverviewCardHTML(subject){
   <div class="kg-overview-orbit">
    <button class="kg-subject-ring" data-open-subject="${subject.subject_id}" style="${ringStyle(subject.mastery_percent,color)}"><b>${escapeHtml(subject.subject_name)}</b><span>${subject.mastery_percent}%</span></button>
    <svg class="kg-overview-lines" viewBox="0 0 100 100">${positions.map(p=>`<line x1="50" y1="50" x2="${p.x}" y2="${p.y}"></line>`).join("")}</svg>
-   ${chapters.map((chapter,i)=>chapterOverviewNodeHTML(chapter,positions[i])).join("")}
+   ${chapters.map((chapter,i)=>chapterOverviewNodeHTML(chapter,positions[i],subject.subject_id)).join("")}
   </div>
  </section>`;
 }
 
-function chapterOverviewNodeHTML(chapter,pos){
+function chapterOverviewNodeHTML(chapter,pos,subjectId){
  const color=chapter.style?.color||statusPalette(chapter.status);
- return `<button class="kg-chapter-ring" data-open-chapter="${chapter.chapter_id}" style="left:${pos.x}%;top:${pos.y}%;${ringStyle(chapter.mastery_percent,color)}" title="${escapeHtml(chapter.chapter_name)}：${chapter.mastery_percent}%">
+ return `<button class="kg-chapter-ring" data-open-chapter="${chapter.chapter_id}" data-subject-id="${subjectId}" style="left:${pos.x}%;top:${pos.y}%;${ringStyle(chapter.mastery_percent,color)}" title="${escapeHtml(chapter.chapter_name)}：${chapter.mastery_percent}%">
   <b>${escapeHtml(chapter.chapter_name)}</b><span>${chapter.mastery_percent}%</span>
  </button>`;
 }
@@ -3721,12 +4042,13 @@ function distributionBarHTML(distribution){
 }
 
 function masteryLegendHTML(includeLevels=false){
+ // 与后端 mastery_service._score_to_status 严格对齐：≥80 掌握 / ≥50 不熟 / ≥20 不会 / >0 薄弱点 / 0 未学
  const statusItems=[
-  ["mastered","掌握较好（≥80%）"],
-  ["unfamiliar","正在学习（50%~80%）"],
-  ["unknown","掌握较弱（<50%）"],
-  ["weak","薄弱点"],
-  ["unlearned","未学（0%）"]
+  ["mastered","掌握（≥80 分）"],
+  ["unfamiliar","不熟（50~79 分）"],
+  ["unknown","不会（20~49 分）"],
+  ["weak","薄弱点（1~19 分）"],
+  ["unlearned","未学（0 分）"]
  ];
  const levelItems=includeLevels?`<span><i class="level-subject"></i>一级科目</span><span><i class="level-chapter"></i>二级章节</span>`:`<span><i class="level-subject"></i>一级科目</span><span><i class="level-chapter"></i>二级章节</span><span><i class="level-point"></i>三级知识点</span>`;
  return `${levelItems}${statusItems.map(([key,label])=>`<span><i style="background:${statusPalette(key)}"></i>${label}</span>`).join("")}`;
@@ -3777,7 +4099,7 @@ function subjectStatsPanelHTML(data){
    <div><b>${subject.learned_count}</b><span>已学习</span></div>
   </div>
   <h4>二级章节掌握度</h4>
-  <div class="kg-chapter-list">${(data.chapters||[]).map(chapter=>`<button data-select-chapter="${chapter.id}"><span>${escapeHtml(chapter.name)}</span><b>${chapter.mastery_percent}%</b></button>`).join("")}</div>
+  <div class="kg-chapter-list">${(data.chapters||[]).map(chapter=>`<button data-select-chapter="${chapter.id}" data-subject-id="${subject.id||data.subject?.subject_id||""}"><span>${escapeHtml(chapter.name)}</span><b>${chapter.mastery_percent}%</b></button>`).join("")}</div>
  </aside>`;
 }
 
@@ -3798,12 +4120,12 @@ function threeLevelGraphHTML(data){
  }).join("");
  const childNodes=chapters.map((chapter,chapterIndex)=>(chapter.children||[]).map((point,pointIndex)=>{
   const pos=childPointPosition(chapterIndex,chapters.length,pointIndex,chapter.children.length);
-  return knowledgePointDotHTML(point,pos,chapter.id);
+  return knowledgePointDotHTML(point,pos,chapter.id,subject.id);
  }).join("")).join("");
  return `<main class="kg-graph-stage">
   <svg class="kg-three-lines" viewBox="0 0 100 100">${lines}</svg>
   <button class="kg-subject-center" data-select-subject style="${ringStyle(subject.mastery_percent,subjectColor)}"><b>${escapeHtml(subject.name)}</b><small>总体掌握度</small><span>${subject.mastery_percent}%</span></button>
-  ${chapters.map((chapter,i)=>chapterRingNodeHTML(chapter,chapterPositions[i])).join("")}
+  ${chapters.map((chapter,i)=>chapterRingNodeHTML(chapter,chapterPositions[i],subject.id)).join("")}
   ${childNodes}
  </main>`;
 }
@@ -3816,16 +4138,16 @@ function childPointPosition(chapterIndex,chapterCount,pointIndex,pointCount){
  return polarPoint(50,50,radius,base+offset);
 }
 
-function chapterRingNodeHTML(chapter,pos){
+function chapterRingNodeHTML(chapter,pos,subjectId){
  const color=chapter.style?.color||statusPalette(chapter.status);
- return `<button class="kg-chapter-node" data-select-chapter="${chapter.id}" style="left:${pos.x}%;top:${pos.y}%;${ringStyle(chapter.mastery_percent,color)}" title="${escapeHtml(chapter.name)}：${chapter.mastery_percent}%">
+ return `<button class="kg-chapter-node" data-select-chapter="${chapter.id}" data-subject-id="${subjectId}" style="left:${pos.x}%;top:${pos.y}%;${ringStyle(chapter.mastery_percent,color)}" title="${escapeHtml(chapter.name)}：${chapter.mastery_percent}%">
   <b>${escapeHtml(chapter.name)}</b><span>${chapter.mastery_percent}%</span>
  </button>`;
 }
 
-function knowledgePointDotHTML(point,pos,chapterId){
+function knowledgePointDotHTML(point,pos,chapterId,subjectId){
  const color=point.style?.color||statusPalette(point.status);
- return `<button class="kg-point-node" data-select-point="${point.id}" data-parent-chapter="${chapterId}" style="left:${pos.x}%;top:${pos.y}%;--point-color:${color}" title="${escapeHtml(point.name)}：${escapeHtml(point.status_label||statusLabel(point.status))}">
+ return `<button class="kg-point-node" data-select-point="${point.id}" data-parent-chapter="${chapterId}" data-subject-id="${subjectId}" style="left:${pos.x}%;top:${pos.y}%;--point-color:${color}" title="${escapeHtml(point.name)}：${escapeHtml(point.status_label||statusLabel(point.status))}">
   <i></i><span>${escapeHtml(point.name)}</span>
  </button>`;
 }
@@ -3853,7 +4175,7 @@ function subjectDetailHTML(data){
 }
 
 function statusDistributionRowsHTML(){
- const items=[["mastered","掌握良好"],["unfamiliar","正在学习"],["unknown","不会"],["weak","薄弱点"],["unlearned","未学"]];
+ const items=[["mastered","掌握（≥80 分）"],["unfamiliar","不熟（50~79 分）"],["unknown","不会（20~49 分）"],["weak","薄弱点（1~19 分）"],["unlearned","未学（0 分）"]];
  return `<div class="kg-status-rows">${items.map(([key,label])=>`<div><i style="background:${statusPalette(key)}"></i><span>${label}</span></div>`).join("")}</div>`;
 }
 
@@ -3871,16 +4193,47 @@ function pointDetailHTML(point){
 
 function bindKnowledgeGraphInteractions(){
  document.querySelectorAll("[data-open-subject]").forEach(button=>button.onclick=()=>loadSubjectGraph(button.dataset.openSubject));
- document.querySelectorAll("[data-open-chapter]").forEach(button=>button.onclick=()=>loadChapterDetailPage(Number(button.dataset.openChapter)));
+ // 二级章节:跳到知识导航页对应章节(自动展开到第一节)
+ document.querySelectorAll("[data-open-chapter]").forEach(button=>button.onclick=()=>navigateKnChapter(Number(button.dataset.subjectId),Number(button.dataset.openChapter)));
  document.querySelector("[data-kg-back]")?.addEventListener("click",()=>renderKnowledgeOverview(knowledgeOverviewCache));
  document.querySelector("[data-select-subject]")?.addEventListener("click",()=>showSubjectDetail());
- document.querySelectorAll("[data-select-chapter]").forEach(button=>button.onclick=()=>loadChapterDetailPage(Number(button.dataset.selectChapter)));
- document.querySelectorAll("[data-select-point]").forEach(button=>button.onclick=()=>loadKnowledgePointDetailPage(Number(button.dataset.selectPoint)));
+ // 二级章节:跳到知识导航页对应章节(自动展开到第一节)
+ document.querySelectorAll("[data-select-chapter]").forEach(button=>button.onclick=()=>navigateKnChapter(Number(button.dataset.subjectId),Number(button.dataset.selectChapter)));
+ // 三级知识点:跳到知识导航页对应知识点
+ document.querySelectorAll("[data-select-point]").forEach(button=>button.onclick=()=>navigateKnPoint(Number(button.dataset.subjectId),Number(button.dataset.selectPoint)));
 }
 
 function showSubjectDetail(){
  const panel=document.getElementById("kgDetailPanel");
  if(panel&&activeSubjectGraph)panel.innerHTML=subjectDetailHTML(activeSubjectGraph);
+}
+
+/* ===== 知识图谱 → 知识导航:章节跳转 =====
+   策略:
+   - 已在知识页:直接调 switchKnSubject,带 targetChapterId 重新渲染 tree
+   - 在其他页:设 knPendingNavTarget 后调 showPage,由 loadKnowledgeNavPage 消费
+*/
+async function navigateKnChapter(subjectId,chapterId){
+ if(!subjectId||!chapterId)return;
+ const onKnowledge=document.querySelector(".page.active")?.id==="knowledge"&&kpNavActiveSubjectId;
+ if(onKnowledge){
+  await switchKnSubject(subjectId,{targetChapterId:chapterId});
+ }else{
+  knPendingNavTarget={subjectId,chapterId,pointId:null};
+  showPage("knowledge");
+ }
+}
+
+/* ===== 知识图谱 → 知识导航:知识点跳转 ===== */
+async function navigateKnPoint(subjectId,pointId){
+ if(!subjectId||!pointId)return;
+ const onKnowledge=document.querySelector(".page.active")?.id==="knowledge"&&kpNavActiveSubjectId;
+ if(onKnowledge){
+  await switchKnSubject(subjectId,{targetPointId:pointId});
+ }else{
+  knPendingNavTarget={subjectId,chapterId:null,pointId};
+  showPage("knowledge");
+ }
 }
 
 async function showPointDetail(pointId){
@@ -4070,7 +4423,7 @@ function bindKnowledgeDetailInteractions(){
    const chapter=btn.dataset.kdPracticePoint||"";
    toast("正在根据章节「"+(chapter||subject||"408")+"」智能生成 3 道练习题，请稍候…");
    try{
-    const payload={mode:"章节训练",subject:subject,knowledge_point:chapter,count:3,difficulty:"自适应",question_type:"混合"};
+    const payload={mode:"章节训练",scope:"chapter",subject:subject,knowledge_point:chapter,chapter:chapter,chapter_id:Number(btn.dataset.kdStartPracticeChapter||0)||null,count:3,difficulty:"自适应",question_type:"混合"};
     const data=await apiRequest("/api/questions/generate",{method:"POST",body:JSON.stringify(payload)});
     if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){toast("Agent 暂未生成题目，请稍后重试或更换章节","error");return}
     showPage("question");
@@ -4120,12 +4473,15 @@ async function saveKnowledgeNote(){
  toast("笔记已保存","success");
  document.getElementById("kdNoteModal")?.classList.remove("show");
  if(payload.knowledge_point_id)loadKnowledgePointDetailPage(payload.knowledge_point_id);
+ // 笔记数变化 → 同步刷新当前激活页
+ refreshAfterAnswer("notes").catch(console.error);
 }
 
 async function deleteKnowledgeNote(noteId){
  await apiRequest(`/api/notes/${noteId}`,{method:"DELETE"});
  toast("笔记已删除","success");
  if(window.currentKnowledgePointId)loadKnowledgePointDetailPage(window.currentKnowledgePointId);
+ refreshAfterAnswer("notes").catch(console.error);
 }
 
 async function shareKnowledgeNote(noteId){

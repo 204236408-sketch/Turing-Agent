@@ -29,6 +29,9 @@ class QuestionGenerateRequest(BaseModel):
     mode: str = "自由选择"
     subject: str = "操作系统"
     knowledge_point: str = "页面置换算法"
+    scope: str = ""  # point / chapter；为空时后端按 mode 和知识点表自动推断
+    chapter: str = ""
+    chapter_id: int | None = None
     difficulty: str = "中等"
     question_type: str = "选择题"
     count: int = Field(default=3, ge=1, le=10)

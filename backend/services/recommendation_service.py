@@ -117,6 +117,11 @@ def _format_mistake_tip(mistakes: list) -> str:
     return top_type
 
 
+def _kp_name(point: KnowledgePoint) -> str:
+    """与 knowledge_graph_service.point_name_of 保持一致：section → name。"""
+    return (point.section or point.name or "").strip()
+
+
 def _baseline_points(db: Session) -> list[KnowledgePoint]:
     """取高频考点作为基线，无高频标记时退化为全量知识点。"""
     points = (
@@ -225,7 +230,7 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
     baseline = _baseline_points(db)
     fallback = baseline[0] if baseline else None
     fallback_subject = fallback.subject if fallback else "数据结构"
-    fallback_point = fallback.name if fallback else "线性表"
+    fallback_point = _kp_name(fallback) if fallback else "线性表"
 
     recent = _recently_recommended(db, user_id)
     scored = _masteries_with_scores(db, user_id)
