@@ -1,18 +1,65 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from models import KnowledgeMastery, KnowledgePoint, Mistake, QuestionGenerationSession, UserMemory
+from models import (
+    AnswerRecord,
+    KnowledgeMastery,
+    KnowledgePoint,
+    Mistake,
+    Question,
+    QuestionGenerationSession,
+    UserMemory,
+)
 
+# 统一时区锚点：上海。涉及"今日"语义（种子、4 小时窗口）都按上海时间算，避免 UTC 与上海相差 8 小时
+# 导致跨夜时科目/题型轮换错位，或晚 8 点前用户看不到早上推荐的题目
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 STATUS_PRIORITY = {"薄弱点": 0, "不会": 1, "不熟": 2, "掌握": 3, "未学": 4}
 SMART_MODES = {"薄弱点强化", "最近错题复练", "高频提问专项", "已改善知识点复测", "四科随机综合"}
 
 _ALL_SUBJECTS = ["数据结构", "计算机组成原理", "操作系统", "计算机网络"]
 _ALL_QUESTION_TYPES = ["选择题", "填空题", "简答题", "综合题"]
+
+# today_plan 降级链：错题（最高信号）→ 提问 → 薄弱；「四科随机综合」不进入此链，
+# 因为它是基线诊断兜底，只有"非综合项全不可用"时才单独处理。
+TODAY_PLAN_FALLBACK_CHAIN = ["最近错题复练", "高频提问专项", "薄弱点强化"]
+
+
+def _now_shanghai() -> datetime:
+    """统一返回带上海时区的当前时间，避免与 UTC 混用。"""
+    return datetime.now(SHANGHAI_TZ)
+
+
+def _normalize_kp(name: str | None) -> str:
+    """KP 名称归一化：去首尾空格、去掉 `(xxx)` 括号后缀。
+
+    设计动机：OCR 错题回流时可能写作「指令集体系结构(ISA)」「进程与线程(同步)」等带括号别名，
+    而 seed 库的标准名是「指令系统」「进程与线程」。如果不归一化，错误 KP 名下的 mastery 与错题
+    会和真实 KP 失配，导致「最近错题复练」命中不到 mastery 行，主推逻辑看起来"没数据"。
+    这是项目硬约束里登记的统一入口，所有 KP 名称比较都应先走这里。
+    """
+    if not name:
+        return ""
+    text = str(name).strip()
+    # 去掉第一个左括号之后的内容（ISA、同步、扩展等补充说明）
+    for sep in ("（", "("):
+        idx = text.find(sep)
+        if idx > 0:
+            text = text[:idx].strip()
+            break
+    return text
+
+
+def _kp_key(subject: str | None, kp: str | None) -> tuple[str, str]:
+    """生成 (subject, kp) 归一化 key，供 used/比较使用。"""
+    return ((subject or "").strip(), _normalize_kp(kp))
 
 
 def _to_difficulty(mastery: KnowledgeMastery | None, base: str = "中等") -> str:
@@ -147,23 +194,83 @@ def _urgency_score(mastery: KnowledgeMastery) -> float:
     qa = mastery.qa_count or 0
     recency = 0
     if mastery.last_answer_time:
-        days = (datetime.utcnow() - mastery.last_answer_time).days
+        # last_answer_time 在数据库里通常以 UTC 存储（naive），与 SHANGNAI_TZ 当前时间比较时统一转到上海
+        last = mastery.last_answer_time
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=ZoneInfo("UTC"))
+        days = (_now_shanghai() - last.astimezone(SHANGHAI_TZ)).days
         recency = max(0, 5 - days)
     return ws * 0.4 + cw * 2.5 + qa * 0.5 + recency * 0.5
 
 
 def _recently_recommended(db: Session, user_id: int, hours: int = 4) -> set[tuple[str, str]]:
-    """最近 hours 小时内已推荐过的知识点集合（用于去重）。"""
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    """最近 hours 小时内已"真正答过题"的知识点集合（用于去重）。
+
+    与旧实现的区别：旧实现从 QuestionGenerationSession 查"出过题"，但用户可能只点开按钮没答完，
+    会导致 4 个非综合项全被去重过滤、今天优先攻克降级到空状态。改为从 AnswerRecord 查"已提交答案"，
+    才是"已经练过"的真实信号。
+    """
+    cutoff = _now_shanghai() - timedelta(hours=hours)
     rows = (
-        db.query(QuestionGenerationSession)
+        db.query(AnswerRecord.subject, AnswerRecord.knowledge_point)
         .filter(
-            QuestionGenerationSession.user_id == user_id,
-            QuestionGenerationSession.create_time >= cutoff,
+            AnswerRecord.user_id == user_id,
+            AnswerRecord.create_time >= cutoff,
+            AnswerRecord.is_deleted == False,  # noqa: E712
         )
         .all()
     )
-    return {(r.subject, r.knowledge_point) for r in rows}
+    result: set[tuple[str, str]] = set()
+    for r in rows:
+        # 兼容 (subject, knowledge_point) 单行或 Row 对象两种形态
+        subject = getattr(r, "subject", None) or (r[0] if len(r) > 0 else None)
+        kp = getattr(r, "knowledge_point", None) or (r[1] if len(r) > 1 else None)
+        result.add(_kp_key(subject, kp))
+    # 去掉空 key（脏数据兜底）
+    return {k for k in result if k[0] and k[1]}
+
+
+def _recently_answered_per_mode(
+    db: Session,
+    user_id: int,
+    hours: int = 4,
+) -> dict[str, set[tuple[str, str]]]:
+    """按 mode 分别聚合最近 hours 小时内已答过的 KP 集合。
+
+    关系链：AnswerRecord.question_id -> Question.id -> Question.session_id -> QuestionGenerationSession.id。
+    任意一环 join 失败都不能阻塞整个推荐接口,所以用 try/except 软降级：失败时返回空 dict,
+    让 5 个推荐项走"无去重"路径,功能正常但允许 4h 内重复。
+    """
+    try:
+        cutoff = _now_shanghai() - timedelta(hours=hours)
+        rows = (
+            db.query(
+                QuestionGenerationSession.recommend_mode,
+                AnswerRecord.subject,
+                AnswerRecord.knowledge_point,
+            )
+            .join(Question, Question.id == AnswerRecord.question_id)
+            .join(QuestionGenerationSession, QuestionGenerationSession.id == Question.session_id)
+            .filter(
+                QuestionGenerationSession.user_id == user_id,
+                AnswerRecord.user_id == user_id,
+                AnswerRecord.create_time >= cutoff,
+                AnswerRecord.is_deleted == False,  # noqa: E712
+                QuestionGenerationSession.is_deleted == False,  # noqa: E712
+            )
+            .all()
+        )
+    except Exception as e:  # noqa: BLE001
+        # 软降级：join 失败返回空 dict,不阻塞主流程
+        logging.getLogger(__name__).warning("per-mode recent join failed: %s", e)
+        return {}
+
+    result: dict[str, set[tuple[str, str]]] = {}
+    for mode, subject, kp in rows:
+        if not mode or not subject or not kp:
+            continue
+        result.setdefault(mode, set()).add(_kp_key(subject, kp))
+    return result
 
 
 def _recently_recommended_fingerprints(db: Session, user_id: int, hours: int = 24, limit: int = 30) -> list[str]:
@@ -175,20 +282,23 @@ def _recently_recommended_fingerprints(db: Session, user_id: int, hours: int = 2
         from agents.question_graph import _text_signature  # 复用去重节点的指纹函数
     except Exception:
         return []
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
-    rows = (
-        db.query(Question.question_text)
-        .join(QuestionGenerationSession, Question.session_id == QuestionGenerationSession.id)
-        .filter(
-            QuestionGenerationSession.user_id == user_id,
-            QuestionGenerationSession.create_time >= cutoff,
-            Question.is_deleted == False,
+    try:
+        cutoff = _now_shanghai() - timedelta(hours=hours)
+        rows = (
+            db.query(Question.question_text)
+            .join(QuestionGenerationSession, Question.session_id == QuestionGenerationSession.id)
+            .filter(
+                QuestionGenerationSession.user_id == user_id,
+                QuestionGenerationSession.create_time >= cutoff,
+                Question.is_deleted == False,  # noqa: E712
+            )
+            .order_by(QuestionGenerationSession.create_time.desc())
+            .limit(limit)
+            .all()
         )
-        .order_by(QuestionGenerationSession.create_time.desc())
-        .limit(limit)
-        .all()
-    )
-    return [_text_signature(r[0]) for r in rows if r and r[0]]
+        return [_text_signature(r[0]) for r in rows if r and r[0]]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _masteries_with_scores(db: Session, user_id: int) -> list[tuple[KnowledgeMastery, float]]:
@@ -202,15 +312,62 @@ def _pop_used(
     candidates: list[tuple[KnowledgeMastery, float]],
     used: set[tuple[str, str]],
 ) -> tuple[KnowledgeMastery, float] | None:
-    """从 candidates 中取第一个未在 used 中的项，none-aware。"""
+    """从 candidates 中取第一个未在 used 中的项，使用归一化 KP key 比较。"""
     for m, s in candidates:
-        if (m.subject, m.knowledge_point) not in used:
+        if _kp_key(m.subject, m.knowledge_point) not in used:
             return m, s
     return None
 
 
 def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
-    """生成 5 种推荐模式的列表，保证各推荐项尽量指向不同的知识点。"""
+    """生成 5 种推荐模式的列表。
+
+    关键设计点（与旧实现的差异）：
+    1. 跨模式 used 集合使用归一化 KP key（_kp_key），避免 OCR 错题回流的"(ISA)"等后缀让 mastery 命中失败。
+    2. 4 小时去重只对「同 mode」生效：用户答过"薄弱点强化"的 KP 不会让"高频提问专项"也跳过。
+    3. 5 个模式之间仍共享 used 集合，作为"5 个推荐项尽量不指向同一 KP"的软约束，
+       但每个模式在过滤前先去掉自己 mode 4 小时内已用过的 KP（避免同 mode 4h 内重复）。
+
+    软降级：整个函数任何位置抛异常,都返回 5 个 available=False 的占位项（指向 baseline fallback）,
+    保证 /api/home/overview 不返回 500,前端只看到「暂无数据」而不是「接口暂不可用」。
+    """
+    try:
+        return _build_smart_recommendations_impl(db, user_id)
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).exception("build_smart_recommendations failed: %s", e)
+        try:
+            baseline = _baseline_points(db)
+            fallback = baseline[0] if baseline else None
+            fallback_subject = fallback.subject if fallback else "数据结构"
+            fallback_point = _kp_name(fallback) if fallback else "线性表"
+        except Exception:  # noqa: BLE001
+            fallback_subject, fallback_point = "数据结构", "线性表"
+        # 5 个占位项,available=False 走兜底
+        placeholders = [
+            ("薄弱点强化", "中等", "选择题", 3),
+            ("最近错题复练", "简单", "选择题", 2),
+            ("高频提问专项", "中等", "填空题", 2),
+            ("已改善知识点复测", "较难", "选择题", 2),
+            ("四科随机综合", "中等", "综合题", 3),
+        ]
+        return [
+            {
+                "mode": mode,
+                "subject": fallback_subject,
+                "knowledge_point": fallback_point,
+                "reason": f"推荐生成暂不可用：{type(e).__name__}",
+                "difficulty": diff,
+                "question_type": qt,
+                "count": cnt,
+                "available": False,
+                "initial": True,
+            }
+            for mode, diff, qt, cnt in placeholders
+        ]
+
+
+def _build_smart_recommendations_impl(db: Session, user_id: int) -> list[dict]:
+    """build_smart_recommendations 的实际实现,异常时由外层 try 软降级。"""
     mastery_rows = (
         db.query(KnowledgeMastery)
         .filter(KnowledgeMastery.user_id == user_id)
@@ -237,30 +394,52 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
     fallback_subject = fallback.subject if fallback else "数据结构"
     fallback_point = _kp_name(fallback) if fallback else "线性表"
 
-    recent = _recently_recommended(db, user_id)
+    # 4 小时内按 mode 分别聚合的"答过"集合（与旧实现最大差异点）
+    per_mode_recent = _recently_answered_per_mode(db, user_id)
+
     scored = _masteries_with_scores(db, user_id)
 
+    # 归一化 KP key 的 mastery 反查表
     weak_map: dict[tuple[str, str], KnowledgeMastery] = {}
     for m in mastery_rows:
-        weak_map[(m.subject, m.knowledge_point)] = m
+        weak_map[_kp_key(m.subject, m.knowledge_point)] = m
 
-    used: set[tuple[str, str]] = set()  # 已使用的知识点，用于跨模式去重
-    # 4 小时内已推荐过的知识点也视为已用，避免短时间内"换模式但换汤不换药"
-    used.update(recent)
+    # 跨模式 used：保证 5 项尽量不指向同一 KP（软约束，不强求）
+    used: set[tuple[str, str]] = set()
 
     # P2-9: 准备用户错题 tip（无 LLM 调用的个性化），用于"薄弱点强化"和"最近错题复练"两项
     user_mistake_tip = _format_mistake_tip(mistakes) if mistakes else ""
 
+    def _filter_by_mode_used(
+        candidates: list,
+        mode: str,
+    ) -> list:
+        """先按 mode 自身 4h 内已用 KP 过滤；剩余再交给 _pop_used 走跨模式 used 软约束。
+
+        接受两种 candidates 形态：
+        - list[(KnowledgeMastery, float)]（带 urgency 分数）
+        - list[KnowledgeMastery]（不带分数，例如已改善复测/高频提问专项场景）
+        通过 isinstance 自动适配,避免 c[0] 在非元组类型上抛 TypeError。
+        """
+        mode_used = per_mode_recent.get(mode, set())
+        result = []
+        for c in candidates:
+            m = c[0] if isinstance(c, tuple) else c
+            if _kp_key(m.subject, m.knowledge_point) not in mode_used:
+                result.append(c)
+        return result
+
     # ── 1. 薄弱点强化 ──
-    scored_weak = [
+    scored_weak_all = [
         (m, s) for m, s in scored
         if m.final_status in {"薄弱点", "不会", "不熟"}
     ]
+    scored_weak = _filter_by_mode_used(scored_weak_all, "薄弱点强化")
     if scored_weak:
-        picked = _pop_used(scored_weak, used | recent)
+        picked = _pop_used(scored_weak, used)
         if picked:
             m, _ = picked
-            used.add((m.subject, m.knowledge_point))
+            used.add(_kp_key(m.subject, m.knowledge_point))
             weak_item = _point_payload(
                 "薄弱点强化", m.subject, m.knowledge_point,
                 f"{m.final_status}·连续答错 {m.continuous_wrong_count} 次，"
@@ -301,14 +480,24 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
     # ── 2. 最近错题复练 ──
     if mistakes:
         lm = mistakes[0]
-        m = weak_map.get((lm.subject, lm.knowledge_point))
-        if (lm.subject, lm.knowledge_point) in used:
+        m = weak_map.get(_kp_key(lm.subject, lm.knowledge_point))
+        mode_used = per_mode_recent.get("最近错题复练", set())
+        if _kp_key(lm.subject, lm.knowledge_point) in mode_used:
             for alt in mistakes[1:]:
-                if (alt.subject, alt.knowledge_point) not in used:
+                if _kp_key(alt.subject, alt.knowledge_point) not in mode_used:
                     lm = alt
-                    m = weak_map.get((lm.subject, lm.knowledge_point))
+                    m = weak_map.get(_kp_key(lm.subject, lm.knowledge_point))
                     break
-        used.add((lm.subject, lm.knowledge_point))
+        if _kp_key(lm.subject, lm.knowledge_point) in used:
+            for alt in mistakes[1:]:
+                if (
+                    _kp_key(alt.subject, alt.knowledge_point) not in used
+                    and _kp_key(alt.subject, alt.knowledge_point) not in mode_used
+                ):
+                    lm = alt
+                    m = weak_map.get(_kp_key(lm.subject, lm.knowledge_point))
+                    break
+        used.add(_kp_key(lm.subject, lm.knowledge_point))
         mistake_item = _point_payload(
             "最近错题复练", lm.subject, lm.knowledge_point,
             f"最近错题来自「{lm.knowledge_point}」（{lm.error_type or '未分类'}），"
@@ -326,18 +515,19 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
         )
 
     # ── 3. 高频提问专项 ──
-    qa_sorted = sorted(
+    qa_candidates_all = sorted(
         [m for m in mastery_rows if (m.qa_count or 0) > 0],
         key=lambda r: r.qa_count or 0,
         reverse=True,
     )
-    if qa_sorted:
-        qa_m = qa_sorted[0]
-        for alt in qa_sorted:
-            if (alt.subject, alt.knowledge_point) not in used:
+    qa_candidates = _filter_by_mode_used(qa_candidates_all, "高频提问专项")
+    if qa_candidates:
+        qa_m = qa_candidates[0]
+        for alt in qa_candidates:
+            if _kp_key(alt.subject, alt.knowledge_point) not in used:
                 qa_m = alt
                 break
-        used.add((qa_m.subject, qa_m.knowledge_point))
+        used.add(_kp_key(qa_m.subject, qa_m.knowledge_point))
         qa_item = _point_payload(
             "高频提问专项", qa_m.subject, qa_m.knowledge_point,
             f"你已围绕该知识点提问 {qa_m.qa_count} 次，"
@@ -355,14 +545,15 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
         )
 
     # ── 4. 已改善知识点复测 ──
-    improved_list = [
-        m for m in mastery_rows
-        if m.final_status == "掌握"
-        and (m.subject, m.knowledge_point) not in used
+    improved_candidates_all = [m for m in mastery_rows if m.final_status == "掌握"]
+    improved_candidates = _filter_by_mode_used(improved_candidates_all, "已改善知识点复测")
+    improved_candidates = [
+        m for m in improved_candidates
+        if _kp_key(m.subject, m.knowledge_point) not in used
     ]
-    if improved_list:
-        imp = improved_list[0]
-        used.add((imp.subject, imp.knowledge_point))
+    if improved_candidates:
+        imp = improved_candidates[0]
+        used.add(_kp_key(imp.subject, imp.knowledge_point))
         improved_item = _point_payload(
             "已改善知识点复测", imp.subject, imp.knowledge_point,
             f"当前状态已掌握（答对 {imp.correct_count}/{imp.total_answer_count}），"
@@ -378,7 +569,8 @@ def build_smart_recommendations(db: Session, user_id: int) -> list[dict]:
         )
 
     # ── 5. 四科随机综合 ──
-    today = datetime.utcnow()
+    # 时区修复：用上海时区生成种子，与前端"今日"语义对齐
+    today = _now_shanghai()
     seed = today.timetuple().tm_yday
     subject_index = (seed // 7) % 4
     qtype_index = (seed // 3) % 4
@@ -418,19 +610,87 @@ def resolve_smart_recommendation(db: Session, user_id: int, mode: str) -> dict:
 
 
 def choose_today_plan(db: Session, user_id: int) -> dict:
-    """为用户选择"今日计划"——优先取第一个可用的非综合推荐，否则基线诊断。"""
-    items = build_smart_recommendations(db, user_id)
-    chosen = next((item for item in items if item["available"] and item["mode"] != "四科随机综合"), None)
-    if not chosen:
-        chosen = next(item for item in items if item["mode"] == "四科随机综合")
+    """为用户选择"今日计划"。
+
+    降级链：错题（最高信号）→ 提问 → 薄弱 → 综合（兜底）。
+    与旧实现的差异：旧实现只在"非综合项"里挑第一个 available，常常让用户看到四科综合的基线诊断卡片。
+    新实现按"信号强度"递降选择：错题/提问都算强信号，只要其中之一 available，就直接拿来当今日计划，
+    给用户一个有内容的卡片；只有当所有强信号都不可用时，才退到"薄弱→综合"作为兜底。
+    同时用 initial_state 区分「新手指引」与「真实空状态异常」。
+
+    软降级：任何异常都返回"先完成一次 408 基线诊断"占位卡片（initial_state=True）,
+    保证 /api/home/overview 不返回 500。
+    """
+    try:
+        items = build_smart_recommendations(db, user_id)
+        by_mode: dict[str, dict] = {it["mode"]: it for it in items}
+
+        # 1. 按 TODAY_PLAN_FALLBACK_CHAIN 顺序挑选第一个 available
+        for mode in TODAY_PLAN_FALLBACK_CHAIN:
+            cand = by_mode.get(mode)
+            if cand and cand.get("available"):
+                return {
+                    **cand,
+                    "title": f"今天优先攻克\n{cand['knowledge_point']}",
+                    "empty_state": False,
+                }
+
+        # 2. 全部不可用：回落"基线诊断"卡片，initial_state=True 标识这是首次引导
+        baseline = by_mode.get("四科随机综合") or items[-1]
         return {
-            **chosen,
+            **baseline,
             "title": "先完成一次\n408 基线诊断",
             "reason": "你当前还没有稳定的答题或错题记录。系统会先从高频考点生成诊断题，完成后自动形成薄弱点和长期学习记忆。",
             "empty_state": True,
+            "initial_state": True,
         }
-    return {
-        **chosen,
-        "title": f"今天优先攻克\n{chosen['knowledge_point']}",
-        "empty_state": False,
-    }
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).exception("choose_today_plan failed: %s", e)
+        return {
+            "mode": "四科随机综合",
+            "subject": "数据结构",
+            "knowledge_point": "线性表",
+            "difficulty": "中等",
+            "question_type": "选择题",
+            "count": 3,
+            "available": False,
+            "initial": True,
+            "title": "先完成一次\n408 基线诊断",
+            "reason": "推荐服务暂不可用，请稍后刷新重试。",
+            "empty_state": True,
+            "initial_state": True,
+        }
+
+
+def normalize_existing_kp_rows(db: Session) -> int:
+    """对全库 KP 名称做一次归一化扫描，幂等可重复执行。
+
+    覆盖：KnowledgeMastery / Mistake / QuestionGenerationSession / AnswerRecord 的 subject 和 knowledge_point。
+    部署本修复后调用一次，把历史脏数据（如「指令集体系结构(ISA)」）改成「指令集体系结构」，
+    让 _kp_key 后续能稳定匹配。返回被改写的行数。
+    """
+    updated = 0
+    for model in (KnowledgeMastery, Mistake, QuestionGenerationSession, AnswerRecord):
+        try:
+            rows = db.query(model).all()
+        except Exception:
+            continue
+        for row in rows:
+            old_sub = getattr(row, "subject", None)
+            old_kp = getattr(row, "knowledge_point", None)
+            new_sub = (old_sub or "").strip() if old_sub else old_sub
+            new_kp = _normalize_kp(old_kp)
+            changed = False
+            if new_sub and new_sub != old_sub:
+                row.subject = new_sub
+                changed = True
+            if new_kp and new_kp != old_kp:
+                row.knowledge_point = new_kp
+                changed = True
+            if changed:
+                updated += 1
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+    return updated

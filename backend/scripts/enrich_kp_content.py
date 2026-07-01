@@ -94,15 +94,106 @@ def _parse_blocks(md_text: str) -> list[dict]:
     return blocks
 
 
+def _split_sentences(text: str) -> list[str]:
+    """按中英文句末标点切句,保留分隔符。"""
+    if not text:
+        return []
+    # 中文标点: 。！？ 英文标点: . ! ?  顿号/分号按短句保留
+    parts = re.split(r"(?<=[。！？!?])\s*", text)
+    return [p.strip() for p in parts if p and p.strip()]
+
+
+def _sentence_jaccard(a: str, b: str) -> float:
+    """两个句子的字符级 Jaccard 相似度。"""
+    sa = set(a)
+    sb = set(b)
+    if not sa or not sb:
+        return 0.0
+    inter = sa & sb
+    union = sa | sb
+    return len(inter) / len(union) if union else 0.0
+
+
+# 内容型 section 允许的最大字符数,避免一个 section 堆出几千字
+# 排版上: 核心概念 / 易错点 / 408 重点 这种"重点突出"型 section 收紧
+# 解题步骤 / 例题 这种"过程型" section 适当放宽
+_SECTION_CHAR_LIMIT = {
+    "核心概念": 600,
+    "基本概念": 600,
+    "概念": 600,
+    "定义": 600,
+    "概述": 600,
+    "易错点": 400,
+    "常见错误": 400,
+    "误区": 400,
+    "408 重点": 400,
+    "408高频考点": 400,
+    "常见考法": 400,
+    "408 常见考法": 400,
+    "考法": 400,
+    "考点": 400,
+    "408 重点与考点": 400,
+    "解题步骤": 800,
+    "例题": 800,
+    "总结": 400,
+    "重点": 400,
+}
+_SECTION_CHAR_LIMIT_DEFAULT = 600
+_DEDUPE_THRESHOLD = 0.72  # 句子级 jaccard 超过该阈值视为重复
+
+
+def _dedupe_and_trim(body: str, max_chars: int) -> str:
+    """对 section body 做句级去重 + 字符数截断。
+
+    去重策略：
+    - 按句末标点切句
+    - 与已保留句的 jaccard > 阈值时跳过(视为同一内容重复)
+    - 累计字符数超过 max_chars 时截断尾部
+
+    这样可让一个 section 内"同义/复述"只保留第一次出现,
+    后续 block 的同 title 内容若不补充新信息就不会再被追加。
+    """
+    if not body:
+        return ""
+    sentences = _split_sentences(body)
+    kept: list[str] = []
+    used: list[str] = []  # 已保留句的字符集合缓存(避免重复计算 jaccard)
+    total = 0
+    for s in sentences:
+        # 句级去重
+        dup = False
+        for u in used:
+            if _sentence_jaccard(s, u) >= _DEDUPE_THRESHOLD:
+                dup = True
+                break
+        if dup:
+            continue
+        # 字符数限制
+        if total + len(s) > max_chars and kept:
+            break
+        kept.append(s)
+        used.append(s)
+        total += len(s)
+    return "".join(kept)
+
+
 def _flatten_sections(sections: list[tuple[str, str]]) -> str:
-    """把 [('核心概念', '...'), ('例题', '...')] 拼成一段大文本。"""
+    """把 [('核心概念', '...'), ('例题', '...')] 拼成一段大文本。
+
+    每个 section body 在拼接前先做句级去重 + 字符数截断,防止多个 md 块同 title
+    拼接时出现"同一句话重复 2-7 遍"的乱排版。
+    """
     out: list[str] = []
     for title, body in sections:
         if not body:
             continue
         # 简化标题: '408 出栈序列合法性判断' -> '高频考点'
         norm = re.sub(r"^408\s*", "", title).strip()
-        out.append(f"【{norm}】{body}")
+        limit = _SECTION_CHAR_LIMIT.get(norm, _SECTION_CHAR_LIMIT_DEFAULT)
+        trimmed = _dedupe_and_trim(body, limit)
+        if not trimmed:
+            continue
+        out.append(f"【{norm}】{trimmed}")
     return "\n\n".join(out)
 
 
@@ -169,12 +260,17 @@ def main() -> None:
 
             # 加上关键词
             full_content = f"关键词：{best['keywords']}\n\n{enriched}"
-            if len(full_content) > len(kp.content or ""):
+            # 不再以"更长"为更新条件——本轮 enrich 加了去重/截断后内容可能更短
+            # 改为：含至少 1 个 section 头（【xxx】）就覆盖,保证历史脏数据被刷新
+            has_section = "【" in enriched and "】" in enriched
+            if has_section:
                 kp.content = full_content
                 # 同步 common_mistakes（从 ## 常见错误 section 提取）
                 for title, body in section_texts:
                     if "常见错误" in title or "易错" in title:
-                        kp.common_mistakes = body
+                        # common_mistakes 也走一次去重截断,避免存几千字
+                        mistakes_limit = _SECTION_CHAR_LIMIT.get("易错点", 400)
+                        kp.common_mistakes = _dedupe_and_trim(body, mistakes_limit)
                         break
                 updated += 1
         db.commit()

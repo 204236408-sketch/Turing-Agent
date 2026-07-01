@@ -3281,10 +3281,6 @@ async function loadHomeOverview(){
  }
 }
 
-async function refreshAfterAnswer(){
- return refreshAfterAnswer();
-}
-
 /* ========= 全局失效 + 智能重渲染 =========
    范围:首页/知识图谱/知识详情/错题本/报告页/论坛
    触发:答题/标记掌握/OCR/错因/打卡/笔记/昵称/QA 记忆写入等
@@ -3446,8 +3442,24 @@ function renderHomeOverview(data){
 function renderHomePlan(plan){
  const title=document.getElementById("homePlanTitle"),reason=document.getElementById("homePlanReason");
  if(!title||!reason)return;
- title.innerHTML=escapeHtml(plan?.title||"先完成一次\n408 基线诊断").replace(/\n/g,"<br>");
- reason.textContent=plan?.reason||"当前暂无错题记录，先完成一组高频基础题，系统会自动建立初始学习画像。";
+ // 区分三种状态：
+ // 1. 正常：plan.title 已含"今天优先攻克\nxxx"
+ // 2. 新手指引：plan.initial_state === true（后端用 initial_state 标识首次引导，不是数据异常）
+ // 3. 真实空状态/异常：plan 为空或 reason 含"暂不可用"
+ let titleText="先完成一次\n408 基线诊断";
+ let reasonText="当前暂无错题记录，先完成一组高频基础题，系统会自动建立初始学习画像。";
+ if(plan&&plan.title){
+  titleText=plan.title;
+ }
+ if(plan&&plan.reason){
+  reasonText=plan.reason;
+ }
+ if(plan&&plan.initial_state===true){
+  // 新手指引：加一段正向提示
+  reasonText=`${reasonText}\n提示：完成 3 道题后,系统会自动定位你的薄弱点并个性化推荐。`;
+ }
+ title.innerHTML=escapeHtml(titleText).replace(/\n/g,"<br>");
+ reason.textContent=reasonText;
 }
 
 function renderHomeCountdown(countdown){
@@ -4322,64 +4334,244 @@ function knowledgeTreeHTML(graph,activeChapterId,activePointId){
  </aside>`;
 }
 
+// 内容型 section 的"防御性"上限：前端再做一次"防历史脏数据"截断,
+// 后端 enrich_kp_content.py 已经做了去重截断,这里只是兜底.
+const _FRONTEND_SECTION_CHAR_LIMIT = {
+  "核心概念": 600,
+  "基本概念": 600,
+  "概念": 600,
+  "定义": 600,
+  "易错点": 400,
+  "常见错误": 400,
+  "误区": 400,
+  "408 重点": 400,
+  "408高频考点": 400,
+  "常见考法": 400,
+  "408 常见考法": 400,
+  "考法": 400,
+  "考点": 400,
+  "解题步骤": 800,
+  "例题": 800,
+  "总结": 400,
+  "重点": 400,
+};
+const _FRONTEND_SECTION_CHAR_LIMIT_DEFAULT = 600;
+
+function _splitSentences(text){
+ if(!text)return [];
+ return text.split(/(?<=[。！？!?])\s*/).map(s=>s.trim()).filter(Boolean);
+}
+
+function _sentenceJaccard(a,b){
+ const sa=new Set(a),sb=new Set(b);
+ if(!sa.size||!sb.size)return 0;
+ const inter=[...sa].filter(c=>sb.has(c)).length;
+ const union=new Set([...sa,...sb]).size;
+ return inter/union;
+}
+
+// 渲染时按 section 标题"防御性"去重同 title 重复
+// 历史脏数据可能含 5-7 个同名【核心概念】,这里合并为 1 个并做句级去重
+function _mergeAndDedupeSections(sections){
+ const order=[]; // 按首次出现顺序保留
+ const byTitle=new Map();
+ for(const s of sections){
+  if(!byTitle.has(s.title)){
+   byTitle.set(s.title,{title:s.title,lines:[]});
+   order.push(s.title);
+  }
+  byTitle.get(s.title).lines.push(...s.lines);
+ }
+ const merged=[];
+ for(const title of order){
+  const sec=byTitle.get(title);
+  const limit=_FRONTEND_SECTION_CHAR_LIMIT[title]||_FRONTEND_SECTION_CHAR_LIMIT_DEFAULT;
+  // 句级去重 + 字符数截断
+  const seen=[];
+  const out=[];
+  let total=0;
+  for(const raw of sec.lines){
+   for(const sent of _splitSentences(raw)){
+    if(seen.some(u=>_sentenceJaccard(sent,u)>=0.72))continue;
+    if(total+sent.length>limit&&out.length)continue;
+    out.push(sent);
+    seen.push(sent);
+    total+=sent.length;
+   }
+  }
+  if(out.length)merged.push({title,lines:out});
+ }
+ return merged;
+}
+
 function _formatContentText(raw){
- if(!raw)return "";
+ if(!raw)return {keywords:"",blocks:[]};
+ const trimmedRaw=raw;
+ // 1. 单独抽出"关键词：xxx"行,作为头部 metadata,不进入正文 blocks
+ let keywords="";
+ const lines=trimmedRaw.split(/\n/);
+ const contentLines=[];
+ for(const line of lines){
+  const m=line.match(/^关键词[：:]\s*(.*)$/);
+  if(m){
+   keywords=m[1].trim();
+   continue;
+  }
+  contentLines.push(line);
+ }
+ // 2. 解析为 section 块
  const blocks=[];
  let current={type:"paragraph",lines:[]};
  const sectionLabels=["核心概念","常见考法","易错点","解题步骤","408重点","重点","考点","考法","概念","误区","总结","概述","定义","基本概念"];
- const lines=raw.split(/\n/);
- for(const line of lines){
-  const trimmed=line.trim();
-  if(!trimmed){continue;}
-  const headerMatch=trimmed.match(/^【([^】]+)】\s*(.*)/);
+ for(const line of contentLines){
+  const t=line.trim();
+  if(!t){continue;}
+  const headerMatch=t.match(/^【([^】]+)】\s*(.*)/);
   if(headerMatch){
    if(current.lines.length>0)blocks.push(current);
-   current={type:"section",title:headerMatch[1],body:headerMatch[2],lines:[]};
+   current={type:"section",title:headerMatch[1],lines:[]};
    if(headerMatch[2])current.lines.push(headerMatch[2]);
   }else{
-   const bulletMatch=trimmed.match(/^(\d+)[.、)】]\s*(.*)/);
+   const bulletMatch=t.match(/^(\d+)[.、)】]\s*(.*)/);
    if(bulletMatch){
     if(current.lines.length>0&&current.lines[current.lines.length-1]!=="_bullet_")current.lines.push("_bullet_start_");
     current.lines.push(bulletMatch[2]);
    }else{
-    current.lines.push(trimmed);
+    current.lines.push(t);
    }
   }
  }
  if(current.lines.length>0)blocks.push(current);
- return blocks;
+ // 3. 防御性：合并同名 section + 句级去重 + 字符数截断
+ const sectionBlocks=blocks.filter(b=>b.type==="section");
+ const paragraphBlocks=blocks.filter(b=>b.type!=="section");
+ const mergedSections=_mergeAndDedupeSections(sectionBlocks.map(s=>({title:s.title,lines:s.lines.filter(x=>x&&x!=="_bullet_start_"&&x!=="_bullet_")})));
+ return {keywords,blocks:[...paragraphBlocks,...mergedSections]};
 }
+// 5 种 block 类型的视觉分类 + 颜色方案
+// - core: 核心概念 (蓝/知识主色)
+// - exam: 常见考法 (橙/警示)
+// - steps: 解题步骤 (绿/行动)
+// - example: 例题 (紫/示例)
+// - error: 常见错误/易错点 (红/警告)
+// - key: 408重点 (靛/重点)
+// - default: 其他
+function _sectionType(title){
+ const t=title||"";
+ if(t.includes("核心概念")||t.includes("基本概念")||t==="概念"||t.includes("定义")||t.includes("概述"))return"core";
+ if(t.includes("常见考法")||t.includes("考法")||t.includes("考点"))return"exam";
+ if(t.includes("解题步骤")||t.includes("步骤"))return"steps";
+ if(t.includes("例题"))return"example";
+ if(t.includes("常见错误")||t.includes("易错点")||t.includes("误区"))return"error";
+ if(t.includes("408重点")||t.includes("重点")||t.includes("总结"))return"key";
+ return"default";
+}
+
+// block 标题的图标(用 CSS 绘制的几何符号,避免 emoji 渲染差异)
+function _sectionIcon(type){
+ return{
+  core:"▣",     // 知识方块
+  exam:"◎",     // 靶心
+  steps:"▸",    // 三角前进
+  example:"◇",  // 菱形
+  error:"⚠",   // 警告
+  key:"★",      // 五角星
+  default:"▷",  // 三角箭头
+ }[type]||"▷";
+}
+
+// 关键术语高亮: 把"X（Y）"或中文加括号、英语术语、引号短语等识别为术语, 加 mark
+function _highlightKeyTerms(text){
+ if(!text)return"";
+ let html=escapeHtml(text);
+ // 1) 双引号包起来的术语
+ html=html.replace(/&quot;([^&]{2,15})&quot;/g,'<mark class="kd-term">$1</mark>');
+ // 2) 英文术语 (只在全大写或全小写时识别,避免误伤中文)
+ html=html.replace(/\b([A-Z][A-Za-z]{1,8}(?:\([A-Z]+\))?)\b/g,function(m,w){
+  if(/^[\u4e00-\u9fa5]/.test(w))return m;
+  return'<mark class="kd-term">'+w+'</mark>';
+ });
+ return html;
+}
+
+// toggle 折叠: 兼容 .kd-block 与旧 .kd-accordion
+function toggleKdAccordion(headEl){
+ const card=headEl.parentElement;
+ if(!card)return;
+ card.classList.toggle("open");
+}
+
 function _renderContentBlocks(blocks){
  if(!blocks||blocks.length===0)return "";
  return blocks.map((block,idx)=>{
   if(block.type==="section"){
-   const bodyHtml=block.lines.map(line=>{
-    if(line==="_bullet_start_")return "";
-    if(line.startsWith("_bullet_"))return "";
-    return `<p>${escapeHtml(line)}</p>`;
+   const type=_sectionType(block.title);
+   const icon=_sectionIcon(type);
+   // 段落型 vs 列表型:
+   // - core/example: 概念和例题, 用 <p> 段落
+   // - exam/steps/error/key: 考法/步骤/错误/重点, 用 <ol><li> 编号项
+   const isListType=["exam","steps","error","key"].includes(type);
+   const bodyHtml=block.lines.map((line,lineIdx)=>{
+    if(line==="_bullet_start_")return"";
+    if(line.startsWith("_bullet_"))return"";
+    // 判断是否首段 (作为加重起点)
+    const isFirst=lineIdx===0;
+    if(isListType){
+     return`<li class="kd-block-li">${_highlightKeyTerms(line)}</li>`;
+    }
+    const cls=`kd-block-line${isFirst?" kd-block-line-first":""}`;
+    return`<p class="${cls}">${_highlightKeyTerms(line)}</p>`;
    }).join("");
-   const isOpen=block.title.includes("核心概念")?" open":"";
-   return `<div class="kd-accordion${isOpen}" data-idx="${idx}">
-     <div class="kd-accordion-header" onclick="toggleKdAccordion(this)">
-       <h4>${escapeHtml(block.title)}</h4>
-       <span class="kd-accordion-arrow">▼</span>
+   const innerHtml=isListType?`<ol class="kd-ol kd-ol-${type}">${bodyHtml}</ol>`:bodyHtml;
+   // 例题类型用 callout 框
+   const wrapperClass=type==="example"?"kd-block kd-block-callout":`kd-block kd-block-${type}`;
+   const defaultOpen=type==="core"||type==="key"?" open":"";
+   return `<div class="${wrapperClass}${defaultOpen}" data-idx="${idx}" data-type="${type}">
+     <div class="kd-block-head" onclick="toggleKdAccordion(this)">
+       <span class="kd-block-icon">${icon}</span>
+       <h4 class="kd-block-title">${escapeHtml(block.title)}</h4>
+       <span class="kd-block-arrow">▼</span>
      </div>
-     <div class="kd-accordion-body">${bodyHtml}</div>
+     <div class="kd-block-body">${innerHtml}</div>
    </div>`;
   }
-  return `<p style="margin:8px 0">${escapeHtml(block.lines.join("  "))}</p>`;
+  return `<p class="kd-para">${_highlightKeyTerms(block.lines.join("  "))}</p>`;
  }).join("");
+}
+
+// 把"关键词：xxx,yyy,zzz"渲染为带标签条的 header
+function _keywordsBarHTML(keywords){
+ if(!keywords)return "";
+ const tags=keywords.split(/[,，;;\s]+/).map(s=>s.trim()).filter(Boolean);
+ if(!tags.length)return "";
+ return `<div class="kd-keywords-bar"><b>关键词</b>${tags.map(t=>`<span class="kd-kw-tag">${escapeHtml(t)}</span>`).join("")}</div>`;
 }
 window.toggleKdAccordion=function(header){
  header.parentElement.classList.toggle("open");
 }
 function knowledgeBodyHTML(point){
  const raw=point.content||"";
+ const parsed=_formatContentText(raw);  // {keywords, blocks}
+ const blocks=parsed.blocks||[];
+ const extraKeywords=parsed.keywords||"";
+ // 头部关键词：抽出的 _formatContentText.keywords 优先,没有则用 point.keywords
+ const headerKeywords=extraKeywords||point.keywords||point.name;
  if(raw){
-  const blocks=_formatContentText(raw);
-  return `<div class="kd-content-body">${_renderContentBlocks(blocks)}</div><ul class="kd-concepts"><li><b>核心概念</b><span>${escapeHtml(point.keywords||point.name)}</span></li><li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li><li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li><li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li></ul>`;
+  return `${_keywordsBarHTML(extraKeywords||point.keywords)}<div class="kd-content-body">${_renderContentBlocks(blocks)}</div>
+   <ul class="kd-concepts">
+    <li><b>核心概念</b><span>${escapeHtml(headerKeywords)}</span></li>
+    <li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li>
+    <li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li>
+    <li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li>
+   </ul>`;
  }
- return `<p>${escapeHtml(`${point.name} 是 ${point.chapter_name} 章节下的三级知识点。建议先理解定义、核心概念、常见考法和易错点，再进入专项训练。`)}</p><ul class="kd-concepts"><li><b>核心概念</b><span>${escapeHtml(point.keywords||point.name)}</span></li><li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li><li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li><li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li></ul>`;
+ return `${_keywordsBarHTML(point.keywords||point.name)}<p>${escapeHtml(`${point.name} 是 ${point.chapter_name} 章节下的三级知识点。建议先理解定义、核心概念、常见考法和易错点，再进入专项训练。`)}</p>
+  <ul class="kd-concepts">
+   <li><b>核心概念</b><span>${escapeHtml(headerKeywords)}</span></li>
+   <li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li>
+   <li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li>
+   <li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li>
+  </ul>`;
 }
 
 function videoCardHTML(video){

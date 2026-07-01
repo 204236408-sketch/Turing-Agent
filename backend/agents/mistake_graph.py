@@ -15,6 +15,7 @@ from config import settings
 from models import AnswerRecord, Mistake, UserMemory
 from services.llm_service import LLMResult, chat_json, chat_json_with_fallback_models
 from services.mastery_service import recalculate_mastery
+from services.recommendation_service import _normalize_kp
 from services.chroma_service import upsert_document
 from utils.response import AppError
 
@@ -144,12 +145,15 @@ def write_mistake(state: MistakeState) -> dict:
         step = _make_step("write_mistake", "no record", "error", "failed", start)
         return {"agent_steps": state.get("agent_steps", []) + [step]}
 
+    # 写入前对 KP 名归一化（去"(ISA)"等括号后缀），保证后续推荐引擎能匹配到 mastery
+    normalized_kp = _normalize_kp(record_kp) or record_kp
+
     mistake = Mistake(
         user_id=user_id,
         answer_record_id=record_id,
         question_id=record_question_id,
-        subject=record_subject,
-        knowledge_point=record_kp,
+        subject=(record_subject or "").strip() or record_subject,
+        knowledge_point=normalized_kp,
         error_type=error_type,
         error_reason=error_reason,
         suggestion=suggestion,
@@ -158,7 +162,7 @@ def write_mistake(state: MistakeState) -> dict:
     db.add(mistake)
     db.flush()
 
-    out = f"mistake_id={mistake.id}, kp={record_kp}"
+    out = f"mistake_id={mistake.id}, kp={normalized_kp}"
     step = _make_step("write_mistake", f"error_type={error_type}", out, "success", start)
     return {
         "mistake_id": mistake.id,
