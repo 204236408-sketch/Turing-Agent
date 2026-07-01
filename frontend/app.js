@@ -1571,7 +1571,7 @@ function reportHTML(){
         <div class="head"><h3>长期记忆权重</h3></div>
         ${[["页面置换算法",8],["TCP 三次握手",5],["同步与互斥",4],["二叉树遍历",1]].map(x=>`
           <div class="weight-row">
-            <span>${x[0]}</span>
+            <span class="weight-label">${x[0]}</span>
             <div class="weight-track"><span style="width:${x[1]*10}%"></span></div>
             <b>${x[1]}</b>
           </div>
@@ -1598,7 +1598,7 @@ function profileHTML(){
         </div>
         ${[["页面置换算法",8],["TCP 三次握手",5],["同步与互斥",4],["二叉树遍历",1]].map(x=>`
           <div class="weight-row">
-            <span>${x[0]}</span>
+            <span class="weight-label">${x[0]}</span>
             <div class="weight-track">
               <span style="width:${x[1]*10}%"></span>
             </div>
@@ -1759,9 +1759,12 @@ async function ocrUploadFile(file){
  const status=document.getElementById("ocrStatus");
  if(status)status.textContent="正在上传并识别";
  toast("正在上传图片…");
+ showProgressBar("上传并识别图片...","ocr-upload");
  try{
+  updateProgressBar("ocr-upload",30,"上传图片中...");
   const form=new FormData();form.append("file",file);
   const data=await apiRequest("/api/ocr/upload",{method:"POST",body:form});
+  updateProgressBar("ocr-upload",80,"OCR 识别中...");
   ocrUploadState=data;
   document.getElementById("ocrText").value=data.recognized_text||"";
   document.getElementById("ocrStatus").textContent=(data.ocr_available===false?"进入人工校对":"识别完成")+" · "+(data.engine||"后端 OCR");
@@ -1777,8 +1780,9 @@ async function ocrUploadFile(file){
   }
   /* 上传+识别完成,关闭绿色扫描线 */
   stopOcrUploading();
+  completeProgressBar("ocr-upload","图片上传并识别完成");
   toast(data.warning||"图片上传并识别完成",data.ocr_available===false?"info":"success");
- }catch(error){console.error(error);setOcrStep(0);if(status)status.textContent="上传失败";stopOcrUploading();toast(error.message||"上传失败","error")}
+ }catch(error){console.error(error);setOcrStep(0);if(status)status.textContent="上传失败";stopOcrUploading();errorProgressBar("ocr-upload",error.message||"上传失败");toast(error.message||"上传失败","error")}
 }
 function bindAll(){
  updateSidebarStreak();
@@ -1853,8 +1857,11 @@ function bindAll(){
     setOcrStep(3);
     document.getElementById("ocrStatus").textContent="Agent 分析中";
     toast("Agent 正在分析…");
+    showProgressBar("Agent 分析错题...","ocr-analyze");
     try{
+      updateProgressBar("ocr-analyze",30,"提交分析请求...");
       const data=await apiRequest("/api/ocr/analyze",{method:"POST",body:JSON.stringify({text,subject,knowledge_point:point,user_answer,low_confidence_lines})});
+      updateProgressBar("ocr-analyze",80,"处理分析结果...");
       ocrState=data;
       notebookCache=null;
       const analysis=data.analysis||{};
@@ -1872,8 +1879,9 @@ function bindAll(){
       loadMistakeNotebook();
       // OCR 错题写入会改变掌握度/记忆/统计 → 全局刷新
       refreshAfterAnswer("answer").catch(console.error);
+      completeProgressBar("ocr-analyze","错题分析完成");
       toast(data.llm_used?"错题分析已提交并写入记忆（AI 大模型）":"错题分析已提交并写入记忆（保底规则）","success");
-    }catch(error){toast(error.message,"error");document.getElementById("ocrStatus").textContent="分析失败";setOcrStep(2);}
+    }catch(error){errorProgressBar("ocr-analyze",error.message);toast(error.message,"error");document.getElementById("ocrStatus").textContent="分析失败";setOcrStep(2);}
   };
   document.querySelectorAll("[data-book-tab]").forEach(b=>b.onclick=()=>openBookView(b.dataset.bookTab));
   document.querySelectorAll("[data-open-book]").forEach(b=>b.onclick=()=>openBookView(b.dataset.openBook));
@@ -2394,6 +2402,13 @@ function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.
 function renderMapping(id){const panel=document.getElementById("devContent");if(!panel)return;const m=mapping[id];panel.innerHTML=`<div class="mapping"><h4>建议接口</h4><code>${m[0]}</code></div><div class="mapping"><h4>核心数据实体</h4><code>${m[1]}</code></div><div class="mapping"><h4>Agent / LangGraph 节点</h4><code>${m[2]}</code></div>`}
 function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){if(s===null||s===undefined)return"";return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}function escapeAttr(s){return escapeHtml(s).replace(/`/g,"&#96;")}
 
+/* ========= 全局右下角进度条 ========= */
+function ensureProgressContainer(){let c=document.getElementById("progressContainer");if(!c){c=document.createElement("div");c.id="progressContainer";c.className="progress-container";document.body.appendChild(c)}return c}
+function showProgressBar(label,id){const container=ensureProgressContainer();let bar=document.getElementById("progress-"+id);if(!bar){bar=document.createElement("div");bar.id="progress-"+id;bar.className="progress-bar-item";bar.innerHTML='<div class="progress-bar-header"><span class="progress-bar-label">'+escapeHtml(label)+'</span><span class="progress-bar-pct">0%</span></div><div class="progress-bar-track"><div class="progress-bar-fill" style="width:0%"></div></div>';container.appendChild(bar);requestAnimationFrame(()=>bar.classList.add("show"))}else{bar.querySelector(".progress-bar-label").textContent=label;bar.querySelector(".progress-bar-pct").textContent="0%";bar.querySelector(".progress-bar-fill").style.width="0%";bar.classList.remove("done","error");bar.classList.add("show")}return bar}
+function updateProgressBar(id,percent,label){const bar=document.getElementById("progress-"+id);if(!bar)return;if(label)bar.querySelector(".progress-bar-label").textContent=label;bar.querySelector(".progress-bar-pct").textContent=percent+"%";bar.querySelector(".progress-bar-fill").style.width=percent+"%"}
+function completeProgressBar(id,message){const bar=document.getElementById("progress-"+id);if(!bar)return;bar.querySelector(".progress-bar-pct").textContent="完成";bar.querySelector(".progress-bar-fill").style.width="100%";if(message)bar.querySelector(".progress-bar-label").textContent=message;bar.classList.add("done");setTimeout(()=>{bar.classList.remove("show");setTimeout(()=>bar.remove(),400)},1200)}
+function errorProgressBar(id,message){const bar=document.getElementById("progress-"+id);if(!bar)return;bar.querySelector(".progress-bar-pct").textContent="失败";if(message)bar.querySelector(".progress-bar-label").textContent=message;bar.classList.add("error");setTimeout(()=>{bar.classList.remove("show");setTimeout(()=>bar.remove(),400)},2500)}
+
 /* ========= 论坛 AI 回答结构化文本渲染器（markdown-lite） =========
    输入：LLM 输出的纯文本（已遵守"严格排版规则"，不含 MD 字符）
    输出：语义化 HTML，逻辑清晰、排版美观
@@ -2865,9 +2880,13 @@ async function generateSmartQuestions(){
 }
 
 async function generateQuestionsFromApi(payload,successMessage,endpoint="/api/questions/generate",requestPayload=payload){
+ const progressId="question-generate-"+Date.now();
+ showProgressBar("Agent 生成题目中...",progressId);
  try{
   toast("Agent 正在生成题目，请稍候…");
+  updateProgressBar(progressId,25,"调用出题 Agent...");
   const data=await apiRequest(endpoint,{method:"POST",body:JSON.stringify(requestPayload)});
+  updateProgressBar(progressId,70,"处理题目数据...");
   if(!data.questions||!Array.isArray(data.questions)||!data.questions.length)throw new Error("后端没有返回题目列表");
   const resolved=data.recommendation||payload;
   hasGeneratedQuestionBatch=true;
@@ -2884,9 +2903,11 @@ async function generateQuestionsFromApi(payload,successMessage,endpoint="/api/qu
   if(reason)reason.textContent=resolved.reason||data.config||"系统已根据当前学习画像生成本批题目。";
   bindBackendAwareActions();
   closeQuestionDrawers();
+  completeProgressBar(progressId,"题目生成完成");
   toast(data.llm_used?`${successMessage}（AI 生成）`:`${successMessage}（后端规则题库）`,data.llm_used?"success":"info");
  }catch(error){
   console.error(error);
+  errorProgressBar(progressId,error.message||"出题失败");
   toast(`${error.message}。本次未生成题目，也不会使用前端 Mock 冒充结果。`,"error");
  }
 }
@@ -3327,6 +3348,7 @@ async function loadHomeOverview(){
   const data=await apiRequest("/api/home/overview");
   currentHomeOverview=data;
   renderHomeOverview(data);
+  maybeShowCheckinModal();
  }catch(error){
   console.error(error);
   renderHomeError(error.message);
@@ -3555,6 +3577,94 @@ async function updateSidebarStreak(){
     if(el)el.textContent=days;
   }catch(e){/* ignore */}
 }
+
+/* ========= 首页每日打卡弹窗 ========= */
+async function maybeShowCheckinModal(){
+  if(!document.getElementById("home"))return;
+  const lastKey="checkin_modal_last_date";
+  const today=new Date().toLocaleDateString("zh-CN");
+  if(localStorage.getItem(lastKey)===today)return;
+  try{
+    const data=await apiRequest("/api/points/account");
+    if(data.today_checkin){localStorage.setItem(lastKey,today);return;}
+    showCheckinModal(data.streak_days??0,false);
+  }catch(e){/* ignore */}
+}
+
+function showCheckinModal(streakDays,todayCheckin){
+  const old=document.getElementById("checkinModal");
+  if(old)old.remove();
+  const html=`
+  <div class="checkin-modal-mask" id="checkinModal">
+    <div class="checkin-modal-card">
+      <button class="checkin-modal-close" id="checkinModalClose">×</button>
+      <div class="checkin-modal-icon">🔥</div>
+      <h3>每日学习打卡</h3>
+      <div class="checkin-modal-streak">连续打卡 <strong id="checkinModalStreak">${streakDays}</strong> 天</div>
+      <p class="checkin-modal-tip">坚持打卡，积累积分，解锁更多 AI 学习功能</p>
+      <button class="primary" id="checkinModalBtn" ${todayCheckin?"disabled":""}>${todayCheckin?"今日已打卡":"立即打卡"}</button>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML("beforeend",html);
+  const mask=document.getElementById("checkinModal");
+  requestAnimationFrame(()=>mask.classList.add("show"));
+  document.getElementById("checkinModalClose").onclick=closeCheckinModal;
+  mask.addEventListener("click",e=>{if(e.target===mask)closeCheckinModal()});
+  const btn=document.getElementById("checkinModalBtn");
+  if(btn&&!todayCheckin)btn.onclick=doHomeCheckin;
+}
+
+function closeCheckinModal(){
+  const mask=document.getElementById("checkinModal");
+  if(!mask)return;
+  mask.classList.remove("show");
+  setTimeout(()=>mask.remove(),300);
+  const today=new Date().toLocaleDateString("zh-CN");
+  localStorage.setItem("checkin_modal_last_date",today);
+}
+
+async function doHomeCheckin(){
+  const btn=document.getElementById("checkinModalBtn");
+  if(btn){btn.disabled=true;btn.textContent="打卡中...";}
+  try{
+    const data=await apiRequest("/api/points/checkin",{method:"POST"});
+    if(data.success){
+      toast("打卡成功 +" + (data.earned||0) + " 积分","success");
+      const streakEl=document.getElementById("checkinModalStreak");
+      if(streakEl){
+        const newStreak=(parseInt(streakEl.textContent,10)||0)+1;
+        streakEl.textContent=newStreak;
+      }
+      if(btn){btn.textContent="今日已打卡";btn.disabled=true;}
+      updateSidebarStreak();
+      syncPersonalCenterCheckin();
+      setTimeout(closeCheckinModal,1200);
+    }else{
+      toast(data.message||"今日已完成打卡","info");
+      if(btn){btn.textContent="今日已打卡";btn.disabled=true;}
+    }
+  }catch(err){
+    toast(err.message||"打卡失败","error");
+    if(btn){btn.textContent="立即打卡";btn.disabled=false;}
+  }
+}
+
+async function syncPersonalCenterCheckin(){
+  try{
+    const data=await apiRequest("/api/points/account");
+    const days=data.streak_days??0;
+    const pcStreak=document.getElementById("pcStreak");
+    if(pcStreak)pcStreak.textContent=days;
+    const pcCheckinBtn=document.getElementById("pcCheckinBtn");
+    if(pcCheckinBtn){pcCheckinBtn.disabled=true;pcCheckinBtn.textContent="今日已打卡";}
+    const pcBalance=document.getElementById("pcBalance");
+    if(pcBalance&&data.account)pcBalance.textContent=String(data.account.balance??0).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+    const pcTotalEarned=document.getElementById("pcTotalEarned");
+    if(pcTotalEarned&&data.account)pcTotalEarned.textContent=String(data.account.total_earned??0).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+    if(data)window.__pcLatestOverview=data;
+  }catch(e){/* ignore */}
+}
+
 function renderHomeMemories(items){
  const list=document.getElementById("homeMemoryList");
  if(!list)return;
@@ -3897,7 +4007,7 @@ function renderMemoryWeights(items){
  const max=Math.max(...items.map(item=>Number(item.weight||0)),1);
  box.innerHTML=items.map(item=>{
   const width=Math.max(6,Math.round(Number(item.weight||0)*100/max));
-  return `<div class="weight-row"><span>${escapeHtml(String(item.knowledge_point))}</span><div class="weight-track"><span style="width:${width}%"></span></div><b>${escapeHtml(String(item.weight))}</b><small>${escapeHtml(String(item.status||""))}</small></div>`;
+  return `<div class="weight-row"><span class="weight-label">${escapeHtml(String(item.knowledge_point))}</span><div class="weight-track"><span style="width:${width}%"></span></div><b>${escapeHtml(String(item.weight))}</b><small>${escapeHtml(String(item.status||""))}</small></div>`;
  }).join("");
 }
 
@@ -3926,9 +4036,12 @@ function showExportModal(){
 async function exportLearningReport(format){
  const button=document.getElementById("exportReport");
  if(button)button.disabled=true;
+ showProgressBar("生成学习报告...","report-export");
  try{
   toast("正在调用报告 Agent 生成分析...","success");
+  updateProgressBar("report-export",20,"生成报告内容...");
   const report=await apiRequest("/api/reports/generate",{method:"POST"});
+  updateProgressBar("report-export",50,"报告生成完成，正在导出文件...");
   const title=report.title||"Turing 408 学习报告";
   const date=report.create_time||new Date().toISOString();
   const source=report.llm_used?"AI 大模型分析":"后端保底分析";
@@ -3943,23 +4056,27 @@ async function exportLearningReport(format){
   const plan=(report.plan||[]).map((item,i)=>`${i+1}. ${item}`);
   const memories=(report.memories||[]).map(item=>`- ${item.knowledge_point||"知识点"}：${item.content||""}`);
   if(format==="pdf"){
-   await exportPDF(title,date,source,sections,plan,memories);
+   await exportPDF(title,date,source,sections,plan,memories,"report-export");
   }else if(format==="word"){
    await exportWord(title,date,source,sections,plan,memories);
   }
+  completeProgressBar("report-export","学习报告已导出");
   toast("学习报告已导出","success");
   await loadReportOverview();
  }catch(error){
   console.error(error);
+  errorProgressBar("report-export",error.message||"报告导出失败");
   toast(error.message||"报告导出失败","error");
  }finally{
   if(button)button.disabled=false;
  }
 }
 
-async function exportPDF(title,date,source,sections,plan,memories){
+async function exportPDF(title,date,source,sections,plan,memories,progressId){
+ if(progressId)updateProgressBar(progressId,60,"加载 PDF 依赖...");
  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
  const {jsPDF}=await loadJSPDF();
+ if(progressId)updateProgressBar(progressId,75,"渲染 PDF 内容...");
  const doc=new jsPDF("p","mm","a4");
  const esc=str=>String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
  const planHtml=plan.length?`<h2 style="font-size:14pt;color:#2f6bff;border-bottom:2px solid #2f6bff;padding-bottom:4px;margin-top:16px">下一轮训练计划</h2><ol>${plan.map(p=>`<li style="margin:4px 0">${esc(p)}</li>`).join("")}</ol>`:"";
@@ -3972,6 +4089,7 @@ async function exportPDF(title,date,source,sections,plan,memories){
  document.body.appendChild(wrap);
  try{
   const canvas=await html2canvas(wrap.firstElementChild,{scale:2,useCORS:true,logging:false});
+  if(progressId)updateProgressBar(progressId,90,"生成 PDF 文件...");
   const imgData=canvas.toDataURL("image/png");
   const imgWidth=190;
   const pageHeight=277;
@@ -3987,6 +4105,7 @@ async function exportPDF(title,date,source,sections,plan,memories){
    heightLeft-=pageHeight;
   }
   doc.save(`Turing408学习报告-${date.slice(0,10)}.pdf`);
+  if(progressId)updateProgressBar(progressId,99,"保存文件...");
  }finally{document.body.removeChild(wrap)}
 }
 
