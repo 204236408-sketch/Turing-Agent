@@ -1,5 +1,5 @@
 (function(){
-  const state={overview:null,plans:[],txType:"all"};
+  const state={overview:null,plans:[],txType:"all",txItems:[],txCollapsed:true,currentMedal:null};
   const labels={
     earn:"获得",spend:"消耗",grant:"会员赠送",refund:"退款",
     daily_checkin:"每日登录打卡",checkin_streak_3:"连续打卡 3 天",checkin_streak_7:"连续打卡 7 天",
@@ -71,6 +71,33 @@
     bindPersonalCenter();
     installPointCostHooks();
     ensureModuleCostBadges();
+    installQaPageObserver();
+  }
+
+  function installQaPageObserver(){
+    // 监听知识问答页面的显示，首次进入时自动加载积分数据
+    const qaPage=document.getElementById("qa");
+    if(!qaPage)return;
+    const loadIfNeeded=()=>{
+      if(!qaPage.classList.contains("active"))return;
+      if(!state.overview){
+        getPointOverview();
+      }else{
+        ensureModuleCostBadges();
+      }
+    };
+    // 立即检查一次
+    loadIfNeeded();
+    // 监听 class 变化
+    const observer=new MutationObserver(mutations=>{
+      for(const m of mutations){
+        if(m.type==="attributes"&&m.attributeName==="class"){
+          loadIfNeeded();
+          break;
+        }
+      }
+    });
+    observer.observe(qaPage,{attributes:true,attributeFilter:["class"]});
   }
 
   function personalCenterHTML(){
@@ -115,7 +142,7 @@
             <button class="pc-tab-earn" data-tx="earn">获得</button>
             <button class="pc-tab-spend" data-tx="spend">消耗</button>
           </div>
-          <div id="pcTransactions"><div class="pc-empty">暂无积分流水</div></div>
+          <div id="pcTransactions"><div class="pc-empty">暂无积分流水</div></div><button class="pc-expand-btn" id="pcExpandTx" style="display:none">展开全部记录 ∨</button>
         </div>
         <div class="pc-rule-mini" id="pcRuleView" hidden>
           <h4>获得积分规则</h4>
@@ -178,7 +205,7 @@
         <div class="pc-detail-medal-icon" id="pcDetailMedalIcon"></div>
         <h3 id="pcDetailMedalName">成就勋章</h3>
         <p id="pcDetailMedalRule">完成对应任务即可获得。</p>
-        <button class="pc-medal-share" type="button">分享勋章</button>
+        <button class="pc-medal-share" type="button" onclick="shareMedal()">分享勋章</button>
         <div class="pc-detail-progress">
           <span id="pcDetailMedalProgress">0 / 0</span>
           <i id="pcDetailMedalBar"></i>
@@ -202,6 +229,8 @@
     document.getElementById("pcCheckinBtn").onclick=handleCheckin;
     document.querySelectorAll("#pcModeTabs button").forEach(btn=>btn.onclick=()=>switchRecordMode(btn.dataset.mode));
     document.querySelectorAll("#pcTxTabs button").forEach(btn=>btn.onclick=()=>switchTx(btn));
+    const expandBtn=document.getElementById("pcExpandTx");
+    if(expandBtn)expandBtn.onclick=()=>{state.txCollapsed=!state.txCollapsed;renderTransactions(state.txItems)};
     document.getElementById("pcUpgradeCancel").onclick=hideUpgradeModal;
     document.getElementById("pcUpgradeCheckin").onclick=async()=>{hideUpgradeModal();showPersonalCenter();await handleCheckin()};
     document.getElementById("pcUpgradeGo").onclick=()=>{hideUpgradeModal();showPersonalCenter();document.getElementById("pcPlans")?.scrollIntoView({behavior:"smooth",block:"start"})};
@@ -424,10 +453,13 @@
   }
 
   function renderTransactions(items){
-    const wrap=document.getElementById("pcTransactions");
+    const wrap=document.getElementById("pcTransactions"),btn=document.getElementById("pcExpandTx");
     if(!wrap)return;
-    if(!items.length){wrap.innerHTML="<div class='pc-empty'>暂无积分流水</div>";return}
-    wrap.innerHTML=items.map(item=>{
+    state.txItems=items;
+    if(!items.length){wrap.innerHTML="<div class='pc-empty'>暂无积分流水</div>";if(btn)btn.style.display="none";return}
+    const showAll=!state.txCollapsed||items.length<=5;
+    const display=showAll?items:items.slice(0,5);
+    wrap.innerHTML=display.map(item=>{
       const points=Number(item.points||0);
       const day=String(item.created_at||"").slice(0,10);
       return `<div class="pc-tx-row">
@@ -436,6 +468,10 @@
         <span>余额：${fmtPoint(item.balance_after||0)}</span>
       </div>`;
     }).join("");
+    if(btn){
+      if(items.length<=5){btn.style.display="none"}
+      else{btn.style.display="";btn.textContent=showAll?"收起记录 ∧":"展开全部记录 ∨"}
+    }
   }
 
   async function handleCheckin(){
@@ -691,6 +727,7 @@
   }
 
   function openMedalDetail(medal){
+    state.currentMedal=medal;
     const unlocked=normalizeMedalOwned(medal);
     medal.unlocked=unlocked;
     if(unlocked&&!medal.achieved_at)medal.achieved_at=medalDate();
@@ -712,7 +749,91 @@
 
   function closeMedalDetail(){document.getElementById("pcMedalModal")?.classList.remove("show")}
 
+  function closeShareModal(){
+    const mask=document.getElementById("msShareMask");
+    if(mask){mask.classList.remove("show");setTimeout(()=>mask.remove(),300)}
+  }
+
+  function shareMedal(){
+    const medal=state.currentMedal;
+    if(!medal)return;
+    const shareURL=window.location.origin+"/medal/"+encodeURIComponent(medal.name);
+    const unlocked=normalizeMedalOwned(medal);
+    const medalSVG=medal.svg||medalSvg({...medal,unlocked:true},{large:false});
+    const old=document.getElementById("msShareMask");
+    if(old)old.remove();
+    const html=`
+      <div class="ms-share-mask" id="msShareMask">
+        <div class="ms-share-card" id="msShareCard">
+          <button class="ms-share-close" id="msShareClose">×</button>
+          <div class="ms-share-icon">${medalSVG}</div>
+          <h2>${escapeSafe(medal.name)}</h2>
+          <p class="ms-share-rule">${escapeSafe(medal.rule||medal.desc||"")}</p>
+          <div class="ms-share-status ${unlocked?"unlocked":"locked"}">${unlocked?"已获得"+(medal.achieved_at?" · "+medal.achieved_at:""):"暂未获得"}</div>
+          <hr class="ms-share-divider">
+          <div class="ms-share-footer">
+            <div class="ms-share-from">来自 <strong>重生之我是图灵 · Turing 408 Agent</strong></div>
+            <div class="ms-share-qr" id="msShareQR"><div class="ms-share-qr-placeholder">QR</div><span>扫码查看</span></div>
+          </div>
+        </div>
+        <div class="ms-share-actions">
+          <button class="ms-share-btn btn-copy" id="msShareCopy">🔗 复制链接</button>
+          <button class="ms-share-btn btn-open" id="msShareOpen">🌐 打开主站</button>
+          <button class="ms-share-btn btn-save" id="msShareSave">⬇ 保存图片</button>
+        </div>
+      </div>`;
+    document.body.insertAdjacentHTML("beforeend",html);
+    const mask=document.getElementById("msShareMask");
+    requestAnimationFrame(()=>mask.classList.add("show"));
+    document.getElementById("msShareClose").onclick=closeShareModal;
+    mask.addEventListener("click",e=>{if(e.target===mask)closeShareModal()});
+    const copyBtn=document.getElementById("msShareCopy");
+    copyBtn.onclick=async()=>{
+      const orig=copyBtn.innerHTML;
+      try{await navigator.clipboard.writeText(shareURL);copyBtn.innerHTML="✓ 已复制"}
+      catch(e){const ta=document.createElement("textarea");ta.value=shareURL;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();copyBtn.innerHTML="✓ 已复制"}
+      setTimeout(()=>{copyBtn.innerHTML=orig},1500);
+    };
+    document.getElementById("msShareOpen").onclick=()=>window.open(window.location.origin+"/index.html","_blank");
+    document.getElementById("msShareSave").onclick=()=>{
+      const btn=document.getElementById("msShareSave");
+      const orig=btn.innerHTML;
+      btn.disabled=true;
+      btn.innerHTML="⏳ 生成图片中...";
+      const doCapture=async()=>{
+        const card=document.getElementById("msShareCard");
+        if(!card){btn.innerHTML=orig;btn.disabled=false;return}
+        try{
+          const dataUrl=await htmlToImage.toPng(card,{backgroundColor:"#ffffff",pixelRatio:2});
+          const blob=await (await fetch(dataUrl)).blob();
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement("a");
+          const t=(medal.name||"勋章").replace(/[\\/:*?"<>|]/g,"_");
+          a.href=url;a.download=`408勋章-${t}-${Date.now()}.png`;
+          document.body.appendChild(a);a.click();document.body.removeChild(a);
+          setTimeout(()=>URL.revokeObjectURL(url),1000);
+          btn.innerHTML="✅ 已下载";
+          setTimeout(()=>{btn.innerHTML=orig;btn.disabled=false},1500);
+        }catch(e){console.error(e);alert("下载失败："+e.message+". 请尝试使用截图工具。");btn.innerHTML=orig;btn.disabled=false}
+      };
+      if(typeof htmlToImage==="undefined"){
+        const s=document.createElement("script");
+        s.src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js";
+        s.onload=doCapture;
+        s.onerror=()=>{alert("加载截图库失败，请检查网络");btn.innerHTML=orig;btn.disabled=false};
+        document.head.appendChild(s);
+      }else{doCapture()}
+    };
+    const qrDiv=document.getElementById("msShareQR");
+    const qrURL="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data="+encodeURIComponent(shareURL);
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>{qrDiv.innerHTML="";qrDiv.appendChild(img);const s=document.createElement("span");s.textContent="扫码查看";qrDiv.appendChild(s)};
+    img.src=qrURL;
+  }
+
   function openParentMedalModal(medal){
+    state.currentMedal=medal;
     const owned=normalizeMedalOwned(medal);
     setText("pcDetailMedalName",`${owned?"恭喜解锁新勋章！":"继续努力解锁新勋章！"}🏆`);
     setText("pcDetailMedalRule",medal?.desc||"七天不间断,日日点灯。一支微笑的小火苗,记录你与知识之间最稳定的约定。");
@@ -750,6 +871,7 @@
     document.querySelectorAll("#pcTxTabs button").forEach(b=>b.classList.remove("active"));
     btn.classList.add("active");
     state.txType=btn.dataset.tx;
+    state.txCollapsed=true;
     api(`/api/points/transactions?transaction_type=${state.txType}&limit=30`).then(data=>renderTransactions(data.items||[])).catch(err=>toastSafe(err.message||"流水加载失败"));
   }
 
@@ -787,5 +909,6 @@
 
   window.showPointUpgradeModal=showUpgradeModal;
   window.spendPoints=handleSpend;
+  window.shareMedal=shareMedal;
   ready(waitForShell);
 })();

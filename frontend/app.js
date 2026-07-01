@@ -110,37 +110,72 @@ function loginHTML(){
         </div>
       </article>
       <div class="login-flow turing-flow">
-        <span>计算理论</span>
         <span>数据结构</span>
-        <span>组成原理</span>
+        <span>计算机组成原理</span>
         <span>操作系统</span>
         <span>计算机网络</span>
       </div>
     </div>
     <div class="login-form">
-      <div class="form-card">
+      <div class="form-card" id="loginFormCard">
         <span class="eyebrow">TURING 408 AGENT</span>
         <h2>欢迎回来，未来的计算机先驱</h2>
         <p>继续这场由图灵本人亲自参加的 408 备考计划</p>
         <div class="field">
-          <label>邮箱或用户名</label>
-          <input value="demo@turing408.ai">
+          <label>账号</label>
+          <input id="loginAccount" placeholder="请输入账号">
         </div>
         <div class="field">
           <label>密码</label>
-          <input type="password" value="123456">
+          <input id="loginPassword" type="password" placeholder="请输入密码" oninput="this.style.borderColor=''">
         </div>
         <button class="primary full" onclick="enterApp()">进入图灵学习空间</button>
-        <button class="ghost full" onclick="registerNewAccount()">创建新账号</button>
-        <div class="demo-note">演示账号已自动填充 · 数据仅保存在本地</div>
+        <button class="ghost full" onclick="showRegisterForm()">创建新账号</button>
       </div>
     </div>
   </section>`
 }
+function showRegisterForm(){
+  const card=document.getElementById("loginFormCard");
+  if(!card)return;
+  card.innerHTML=`
+    <span class="eyebrow">TURING 408 AGENT</span>
+    <h2>开启你的 408 备考之旅</h2>
+    <p>加入图灵学习空间，系统备考计算机专业基础综合</p>
+    <div class="field">
+      <label>账号</label>
+      <input id="regAccount" placeholder="请输入账号">
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input id="regPassword" type="password" placeholder="设置密码（至少8位）">
+    </div>
+    <button class="primary full" onclick="registerNewAccount()">注册并进入</button>
+    <button class="ghost full" onclick="showLoginForm()">已有账号？去登录</button>
+  `;
+}
+function showLoginForm(){
+  const card=document.getElementById("loginFormCard");
+  if(!card)return;
+  card.innerHTML=`
+    <span class="eyebrow">TURING 408 AGENT</span>
+    <h2>欢迎回来，未来的计算机先驱</h2>
+    <p>继续这场由图灵本人亲自参加的 408 备考计划</p>
+    <div class="field">
+      <label>账号</label>
+      <input id="loginAccount" placeholder="请输入账号">
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input id="loginPassword" type="password" placeholder="请输入密码" oninput="this.style.borderColor=''">
+    </div>
+    <button class="primary full" onclick="enterApp()">进入图灵学习空间</button>
+    <button class="ghost full" onclick="showRegisterForm()">创建新账号</button>
+  `;
+}
 async function registerNewAccount(){
-  const inputs = document.querySelectorAll(".login-form input");
-  const account = inputs[0]?.value;
-  const password = inputs[1]?.value;
+  const account = document.getElementById("regAccount")?.value;
+  const password = document.getElementById("regPassword")?.value;
   
   if (!account || !password) {
     toast("请输入账号和密码", "error");
@@ -151,7 +186,7 @@ async function registerNewAccount(){
   const username = isEmail ? account.split("@")[0] : account;
   const nickname = username;
   
-  const regBtn = document.querySelector(".login-form button.ghost");
+  const regBtn = document.querySelector(".login-form button.primary");
   if (regBtn) { regBtn.disabled = true; regBtn.textContent = "注册中..."; }
   
   try {
@@ -184,7 +219,7 @@ async function registerNewAccount(){
     toast("注册成功，欢迎加入图灵学习空间！", "success");
   } catch(err) {
     toast(err.message || "注册失败", "error");
-    if (regBtn) { regBtn.disabled = false; regBtn.textContent = "创建新账号"; }
+    if (regBtn) { regBtn.disabled = false; regBtn.textContent = "注册并进入"; }
   }
 }
 
@@ -225,6 +260,8 @@ async function enterApp(){
     toast("登录成功，欢迎回来！", "success");
   } catch(err) {
     toast(err.message || "登录失败", "error");
+    const pwdInput = document.getElementById("loginPassword");
+    if (pwdInput) pwdInput.style.borderColor = "#ef4444";
     if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = "进入图灵学习空间"; }
   }
 }
@@ -269,8 +306,8 @@ function shellHTML(){
         ${pages.map(p=>`<button data-page="${p[0]}"><i>${p[1]}</i>${p[2]}</button>`).join("")}
       </nav>
       <div class="memory-chip">
-        <b>🔥 连续学习 7 天</b>
-        长期记忆已加载。今天再学习 18 分钟，即可完成本周目标。
+        <b>🔥 连续学习 <span id="sidebarStreakDays">--</span> 天</b>
+        <span id="sidebarStreakText">长期记忆已加载。</span>
       </div>
     </aside>
     <div class="main">
@@ -319,7 +356,6 @@ function accountSettingsHTML(){
           <div class="setting-body">
             <label for="accountName">账号昵称</label>
             <input id="accountName" value="林同学" autocomplete="nickname">
-            <small>修改后按 Enter 或点击空白处自动保存</small>
           </div>
         </section>
         <section class="account-setting-item password-list-item">
@@ -331,9 +367,11 @@ function accountSettingsHTML(){
               <input id="newPassword" type="password" placeholder="新密码（至少 8 位）" autocomplete="new-password">
               <input id="confirmPassword" type="password" placeholder="确认新密码" autocomplete="new-password">
             </div>
-            <small>在确认密码框按 Enter 完成修改</small>
           </div>
         </section>
+      </div>
+      <div class="account-save-row">
+        <button class="primary" id="accountSaveBtn">保存修改</button>
       </div>
     </aside>`
 }
@@ -1157,15 +1195,13 @@ function questionHTML(){
       <div class="launch-card">
         <span>☷</span>
         <div><b>自由选择出题</b><small>从四科、章节、难度和题型中任意组合</small></div>
-        <button class="primary" id="openManualDrawer">左侧选择</button>
       </div>
       <div class="launch-or">OR</div>
       <div class="launch-card">
         <span>✦</span>
         <div><b>智能推荐出题</b><small>根据薄弱点、错题和高频提问生成</small></div>
-        <button class="primary" id="openSmartDrawer">右侧选择</button>
       </div>
-    </div><div class="question-config"><span class="tag">当前出题条件</span><span class="config-chip" id="configMode">智能推荐</span><span class="config-chip" id="configSubject">操作系统</span><span class="config-chip" id="configPoint">页面置换算法</span><span class="config-chip" id="configDifficulty">中等</span><span class="config-chip" id="configType">选择题 · 3 道</span><button class="ghost" id="changeConfig">重新选择</button></div><div class="question-stage"><button class="question-switch prev" id="prevQuestion" aria-label="上一题">‹</button><article class="card question-card"><div class="question-meta"><span id="questionMeta">2026 模拟 · 第 1 题 · 2 分</span><span id="questionQualityBadges"></span><span class="question-position"><b id="currentQuestionNo">1</b> / <span id="totalQuestionNo">3</span></span><span>☆ 收藏</span></div><div class="rec"><b id="recommendTitle">为什么推荐这道题？</b><small id="recommendReason">你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。</small></div><h3 class="question-title" id="questionTitle">某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？</h3><div id="options">${["A. 4 次","B. 5 次","C. 6 次","D. 7 次"].map(x=>`<div class="option">${x}</div>`).join("")}</div><div class="easy-mistakes-box" id="easyMistakesBox" style="display:none"><b>⚠ 易错点</b><small id="easyMistakesText"></small></div><div class="tools"><button class="soft" data-drawer="hint">💡 分步提示</button><button class="soft" data-drawer="video">▶ 推荐视频</button><button class="soft" id="openFeedbackDrawer">⚐ 反馈题</button><button class="primary" id="submitAnswer">✓ 提交答案</button></div><div class="drawer" id="hint"><h4>提示 1 / 3</h4><p id="hintText">本题考查 LRU 页面置换算法。先画出 3 个页框，再逐项处理访问序列。</p><button class="ghost" id="nextHint">下一层提示</button></div><div class="drawer" id="video"><h4>相关公开视频</h4><div id="videoContent"></div></div><div class="drawer" id="answer"><h4>批改结果：回答错误</h4><p id="answerText">你的答案：B · 5 次。标准答案：C · 6 次。系统初步判断可能存在计算遗漏，请由用户确认真实错因。</p></div><div class="wrong-action" id="wrongAction"><b>这道题为什么答错？</b><p>请选择一个或多个最符合的原因。用户确认的错因将作为高可信证据写入长期学习记忆。</p><button class="primary" id="openCause">选择错因</button><div class="cause-detail" id="causeDetail"><div class="cause-options">${causes.map(x=>`<button data-cause="${x}">${x}</button>`).join("")}</div><div class="field"><label>补充说明（可选）</label><textarea id="causeNote" style="min-height:70px" placeholder="例如：我忘记在页面命中时更新最近访问顺序"></textarea></div><button class="primary" id="confirmCause">确认错因并记录到长期学习</button></div><div class="cause-summary" id="causeSummary"></div></div><div class="mastery"><span class="tag">本题掌握情况</span><button>掌握</button><button>不熟</button><button>不会</button></div></article><button class="question-switch next" id="nextQuestion" aria-label="下一题">›</button></div>${questionDrawersHTML()}</section>`}
+    </div><div class="question-config"><span class="tag">当前出题条件</span><span class="config-chip" id="configMode">智能推荐</span><span class="config-chip" id="configSubject">操作系统</span><span class="config-chip" id="configPoint">页面置换算法</span><span class="config-chip" id="configDifficulty">中等</span><span class="config-chip" id="configType">选择题 · 3 道</span><button class="ghost" id="changeConfig">重新选择</button></div><div class="question-stage"><article class="card question-card"><button class="question-switch prev" id="prevQuestion" aria-label="上一题">‹</button><button class="question-switch next" id="nextQuestion" aria-label="下一题">›</button><div class="question-meta"><span id="questionMeta">2026 模拟 · 第 1 题 · 2 分</span><span id="questionQualityBadges"></span><span class="question-position"><b id="currentQuestionNo">1</b> / <span id="totalQuestionNo">3</span></span></div><div class="rec"><b id="recommendTitle">为什么推荐这道题？</b><small id="recommendReason">你之前在 LRU 缺页次数统计中多次遗漏页面更新，本题用于专项巩固。</small></div><h3 class="question-title" id="questionTitle">某系统为进程分配 3 个页框，页面访问序列为 1, 2, 3, 1, 4, 2, 5。采用 LRU 算法时，缺页次数为多少？</h3><div id="options">${["A. 4 次","B. 5 次","C. 6 次","D. 7 次"].map(x=>`<div class="option">${x}</div>`).join("")}</div><div class="easy-mistakes-box" id="easyMistakesBox" style="display:none"><b>⚠ 易错点</b><small id="easyMistakesText"></small></div><div class="tools"><button class="soft" data-drawer="hint">💡 分步提示</button><button class="soft" data-drawer="video">▶ 推荐视频</button><button class="soft" id="openFeedbackDrawer">⚐ 反馈题</button><button class="primary" id="submitAnswer">✓ 提交答案</button></div><div class="drawer" id="hint"><h4>提示 1 / 3</h4><p id="hintText">本题考查 LRU 页面置换算法。先画出 3 个页框，再逐项处理访问序列。</p><button class="ghost" id="nextHint">下一层提示</button></div><div class="drawer" id="video"><h4>相关公开视频</h4><div id="videoContent"></div></div><div class="drawer" id="answer"><h4>批改结果：回答错误</h4><p id="answerText">你的答案：B · 5 次。标准答案：C · 6 次。系统初步判断可能存在计算遗漏，请由用户确认真实错因。</p></div><div class="wrong-action" id="wrongAction"><b>这道题为什么答错？</b><p>请选择一个或多个最符合的原因。用户确认的错因将作为高可信证据写入长期学习记忆。</p><button class="primary" id="openCause">选择错因</button><div class="cause-detail" id="causeDetail"><div class="cause-options">${causes.map(x=>`<button data-cause="${x}">${x}</button>`).join("")}</div><div class="field"><label>补充说明（可选）</label><textarea id="causeNote" style="min-height:70px" placeholder="例如：我忘记在页面命中时更新最近访问顺序"></textarea></div><button class="primary" id="confirmCause">确认错因并记录到长期学习</button></div><div class="cause-summary" id="causeSummary"></div></div><div class="mastery"><span class="tag">本题掌握情况</span><button>掌握</button><button>不熟</button><button>不会</button></div></article></div>${questionDrawersHTML()}</section>`}
 function questionDrawersHTML(){
   return `<div class="drawer-mask" id="questionDrawerMask"></div>
 <aside class="side-drawer left" id="manualDrawer">
@@ -1333,10 +1369,7 @@ function mistakeHTML(){
 function ocrWorkspaceHTML(){
   return `<div class="ocr-workspace-head">
     <button class="ghost" id="backToBooks">← 返回题本列表</button>
-    <div>
-      <h2>OCR 导入</h2>
-      <p>PaddleOCR 识别 → 校对 → Agent 推断答案 → 错题分析与记忆更新</p>
-    </div>
+    <h2>OCR 导入</h2>
   </div>
   <div class="ocr-steps">
     <span class="on">1 上传图片</span><span>2 PaddleOCR</span><span>3 人工校对</span><span>4 Agent 分析</span><span>5 更新记忆</span>
@@ -1390,7 +1423,7 @@ async function loadMistakeNotebook(){
     const tag = document.getElementById("unfamiliarTag");
     if(el1) el1.textContent = stats.unfamiliar || 0;
     if(el2) el2.textContent = stats.unknown || 0;
-    if(tag) tag.textContent = stats.total ? "已同步后端" : "暂无数据";
+    if(tag) tag.textContent = stats.total ? "多加训练" : "暂无数据";
     return data;
   }catch(error){
     console.error(error);
@@ -1748,6 +1781,7 @@ async function ocrUploadFile(file){
  }catch(error){console.error(error);setOcrStep(0);if(status)status.textContent="上传失败";stopOcrUploading();toast(error.message||"上传失败","error")}
 }
 function bindAll(){
+ updateSidebarStreak();
  enhanceKnowledgeGraph();
  document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>showPage(b.dataset.page));
  document.querySelectorAll(".subject-tabs button").forEach(b=>b.onclick=()=>{if(b.id==="masteryLayer"||b.id==="structureLayer")return;b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");toast("已切换 Mock 数据视图")});
@@ -1782,8 +1816,9 @@ function bindAll(){
  document.getElementById("submitAnswer").onclick=()=>{const selected=document.querySelector(".option.selected");if(!selected)return toast("请先选择一个答案");document.getElementById("answer").classList.add("show");document.getElementById("wrongAction").classList.add("show");toast("回答错误，请选择真实错因")};
  document.getElementById("prevQuestion").onclick=()=>switchQuestion(-1);
  document.getElementById("nextQuestion").onclick=()=>switchQuestion(1);
- document.getElementById("openManualDrawer").onclick=()=>openQuestionDrawer("manualDrawer");
- document.getElementById("openSmartDrawer").onclick=()=>openQuestionDrawer("smartDrawer");
+ const lc=document.querySelectorAll(".launch-card");
+ if(lc[0])lc[0].onclick=()=>openQuestionDrawer("manualDrawer");
+ if(lc[1])lc[1].onclick=()=>openQuestionDrawer("smartDrawer");
  document.getElementById("changeConfig").onclick=()=>openQuestionDrawer("manualDrawer");
  document.querySelectorAll("[data-close-question]").forEach(b=>b.onclick=closeQuestionDrawers);
  document.getElementById("questionDrawerMask").onclick=closeQuestionDrawers;
@@ -1867,29 +1902,44 @@ function bindAll(){
 }
 function bindAccountSettings(){
  const panel=document.getElementById("accountPanel"),mask=document.getElementById("accountMask");
- const open=()=>{panel.classList.add("open");mask.classList.add("show");panel.setAttribute("aria-hidden","false");document.body.classList.add("account-open")};
+ const open=()=>{
+   panel.classList.add("open");mask.classList.add("show");panel.setAttribute("aria-hidden","false");document.body.classList.add("account-open");
+   const userStr=localStorage.getItem("turing408_user");
+   if(userStr){
+     try{
+       const user=JSON.parse(userStr);
+       const nameInput=document.getElementById("accountName");
+       if(nameInput&&user.nickname) nameInput.value=user.nickname;
+     }catch(e){}
+   }
+   ["oldPassword","newPassword","confirmPassword"].forEach(id=>{const el=document.getElementById(id);if(el) el.value="";});
+ };
  const close=()=>{panel.classList.remove("open");mask.classList.remove("show");panel.setAttribute("aria-hidden","true");document.body.classList.remove("account-open")};
  document.getElementById("openAccount").onclick=open;
  document.getElementById("closeAccount").onclick=close;
  mask.onclick=close;
  const saveName=()=>{const input=document.getElementById("accountName"),name=input.value.trim()||"林同学",avatar=name.slice(0,1);
-  apiRequest("/api/profile/update",{method:"PUT",body:JSON.stringify({nickname:name})}).then(data=>{
+  return apiRequest("/api/profile/update",{method:"PUT",body:JSON.stringify({nickname:name})}).then(data=>{
     const userStr=localStorage.getItem("turing408_user");
     if(userStr){try{const u=JSON.parse(userStr);u.nickname=name;localStorage.setItem("turing408_user",JSON.stringify(u))}catch(e){}}
     input.value=name;document.getElementById("topUserName").textContent=name;document.getElementById("topAvatar").textContent=avatar;document.querySelectorAll(".learning-user-card h3").forEach(x=>x.textContent=name);
     // 报告页"学习画像"里的用户名同步刷新
     refreshAfterAnswer("profile").catch(console.error);
     toast("账号昵称已保存")
-  }).catch(err=>{toast(err.message||"保存失败","error")})
+  }).catch(err=>{toast(err.message||"保存失败","error");throw err})
  };
- document.getElementById("accountName").onblur=saveName;
- document.getElementById("accountName").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();saveName();e.currentTarget.blur()}};
  const savePassword=()=>{const oldPwd=document.getElementById("oldPassword").value,newPwd=document.getElementById("newPassword").value,confirmPwd=document.getElementById("confirmPassword").value;if(!oldPwd)return toast("请输入当前密码");if(newPwd.length<6)return toast("新密码至少需要 6 位");if(newPwd!==confirmPwd)return toast("两次输入的新密码不一致");
-  apiRequest("/api/auth/change-password",{method:"POST",body:JSON.stringify({old_password:oldPwd,new_password:newPwd})}).then(data=>{
+  return apiRequest("/api/auth/change-password",{method:"POST",body:JSON.stringify({old_password:oldPwd,new_password:newPwd})}).then(data=>{
     ["oldPassword","newPassword","confirmPassword"].forEach(id=>document.getElementById(id).value="");toast("密码修改成功")
-  }).catch(err=>{toast(err.message||"密码修改失败","error")})
+  }).catch(err=>{toast(err.message||"密码修改失败","error");throw err})
  };
- document.getElementById("confirmPassword").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();savePassword()}};
+ document.getElementById("accountSaveBtn").onclick=async()=>{
+  try{
+    await saveName();
+    const oldPwd=document.getElementById("oldPassword").value;
+    if(oldPwd) await savePassword();
+  }catch(e){}
+ };
  document.onkeydown=e=>{if(e.key==="Escape"&&panel.classList.contains("open"))close()};
 }
 function bindForum(){
@@ -2310,7 +2360,9 @@ function triggerAiAction(){/* no-op: 跳转按钮已移除 */}
 function startExamCountdown(){const target=new Date("2026-12-19T00:00:00+08:00").getTime();const update=()=>{const diff=Math.max(0,target-Date.now()),days=Math.floor(diff/86400000),hours=Math.floor(diff%86400000/3600000),minutes=Math.floor(diff%3600000/60000),seconds=Math.floor(diff%60000/1000);const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=String(value).padStart(2,"0")};set("countdownDays",days);set("countdownHours",hours);set("countdownMinutes",minutes);set("countdownSeconds",seconds);const subtitle=document.getElementById("pageSub");if(subtitle&&["qa","question","mistake","forum","report"].some(id=>document.getElementById(id)?.classList.contains("active")))subtitle.textContent=`距离 408 初试还有 ${days} 天`};update();if(countdownTimer)clearInterval(countdownTimer);countdownTimer=setInterval(update,1000)}
 function openBookView(name){
   document.querySelectorAll(".book-view").forEach(v=>v.classList.toggle("active",v.id===`book-${name}`));
-  const titles={overview:["我的题本","智能出题中标记“不熟”和“不会”的题目会自动进入对应题本"],unfamiliar:["不熟题本","理解不稳定的题目，以单列卡片形式集中巩固"],unknown:["不会题本","尚未掌握的题目，优先重新学习与练习"],ocr:["OCR 导入","PaddleOCR 识别 → 校对 → 错题分析 → 记忆更新"]};
+  const toolbar=document.querySelector("#mistake .book-toolbar");
+  if(toolbar)toolbar.style.display=name==="ocr"?"none":"";
+  const titles={overview:["我的题本","智能出题中标记“不熟”和“不会”的题目会自动进入对应题本"],unfamiliar:["不熟题本","理解不稳定的题目，以单列卡片形式集中巩固"],unknown:["不会题本","尚未掌握的题目，优先重新学习与练习"],ocr:["",""]};
   document.getElementById("mistakeTitle").textContent=titles[name][0];
   document.getElementById("mistakeSubtitle").textContent=titles[name][1];
   window.scrollTo(0,0);
@@ -2706,8 +2758,8 @@ function bindBackendAwareActions(){
  document.querySelectorAll(".mastery button").forEach(button=>{
   button.onclick=()=>submitMasteryFeedback(button);
  });
- const openSmart=document.getElementById("openSmartDrawer");
- if(openSmart)openSmart.onclick=async()=>{openQuestionDrawer("smartDrawer");await loadSmartRecommendations();};
+ const lc2=document.querySelectorAll(".launch-card");
+ if(lc2[1])lc2[1].onclick=async()=>{openQuestionDrawer("smartDrawer");await loadSmartRecommendations();};
  
  // Hint / Video: load from API
  document.querySelectorAll("[data-drawer]").forEach(b=>{
@@ -3254,7 +3306,7 @@ let currentHomeOverview=null;
 let homeCountdownTarget=new Date("2026-12-19T00:00:00+08:00").getTime();
 
 homeHTML=function(){
- return `<section class="page" id="home"><div class="home-focus-grid"><article class="card hero-main"><div class="hero-task"><span class="eyebrow">TODAY'S AGENT PLAN</span><h2 id="homePlanTitle">正在读取今日计划…</h2><p id="homePlanReason">Agent 正在根据答题记录、错题、长期记忆和知识点掌握状态计算今日优先训练内容。</p><button class="primary" id="startPersonalTraining" onclick="startPersonalizedTraining()">开始个性化训练 →</button></div></article><article class="card countdown-card"><div class="exam-countdown"><span>考研 408 初试倒计时</span><div class="countdown-days"><b id="countdownDays">--</b><small>天</small></div><div class="countdown-clock"><div><b id="countdownHours">--</b><small>时</small></div><i>:</i><div><b id="countdownMinutes">--</b><small>分</small></div><i>:</i><div><b id="countdownSeconds">--</b><small>秒</small></div></div><p id="examDateLabel">目标日期：读取中</p></div></article><article class="card today-recommend-card"><div class="head"><h3>今日推荐</h3></div><div class="recommend" id="todayRecommendList"><div class="rec"><b>正在匹配推荐训练</b><small>系统会优先匹配薄弱点、错题复练、高频考点和未学知识点。</small></div></div></article></div><div class="stats" id="homeStats"><div class="card stat"><small>本周答题</small><strong>--</strong><span class="delta">读取中</span></div><div class="card stat"><small>综合正确率</small><strong>--</strong><span class="delta">读取中</span></div><div class="card stat"><small>长期薄弱点</small><strong>--</strong><span class="delta">读取中</span></div><div class="card stat"><small>记忆条目</small><strong>--</strong><span class="delta">读取中</span></div></div><div class="home-knowledge-layout"><article class="card knowledge-graph-card"><div class="kg-toolbar"><div><h3>408 全局知识图谱</h3><p>严格按 PDF 的 5 类状态叠加颜色：未学、掌握、不熟、不会、薄弱点。</p></div><div class="kg-tabs" id="kgTabs"><button class="active" data-graph-filter="all">总览</button></div></div><div class="kg-actions"><button id="structureLayer">知识结构</button><button id="masteryLayer" class="active">掌握状态</button><span id="layerNote">默认展示数据库中的最终掌握状态</span></div><div class="kg-canvas" id="knowledgeGraphCanvas"><div class="home-empty-state">正在加载知识图谱…</div></div><div class="kg-legend" id="kgLegend"></div></article></div></section>`;
+ return `<section class="page" id="home"><div class="home-focus-grid"><article class="card hero-main"><div class="hero-task"><span class="eyebrow">TODAY'S AGENT PLAN</span><h2 id="homePlanTitle">正在读取今日计划…</h2><p id="homePlanReason">Agent 正在根据答题记录、错题、长期记忆和知识点掌握状态计算今日优先训练内容。</p><button class="primary" id="startPersonalTraining" onclick="startPersonalizedTraining()">开始个性化训练 →</button></div></article><article class="card countdown-card"><div class="exam-countdown"><span>考研 408 初试倒计时</span><div class="countdown-days"><b id="countdownDays">--</b><small>天</small></div><div class="countdown-clock"><div><b id="countdownHours">--</b><small>时</small></div><i>:</i><div><b id="countdownMinutes">--</b><small>分</small></div><i>:</i><div><b id="countdownSeconds">--</b><small>秒</small></div></div><p id="examDateLabel">目标日期：读取中</p></div></article><article class="card today-recommend-card"><div class="head"><h3>今日推荐</h3></div><div class="recommend" id="todayRecommendList"><div class="rec"><b>正在匹配推荐训练</b><small>系统会优先匹配薄弱点、错题复练、高频考点和未学知识点。</small></div></div></article></div><div class="stats" id="homeStats"><div class="card stat"><small>本周答题</small><strong>--</strong><span class="delta">读取中</span></div><div class="card stat"><small>综合正确率</small><strong>--</strong><span class="delta">读取中</span></div><div class="card stat"><small>长期薄弱点</small><strong>--</strong><span class="delta">读取中</span></div><div class="card stat"><small>记忆条目</small><strong>--</strong><span class="delta">读取中</span></div></div><div class="home-knowledge-layout"><article class="card knowledge-graph-card"><div class="kg-toolbar"><div><h3>408 全局知识图谱</h3></div><div class="kg-tabs" id="kgTabs"><button class="active" data-graph-filter="all">总览</button></div></div><div class="kg-actions"><button id="structureLayer">知识结构</button><button id="masteryLayer" class="active">掌握状态</button><span id="layerNote">默认展示数据库中的最终掌握状态</span></div><div class="kg-canvas" id="knowledgeGraphCanvas"><div class="home-empty-state">正在加载知识图谱…</div></div><div class="kg-legend" id="kgLegend"></div></article></div></section>`;
 };
 
 const homeBindAll=bindAll;
@@ -3484,15 +3536,25 @@ function renderHomeRecommendations(items){
 function renderHomeStats(cards){
  const stats=document.getElementById("homeStats");
  if(!stats)return;
+ const deltaOverride={["长期薄弱点"]:"建议巩固",["记忆条目"]:"训练你的专属agent"};
  const fallback=[
   {label:"本周答题",value:0,delta:"开始答题后自动统计"},
   {label:"综合正确率",value:"待生成",delta:"暂无答题记录"},
-  {label:"长期薄弱点",value:0,delta:"按 weak_score 与错题同步"},
-  {label:"记忆条目",value:0,delta:"问答和错题会写入这里"}
+  {label:"长期薄弱点",value:0,delta:"建议巩固"},
+  {label:"记忆条目",value:0,delta:"训练你的专属agent"}
  ];
- stats.innerHTML=(cards.length?cards:fallback).map(card=>`<div class="card stat"><small>${escapeHtml(card.label)}</small><strong>${escapeHtml(String(card.value))}</strong><span class="delta">${escapeHtml(card.delta)}</span></div>`).join("");
+ const items=(cards.length?cards:fallback).map(card=>({...card,delta:deltaOverride[card.label]||card.delta}));
+ stats.innerHTML=items.map(card=>`<div class="card stat"><small>${escapeHtml(card.label)}</small><strong>${escapeHtml(String(card.value))}</strong><span class="delta">${escapeHtml(card.delta)}</span></div>`).join("");
 }
 
+async function updateSidebarStreak(){
+  try{
+    const data=await apiRequest("/api/points/account");
+    const days=data.streak_days??0;
+    const el=document.getElementById("sidebarStreakDays");
+    if(el)el.textContent=days;
+  }catch(e){/* ignore */}
+}
 function renderHomeMemories(items){
  const list=document.getElementById("homeMemoryList");
  if(!list)return;
@@ -3630,7 +3692,7 @@ async function loadMistakeNotebook(statuses="不熟,不会"){
   const tag=document.getElementById("unfamiliarTag");
   if(el1)el1.textContent=stats.unfamiliar||0;
   if(el2)el2.textContent=stats.unknown||0;
-  if(tag)tag.textContent=(stats.total||0)>0?"已同步后端":"暂无数据";
+  if(tag)tag.textContent=(stats.total||0)>0?"加强巩固":"暂无数据";
   return payload;
  }catch(error){
   console.error(error);
@@ -3663,11 +3725,13 @@ async function submitBookMastery(button){
 
 async function openBookView(name){
  document.querySelectorAll(".book-view").forEach(v=>v.classList.toggle("active",v.id===`book-${name}`));
+ const toolbar=document.querySelector("#mistake .book-toolbar");
+ if(toolbar)toolbar.style.display=name==="ocr"?"none":"";
  const titles={
-  overview:["我的题本","智能出题、错因确认和 OCR 导入中标记“不熟/不会”的题目会进入对应题本"],
-  unfamiliar:["不熟题本","理解不稳定的题目，集中做同类巩固"],
-  unknown:["不会题本","尚未掌握的题目，优先重新学习与练习"],
-  ocr:["OCR 导入","PaddleOCR 识别 → 校对 → Agent 分析 → 记忆更新"]
+   overview:["我的题本","智能出题、错因确认和 OCR 导入中标记“不熟/不会”的题目会进入对应题本"],
+   unfamiliar:["不熟题本","理解不稳定的题目，集中做同类巩固"],
+   unknown:["不会题本","尚未掌握的题目，优先重新学习与练习"],
+   ocr:["",""]
  };
  const title=document.getElementById("mistakeTitle");
  const subtitle=document.getElementById("mistakeSubtitle");
@@ -3760,7 +3824,7 @@ async function submitComment(postId,content,post){
 
 /* ========= 学习报告真实数据对接 ========= */
 reportHTML=function(){
- return `<section class="page" id="report"><div class="stats" id="reportStats"><div class="card stat"><small>答题总数</small><strong>--</strong></div><div class="card stat"><small>答对</small><strong>--</strong></div><div class="card stat"><small>答错</small><strong>--</strong></div><div class="card stat"><small>正确率</small><strong>--</strong></div></div><div class="report-grid report-main-grid"><article class="card report-main-card"><div class="head"><h3>四科掌握趋势</h3><span class="tag">后端统计</span></div><div class="chart" id="reportSubjectTrend"><div class="home-empty-state">正在读取四科掌握趋势...</div></div></article><article class="card report-plan-card"><div class="head"><h3>下一轮个性化训练计划</h3><button class="primary" id="exportReport">导出报告</button></div><div id="reportPlanList"><div class="home-empty-state">正在计算下一轮训练计划...</div></div></article></div><div class="report-section-title"><div><h2>学习画像</h2><p>基于答题、错题、问答、论坛与长期记忆生成</p></div></div><div class="learning-profile-grid"><article class="card learning-user-card" id="reportProfile"><div class="profile-avatar">--</div><h3>读取中</h3><p>正在同步后端学习画像</p><div></div></article><article class="card learning-memory-card"><div class="head"><h3>长期记忆权重</h3></div><div id="reportMemoryWeights"><div class="home-empty-state">正在读取长期记忆权重...</div></div></article></div></section>`;
+ return `<section class="page" id="report"><div class="stats" id="reportStats"><div class="card stat"><small>答题总数</small><strong>--</strong></div><div class="card stat"><small>答对</small><strong>--</strong></div><div class="card stat"><small>答错</small><strong>--</strong></div><div class="card stat"><small>正确率</small><strong>--</strong></div></div><div class="report-grid report-main-grid"><article class="card report-main-card"><div class="head"><h3>四科掌握趋势</h3></div><div class="chart" id="reportSubjectTrend"><div class="home-empty-state">正在读取四科掌握趋势...</div></div></article><article class="card report-plan-card"><div class="head"><h3>下一轮个性化训练计划</h3><button class="primary" id="exportReport">导出报告</button></div><div id="reportPlanList"><div class="home-empty-state">正在计算下一轮训练计划...</div></div></article></div><div class="report-section-title"><div><h2>学习画像</h2><p>基于答题、错题、问答、论坛与长期记忆生成</p></div></div><div class="learning-profile-grid"><article class="card learning-user-card" id="reportProfile"><div class="profile-avatar">--</div><h3>读取中</h3><p>正在同步后端学习画像</p><div></div></article><article class="card learning-memory-card"><div class="head"><h3>长期记忆权重</h3></div><div id="reportMemoryWeights"><div class="home-empty-state">正在读取长期记忆权重...</div></div></article></div></section>`;
 };
 
 async function loadReportOverview(){
@@ -3786,7 +3850,7 @@ function renderReportOverview(data){
  renderMemoryWeights(data.memory_weights||[]);
  renderLearningProfile(data.profile||{});
  const exportButton=document.getElementById("exportReport");
- if(exportButton)exportButton.onclick=exportLearningReport;
+ if(exportButton)exportButton.onclick=showExportModal;
 }
 
 function renderReportStats(stats){
@@ -3837,50 +3901,52 @@ function renderMemoryWeights(items){
  }).join("");
 }
 
-async function exportLearningReport(){
+function showExportModal(){
+ const old=document.getElementById("exportModal");
+ if(old)old.remove();
+ document.body.insertAdjacentHTML("beforeend",`
+  <div class="export-modal-mask" id="exportModal">
+   <div class="export-modal-card">
+    <button class="export-modal-close" id="exportModalClose">×</button>
+    <h3>选择导出格式</h3>
+    <div class="export-modal-actions">
+     <button class="export-btn export-pdf" id="exportPDFBtn">📄 导出为 PDF</button>
+     <button class="export-btn export-word" id="exportWordBtn">📝 导出为 Word</button>
+    </div>
+   </div>
+  </div>`);
+ const mask=document.getElementById("exportModal");
+ requestAnimationFrame(()=>mask.classList.add("show"));
+ document.getElementById("exportModalClose").onclick=()=>{mask.classList.remove("show");setTimeout(()=>mask.remove(),300)};
+ mask.addEventListener("click",e=>{if(e.target===mask){mask.classList.remove("show");setTimeout(()=>mask.remove(),300)}});
+ document.getElementById("exportPDFBtn").onclick=()=>{mask.classList.remove("show");setTimeout(()=>mask.remove(),300);exportLearningReport("pdf")};
+ document.getElementById("exportWordBtn").onclick=()=>{mask.classList.remove("show");setTimeout(()=>mask.remove(),300);exportLearningReport("word")};
+}
+
+async function exportLearningReport(format){
  const button=document.getElementById("exportReport");
  if(button)button.disabled=true;
  try{
   toast("正在调用报告 Agent 生成分析...","success");
   const report=await apiRequest("/api/reports/generate",{method:"POST"});
-  const lines=[
-   report.title||"Turing 408 学习报告",
-   `生成时间：${report.create_time||new Date().toISOString()}`,
-   `分析来源：${report.llm_used?"AI 大模型分析":"后端保底分析"}`,
-   "",
-   "阶段总结",
-   report.summary||"暂无总结",
-   "",
-   "薄弱知识点",
-   report.weak_points||"暂无明显薄弱点",
-   "",
-   "主要错误类型",
-   report.main_error_type||"暂无",
-   "",
-   "问答关注",
-   report.qa_focus||"暂无",
-   "",
-   "论坛关注",
-   report.forum_focus||"暂无",
-   "",
-   "视频建议",
-   report.video_suggestion||"暂无",
-   "",
-   "下一轮训练计划",
-   ...(report.plan||[]).map((item,index)=>`${index+1}. ${item}`),
-   "",
-   "长期记忆摘要",
-   ...((report.memories||[]).length?report.memories.map(item=>`- ${item.knowledge_point||"知识点"}：${item.content||""}`):["暂无长期记忆摘要"]),
+  const title=report.title||"Turing 408 学习报告";
+  const date=report.create_time||new Date().toISOString();
+  const source=report.llm_used?"AI 大模型分析":"后端保底分析";
+  const sections=[
+   ["阶段总结",report.summary||"暂无总结"],
+   ["薄弱知识点",report.weak_points||"暂无明显薄弱点"],
+   ["主要错误类型",report.main_error_type||"暂无"],
+   ["问答关注",report.qa_focus||"暂无"],
+   ["论坛关注",report.forum_focus||"暂无"],
+   ["视频建议",report.video_suggestion||"暂无"],
   ];
-  const blob=new Blob([lines.join("\n")],{type:"text/plain;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const link=document.createElement("a");
-  link.href=url;
-  link.download=`Turing408学习报告-${new Date().toISOString().slice(0,10)}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  const plan=(report.plan||[]).map((item,i)=>`${i+1}. ${item}`);
+  const memories=(report.memories||[]).map(item=>`- ${item.knowledge_point||"知识点"}：${item.content||""}`);
+  if(format==="pdf"){
+   await exportPDF(title,date,source,sections,plan,memories);
+  }else if(format==="word"){
+   await exportWord(title,date,source,sections,plan,memories);
+  }
   toast("学习报告已导出","success");
   await loadReportOverview();
  }catch(error){
@@ -3889,6 +3955,76 @@ async function exportLearningReport(){
  }finally{
   if(button)button.disabled=false;
  }
+}
+
+async function exportPDF(title,date,source,sections,plan,memories){
+ await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+ const {jsPDF}=await loadJSPDF();
+ const doc=new jsPDF("p","mm","a4");
+ const esc=str=>String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+ const planHtml=plan.length?`<h2 style="font-size:14pt;color:#2f6bff;border-bottom:2px solid #2f6bff;padding-bottom:4px;margin-top:16px">下一轮训练计划</h2><ol>${plan.map(p=>`<li style="margin:4px 0">${esc(p)}</li>`).join("")}</ol>`:"";
+ const memHtml=memories.length?`<h2 style="font-size:14pt;color:#2f6bff;border-bottom:2px solid #2f6bff;padding-bottom:4px;margin-top:16px">长期记忆摘要</h2><ul>${memories.map(m=>`<li style="margin:4px 0">${esc(m)}</li>`).join("")}</ul>`:"";
+ const secHtml=sections.map(([s,c])=>`<h2 style="font-size:14pt;color:#2f6bff;border-bottom:2px solid #2f6bff;padding-bottom:4px;margin-top:16px">${esc(s)}</h2><p style="line-height:1.8;font-size:11pt">${esc(c)}</p>`).join("");
+ const html=`<div style="font-family:'Songti SC','SimSun',serif;padding:30px;max-width:800px;margin:auto;color:#333"><h1 style="text-align:center;font-size:18pt;margin-bottom:4px">${esc(title)}</h1><p style="text-align:center;color:#666;font-size:9pt;margin:2px 0">生成时间：${esc(date)}<br>分析来源：${esc(source)}</p><hr style="border:none;border-top:1px solid #ddd;margin:16px 0">${secHtml}${planHtml}${memHtml}</div>`;
+ const wrap=document.createElement("div");
+ wrap.innerHTML=html;
+ wrap.style.cssText="position:fixed;left:0;top:0;z-index:-1;width:800px;background:#fff";
+ document.body.appendChild(wrap);
+ try{
+  const canvas=await html2canvas(wrap.firstElementChild,{scale:2,useCORS:true,logging:false});
+  const imgData=canvas.toDataURL("image/png");
+  const imgWidth=190;
+  const pageHeight=277;
+  const imgHeight=(canvas.height*imgWidth)/canvas.width;
+  let heightLeft=imgHeight;
+  let position=0;
+  doc.addImage(imgData,"PNG",10,10,imgWidth,imgHeight);
+  heightLeft-=pageHeight;
+  while(heightLeft>=0){
+   position=heightLeft-imgHeight;
+   doc.addPage();
+   doc.addImage(imgData,"PNG",10,position,imgWidth,imgHeight);
+   heightLeft-=pageHeight;
+  }
+  doc.save(`Turing408学习报告-${date.slice(0,10)}.pdf`);
+ }finally{document.body.removeChild(wrap)}
+}
+
+async function exportWord(title,date,source,sections,plan,memories){
+ const esc=str=>String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+ const rows=sections.map(([s,c])=>`<tr><td style="font-weight:700;padding:6px 10px;border:1px solid #ccc;background:#f0f4ff">${esc(s)}</td><td style="padding:6px 10px;border:1px solid #ccc">${esc(c)}</td></tr>`).join("");
+ const planHtml=plan.length?`<h3>下一轮训练计划</h3><ol>${plan.map(p=>`<li>${esc(p)}</li>`).join("")}</ol>`:"";
+ const memHtml=memories.length?`<h3>长期记忆摘要</h3><ul>${memories.map(m=>`<li>${esc(m)}</li>`).join("")}</ul>`:"";
+ const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:SimSun,serif;font-size:12pt;line-height:1.8;padding:30px}h1{text-align:center;font-size:18pt}h2{font-size:14pt;color:#2f6bff;border-bottom:2px solid #2f6bff;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin:12px 0}td{font-size:11pt}</style></head><body><h1>${esc(title)}</h1><p style="text-align:center;color:#666">生成时间：${esc(date)}<br>分析来源：${esc(source)}</p><hr>${sections.map(([s,c])=>`<h2>${esc(s)}</h2><p>${esc(c)}</p>`).join("")}${planHtml}${memHtml}</body></html>`;
+ const blob=new Blob(["\ufeff"+html],{type:"application/msword;charset=utf-8"});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ a.href=url;
+ a.download=`Turing408学习报告-${date.slice(0,10)}.doc`;
+ document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function loadJSPDF(){
+ if(typeof jspdf!=="undefined"&&jspdf.jsPDF)return {jsPDF:jspdf.jsPDF};
+ await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+ return new Promise((resolve,reject)=>{
+  const s=document.createElement("script");
+  s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+  s.onload=()=>resolve({jsPDF:window.jspdf.jsPDF});
+  s.onerror=()=>reject(new Error("加载 jspdf 失败，请检查网络"));
+  document.head.appendChild(s);
+ });
+}
+function loadScript(src){
+ return new Promise((resolve,reject)=>{
+  if(document.querySelector(`script[src="${src}"]`))return resolve();
+  const s=document.createElement("script");
+  s.src=src;
+  s.onload=resolve;
+  s.onerror=()=>reject(new Error(`加载 ${src} 失败`));
+  document.head.appendChild(s);
+ });
 }
 
 function renderLearningProfile(profile){
@@ -4007,8 +4143,8 @@ function renderKnowledgeOverview(data){
  const toolbar=activePage.querySelector(".knowledge-graph-card .kg-toolbar");
  if(toolbar){
   const h3=toolbar.querySelector("h3"),p=toolbar.querySelector("p");
-  if(h3)h3.textContent="408 全局知识图谱 - 分科目知识结构总览（二级环形结构）";
-  if(p)p.textContent="点击科目进入三层知识图谱；总览页只展示科目与章节，不展示三级知识点。";
+  if(h3)h3.textContent="408 全局知识图谱 - 分科目知识结构总览";
+  if(p)p.textContent="";
  }
  renderKnowledgeTabs(data.subjects,"overview");
  canvas.className="kg-canvas kg-overview-canvas";
@@ -4085,8 +4221,8 @@ function renderSubjectGraph(data){
  const toolbar=document.querySelector(".knowledge-graph-card .kg-toolbar");
  if(toolbar){
   const h3=toolbar.querySelector("h3"),p=toolbar.querySelector("p");
-  if(h3)h3.textContent=`408 知识图谱 - ${data.subject.name}（三层知识结构）`;
-  if(p)p.textContent="一级是科目，二级是章节，三级才是具体知识点；三级状态反推章节与科目掌握度。";
+  if(h3)h3.textContent=`408 知识图谱 - ${data.subject.name}`;
+  if(p)p.textContent="";
  }
  renderKnowledgeTabs(knowledgeOverviewCache?.subjects||[] ,String(data.subject.id));
  canvas.className="kg-canvas kg-subject-canvas";
@@ -4182,8 +4318,7 @@ function subjectDetailHTML(data){
   <div class="kg-advice">
    <p><b>薄弱章节 Top3</b><span>${escapeHtml(weak)}</span></p>
    <p><b>推荐优先学习</b><span>${escapeHtml(rec)}</span></p>
-  </div>
-  <button class="primary full" data-kd-start-practice="${window.currentKnowledgePointId}" data-kd-practice-subject="${window.currentGraphPointSubject||''}" data-kd-practice-point="${window.currentGraphPointName||''}">开始针对性学习</button>`;
+   </div>`;
 }
 
 function statusDistributionRowsHTML(){
@@ -4199,7 +4334,7 @@ function pointDetailHTML(point){
    <div><small>所属章节</small><b>${escapeHtml(point.chapter_name||"")}</b></div>
   </div>
   <h4>知识点解释</h4><p>${escapeHtml(point.content||"暂无解释内容")}</p>
-  <h4>常见考法 / 易错点</h4><p>${escapeHtml(point.common_mistakes||point.keywords||"暂无补充说明")}</p>
+  <h4>常见考法 / 易错点</h4><p>${escapeHtml(_cleanBrackets(point.common_mistakes||point.keywords||"暂无补充说明"))}</p>
   <div class="kg-detail-actions"><button class="primary" onclick="showPage('question')">开始专项训练</button><button class="ghost" onclick="showPage('mistake')">查看相关错题</button></div>`;
 }
 
@@ -4404,6 +4539,232 @@ function _mergeAndDedupeSections(sections){
  return merged;
 }
 
+// 清理文本中的引号和方括号
+function _cleanBrackets(text){
+ if(!text)return text;
+ return text.replace(/["""'【】\[\]]/g,'').trim();
+}
+
+// 将纯文本按内容特征智能分为5个标准分点
+// 核心概念, 考试题型, 解题思路, 例题, 易错点
+function _autoSplitByParagraphs(contentLines){
+ const fullText=contentLines.join("\n").replace(/\n/g," ").trim();
+ if(!fullText)return [];
+ // 先按句子拆分
+ const sentences=_splitSentences(fullText);
+ if(sentences.length===0)return [];
+ // 按内容特征识别各段的起始句子索引
+ const examStartIdx=_findExamStart(sentences);
+ const methodStartIdx=_findMethodStart(sentences,examStartIdx);
+ const exampleStartIdx=_findExampleStart(sentences,methodStartIdx);
+ const errorStartIdx=_findErrorStart(sentences,exampleStartIdx);
+ const sections=[
+  {title:"核心概念",start:0,end:examStartIdx},
+  {title:"考试题型",start:examStartIdx,end:methodStartIdx},
+  {title:"解题思路",start:methodStartIdx,end:exampleStartIdx},
+  {title:"例题",start:exampleStartIdx,end:errorStartIdx},
+  {title:"易错点",start:errorStartIdx,end:sentences.length}
+ ];
+ const blocks=[];
+ for(const sec of sections){
+  const secSents=sentences.slice(sec.start,sec.end).filter(Boolean);
+  if(secSents.length===0)continue;
+  const text=secSents.join("");
+  // 对解题思路：按①②③...或数字编号分割成多行
+  if(sec.title==="解题思路"){
+   const items=_splitStepItems(text);
+   blocks.push({type:"section",title:sec.title,lines:items});
+  }
+  // 对例题：按题目/解答分割
+  else if(sec.title==="例题"){
+   const items=_splitExampleText(text);
+   blocks.push({type:"section",title:sec.title,lines:items});
+  }
+  // 对考试题型/易错点：按编号分割成列表项
+  else if(sec.title==="考试题型"||sec.title==="易错点"){
+   const items=_splitNumberedItems(text);
+   blocks.push({type:"section",title:sec.title,lines:items});
+  }
+  else{
+   blocks.push({type:"section",title:sec.title,lines:[text]});
+  }
+ }
+ return blocks;
+}
+
+// 智能拆分句子（保留句号、问号等句末标点）
+function _splitSentences(text){
+ if(!text)return [];
+ const result=[];
+ let current="";
+ for(let i=0;i<text.length;i++){
+  const ch=text[i];
+  current+=ch;
+  if(/[。！？!?]/.test(ch)){
+   const next=i+1<text.length?text[i+1]:"";
+   const next2=i+2<text.length?text[i+2]:"";
+   // 句末判断：下一个字符是中文/英文/数字开头的新句子/括号开头
+   // 排除 O(n) 这种括号中的情况
+   const isNewSentence=next===""||
+    /[\u4e00-\u9fa5A-Za-z]/.test(next)||   // 下一个是中/英文字
+    /\d/.test(next)&&/[)、.】]/.test(next2); // 下一个是数字+括号/点（如"1)" "2."）
+   if(isNewSentence){
+    const trimmed=current.trim();
+    if(trimmed)result.push(trimmed);
+    current="";
+   }
+  }
+ }
+ if(current.trim())result.push(current.trim());
+ return result;
+}
+
+// 查找考试题型段的起始位置
+function _findExamStart(sentences){
+ for(let i=1;i<sentences.length;i++){
+  const s=sentences[i];
+  if(/^(1[)、.]|[①1]|选择题|简答题|计算题|应用题|综合题|第\d+题|20\d+年)/.test(s.trim())){
+   // 确保前面有足够的概念内容
+   if(i>=1)return i;
+  }
+ }
+ // 如果没找到，大约在1/5处
+ return Math.max(1,Math.floor(sentences.length*0.2));
+}
+
+// 查找解题思路段的起始位置
+function _findMethodStart(sentences,afterIdx){
+ for(let i=afterIdx;i<sentences.length;i++){
+  const s=sentences[i];
+  if(/^(判断|明确|分析|解题|步骤|思路|方法|先|首先|第一步|①)/.test(s.trim())){
+   if(i>afterIdx)return i;
+  }
+ }
+ return Math.max(afterIdx+1,Math.floor(sentences.length*0.4));
+}
+
+// 查找例题段的起始位置
+function _findExampleStart(sentences,afterIdx){
+ for(let i=afterIdx;i<sentences.length;i++){
+  const s=sentences[i];
+  if(/^(已知|例[：1]|例如|举例|设有|假设给定)/.test(s.trim())){
+   if(i>afterIdx)return i;
+  }
+ }
+ return Math.max(afterIdx+1,Math.floor(sentences.length*0.65));
+}
+
+// 查找易错点段的起始位置
+function _findErrorStart(sentences,afterIdx){
+ for(let i=afterIdx;i<sentences.length;i++){
+  const s=sentences[i];
+  if(/^(易错|容易|误认为|误区|常见错误|注意|不要|混淆|1[)、.]\s*误认为|①\s*误)/.test(s.trim())){
+   if(i>afterIdx)return i;
+  }
+ }
+ return Math.max(afterIdx+1,Math.floor(sentences.length*0.85));
+}
+
+// 智能分割列表项：综合编号、分号、句号等多种策略
+function _smartSplitListItems(text){
+ if(!text)return [];
+ const trimmed=text.trim();
+ // 策略1：按带圈数字①②③...分割
+ const circled=_splitByCircledNumbers(trimmed);
+ if(circled.length>1)return circled;
+ // 策略2：按 1. 2. 3. 或 1) 2) 3) 或 1、2、3、分割
+ // 更宽松：允许编号在文本任意位置，编号后必须跟中文/英文字母
+ const numRegex=/(?:^|[；;。，,\s])\d+[.、)】]\s*(?=[\u4e00-\u9fa5A-Za-z（(])/g;
+ const numMatches=[...trimmed.matchAll(numRegex)];
+ if(numMatches.length>=2){
+  const items=[];
+  for(let i=0;i<numMatches.length;i++){
+   const m=numMatches[i];
+   // 从编号开始的位置（跳过前面的分隔符）
+   let start=m.index;
+   // 如果前面是分隔符，跳过
+   const firstChar=trimmed[start];
+   if(/[；;。，,\s]/.test(firstChar))start++;
+   const end=i+1<numMatches.length?numMatches[i+1].index:trimmed.length;
+   let item=trimmed.substring(start,end).trim();
+   // 去掉编号前缀
+   item=item.replace(/^\d+[.、)】]\s*/,"").trim();
+   // 去掉末尾的分号/句号
+   item=item.replace(/[；;。]+$/,"").trim();
+   if(item)items.push(item);
+  }
+  if(items.length>=2)return items;
+ }
+ // 策略3：按分号分割
+ const semiItems=trimmed.split(/[；;]/).map(s=>s.trim()).filter(Boolean);
+ if(semiItems.length>=2){
+  return semiItems.map(s=>s.replace(/[。]+$/,"").trim()).filter(Boolean);
+ }
+ // 策略4：按句号分割（过滤掉总结句和太短的句子）
+ const sentItems=_splitSentences(trimmed).filter(s=>{
+  const t=s.trim();
+  if(t.length<8)return false;
+  // 过滤总结性句子
+  if(/^(这些|以上|综上|因此|所以|总之|总的来说|考点侧|主要考|重点考)/.test(t))return false;
+  return true;
+ });
+ if(sentItems.length>=2){
+  return sentItems.map(s=>s.replace(/[。]+$/,"").trim()).filter(Boolean);
+ }
+ return [trimmed];
+}
+
+// 解题思路的条目分割
+function _splitStepItems(text){
+ if(!text)return [];
+ // 先尝试按带圈数字
+ const circled=_splitByCircledNumbers(text);
+ if(circled.length>1)return circled;
+ // 用智能分割
+ const smart=_smartSplitListItems(text);
+ if(smart.length>1)return smart;
+ return [text.trim()];
+}
+
+// 按①②③...分割文本
+function _splitByCircledNumbers(text){
+ if(!text)return [];
+ // 匹配①②③...⑳等带圈数字
+ const regex=/[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/g;
+ const matches=[...text.matchAll(regex)];
+ if(matches.length<=1)return [text.trim()];
+ const items=[];
+ for(let i=0;i<matches.length;i++){
+  const start=matches[i].index;
+  const end=i+1<matches.length?matches[i+1].index:text.length;
+  let item=text.substring(start,end).trim();
+  if(item){
+   // 去掉开头的带圈数字前缀（列表渲染自带序号）
+   item=item.replace(/^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]/, "").trim();
+   if(item)items.push(item);
+  }
+ }
+ return items.length?items:[text.trim()];
+}
+
+// 分割例题文本：题目/解答
+function _splitExampleText(text){
+ if(!text)return [];
+ // 尝试按"解："、"解答："、"答案："、"解析："分割（前面可以是任意字符）
+ const parts=text.split(/(解：|解答：|答案：|解析：)/);
+ if(parts.length>=3){
+  const question=parts[0].trim();
+  const answer=(parts[1]+parts.slice(2).join("")).trim();
+  return [question,answer].filter(Boolean);
+ }
+ // 如果没有明显分割标记，尝试按"已知"开头的部分作为题目，后面作为解答
+ const solveMatch=text.match(/(.+?)(\s*解：.+)/s);
+ if(solveMatch){
+  return [solveMatch[1].trim(),solveMatch[2].trim()];
+ }
+ return [text.trim()];
+}
+
 function _formatContentText(raw){
  if(!raw)return {keywords:"",blocks:[]};
  const trimmedRaw=raw;
@@ -4414,39 +4775,119 @@ function _formatContentText(raw){
  for(const line of lines){
   const m=line.match(/^关键词[：:]\s*(.*)$/);
   if(m){
-   keywords=m[1].trim();
+   keywords=_cleanBrackets(m[1].trim());
    continue;
   }
   contentLines.push(line);
  }
- // 2. 解析为 section 块
+ // 2. 解析为 section 块（保留原始内容，不在此阶段做列表识别）
  const blocks=[];
  let current={type:"paragraph",lines:[]};
- const sectionLabels=["核心概念","常见考法","易错点","解题步骤","408重点","重点","考点","考法","概念","误区","总结","概述","定义","基本概念"];
+ let hasSectionMarkers=false;
  for(const line of contentLines){
   const t=line.trim();
   if(!t){continue;}
   const headerMatch=t.match(/^【([^】]+)】\s*(.*)/);
   if(headerMatch){
+   hasSectionMarkers=true;
    if(current.lines.length>0)blocks.push(current);
    current={type:"section",title:headerMatch[1],lines:[]};
-   if(headerMatch[2])current.lines.push(headerMatch[2]);
-  }else{
-   const bulletMatch=t.match(/^(\d+)[.、)】]\s*(.*)/);
-   if(bulletMatch){
-    if(current.lines.length>0&&current.lines[current.lines.length-1]!=="_bullet_")current.lines.push("_bullet_start_");
-    current.lines.push(bulletMatch[2]);
-   }else{
-    current.lines.push(t);
+   if(headerMatch[2]){
+    current.lines.push(headerMatch[2].trim());
    }
+  }else{
+   current.lines.push(t);
   }
  }
  if(current.lines.length>0)blocks.push(current);
- // 3. 防御性：合并同名 section + 句级去重 + 字符数截断
+
+ // 3. 如果没有【】分点标记，则按段落顺序自动分为5个标准分点
+ if(!hasSectionMarkers){
+  const autoBlocks=_autoSplitByParagraphs(contentLines);
+  if(autoBlocks.length>0){
+   return {keywords,blocks:autoBlocks};
+  }
+ }
+
+ // 4. 标题归一化 + 合并同名 section
  const sectionBlocks=blocks.filter(b=>b.type==="section");
  const paragraphBlocks=blocks.filter(b=>b.type!=="section");
- const mergedSections=_mergeAndDedupeSections(sectionBlocks.map(s=>({title:s.title,lines:s.lines.filter(x=>x&&x!=="_bullet_start_"&&x!=="_bullet_")})));
- return {keywords,blocks:[...paragraphBlocks,...mergedSections]};
+ // 先归一化标题，再合并相同标题的内容
+ const normalizedMap=new Map();
+ for(const sec of sectionBlocks){
+  const normTitle=_normalizeSectionTitle(sec.title);
+  if(!normalizedMap.has(normTitle)){
+   normalizedMap.set(normTitle,{title:normTitle,rawLines:[]});
+  }
+  normalizedMap.get(normTitle).rawLines.push(...sec.lines);
+ }
+ // 按标准顺序排列
+ const normalizedSections=[];
+ const standardOrder=["核心概念","考试题型","解题思路","例题","易错点","重点内容"];
+ for(const t of standardOrder){
+  if(normalizedMap.has(t)){
+   normalizedSections.push(normalizedMap.get(t));
+   normalizedMap.delete(t);
+  }
+ }
+ // 剩余的其他 section 追加在后面
+ for(const [title,sec] of normalizedMap){
+  normalizedSections.push(sec);
+ }
+ // 5. 对每个 section 做去重 + 内容格式化（全部走智能分割）
+ const finalSections=[];
+ for(const sec of normalizedSections){
+  const stype=_sectionType(sec.title);
+  const rawLines=sec.rawLines.filter(x=>x&&x!=="_bullet_start_"&&x!=="_bullet_");
+  // 先拼接原始文本（保留原始编号/分号等结构）
+  const rawFullText=rawLines.join(" ");
+  // 句子级去重（用于核心概念、例题等段落型内容）
+  const limit=_FRONTEND_SECTION_CHAR_LIMIT[sec.title]||_FRONTEND_SECTION_CHAR_LIMIT_DEFAULT;
+  const seen=[];
+  const dedupSents=[];
+  let total=0;
+  for(const raw of rawLines){
+   for(const sent of _splitSentences(raw)){
+    if(seen.some(u=>_sentenceJaccard(sent,u)>=0.72))continue;
+    if(total+sent.length>limit&&dedupSents.length)continue;
+    dedupSents.push(sent);
+    seen.push(sent);
+    total+=sent.length;
+   }
+  }
+  const dedupFullText=dedupSents.join("");
+  // 根据类型选择分割策略
+  let formattedLines;
+  if(stype==="exam"||stype==="error"||stype==="key"){
+   // 考试题型/易错点/重点：优先用原始文本分割（保留编号结构），失败则用去重后文本
+   let result=_smartSplitListItems(rawFullText);
+   if(result.length<=1&&rawFullText!==dedupFullText){
+    result=_smartSplitListItems(dedupFullText);
+   }
+   formattedLines=result;
+  }else if(stype==="steps"){
+   // 解题思路
+   let result=_splitStepItems(rawFullText);
+   if(result.length<=1&&rawFullText!==dedupFullText){
+    result=_splitStepItems(dedupFullText);
+   }
+   formattedLines=result;
+  }else if(stype==="example"){
+   // 例题
+   let result=_splitExampleText(rawFullText);
+   if(result.length<=1&&rawFullText!==dedupFullText){
+    result=_splitExampleText(dedupFullText);
+   }
+   formattedLines=result;
+  }else{
+   // 核心概念等：段落形式，用去重后的句子
+   formattedLines=dedupSents;
+  }
+  if(formattedLines.length>0){
+   finalSections.push({type:"section",title:sec.title,lines:formattedLines});
+  }
+ }
+ return {keywords,blocks:[...paragraphBlocks,...finalSections]};
 }
 // 5 种 block 类型的视觉分类 + 颜色方案
 // - core: 核心概念 (蓝/知识主色)
@@ -4459,12 +4900,26 @@ function _formatContentText(raw){
 function _sectionType(title){
  const t=title||"";
  if(t.includes("核心概念")||t.includes("基本概念")||t==="概念"||t.includes("定义")||t.includes("概述"))return"core";
- if(t.includes("常见考法")||t.includes("考法")||t.includes("考点"))return"exam";
- if(t.includes("解题步骤")||t.includes("步骤"))return"steps";
+ if(t.includes("常见考法")||t.includes("考法")||t.includes("考点")||t.includes("考试题型")||t.includes("题型"))return"exam";
+ if(t.includes("解题步骤")||t.includes("解题思路")||t.includes("步骤")||t.includes("思路")||t.includes("方法"))return"steps";
  if(t.includes("例题"))return"example";
  if(t.includes("常见错误")||t.includes("易错点")||t.includes("误区"))return"error";
  if(t.includes("408重点")||t.includes("重点")||t.includes("总结"))return"key";
  return"default";
+}
+
+// 将各种不同的 section 标题归一化为 5 个标准分点标题
+function _normalizeSectionTitle(title){
+ const stype=_sectionType(title);
+ const titleMap={
+  core:"核心概念",
+  exam:"考试题型",
+  steps:"解题思路",
+  example:"例题",
+  error:"易错点",
+  key:"重点内容"
+ };
+ return titleMap[stype]||title;
 }
 
 // block 标题的图标(用 CSS 绘制的几何符号,避免 emoji 渲染差异)
@@ -4507,32 +4962,47 @@ function _renderContentBlocks(blocks){
   if(block.type==="section"){
    const type=_sectionType(block.title);
    const icon=_sectionIcon(type);
-   // 段落型 vs 列表型:
-   // - core/example: 概念和例题, 用 <p> 段落
-   // - exam/steps/error/key: 考法/步骤/错误/重点, 用 <ol><li> 编号项
-   const isListType=["exam","steps","error","key"].includes(type);
-   const bodyHtml=block.lines.map((line,lineIdx)=>{
-    if(line==="_bullet_start_")return"";
-    if(line.startsWith("_bullet_"))return"";
-    // 判断是否首段 (作为加重起点)
-    const isFirst=lineIdx===0;
-    if(isListType){
-     return`<li class="kd-block-li">${_highlightKeyTerms(line)}</li>`;
+   // 内容渲染：根据类型选择不同的展示方式
+   let bodyHtml="";
+   if(type==="example"){
+    // 例题：题目 + 解答 分行显示
+    const lines=block.lines.filter(l=>l&&l!=="_bullet_start_"&&!l.startsWith("_bullet_"));
+    if(lines.length>=2){
+     bodyHtml=`
+      <div class="kd-example-item">
+       <div class="kd-example-label">题目</div>
+       <div class="kd-example-question">${_highlightKeyTerms(lines[0])}</div>
+      </div>
+      <div class="kd-example-item">
+       <div class="kd-example-label">解答</div>
+       <div class="kd-example-answer">${_highlightKeyTerms(lines.slice(1).join(""))}</div>
+      </div>`;
+    }else{
+     bodyHtml=`<p class="kd-block-line">${_highlightKeyTerms(lines.join(""))}</p>`;
     }
-    const cls=`kd-block-line${isFirst?" kd-block-line-first":""}`;
-    return`<p class="${cls}">${_highlightKeyTerms(line)}</p>`;
-   }).join("");
-   const innerHtml=isListType?`<ol class="kd-ol kd-ol-${type}">${bodyHtml}</ol>`:bodyHtml;
-   // 例题类型用 callout 框
-   const wrapperClass=type==="example"?"kd-block kd-block-callout":`kd-block kd-block-${type}`;
-   const defaultOpen=type==="core"||type==="key"?" open":"";
-   return `<div class="${wrapperClass}${defaultOpen}" data-idx="${idx}" data-type="${type}">
-     <div class="kd-block-head" onclick="toggleKdAccordion(this)">
+   }else if(type==="steps"){
+    // 解题思路：按①②③用有序列表显示
+    const lines=block.lines.filter(l=>l&&l!=="_bullet_start_"&&!l.startsWith("_bullet_"));
+    bodyHtml=`<ol class="kd-ol kd-ol-${type}">${lines.map(l=>`<li class="kd-block-li">${_highlightKeyTerms(l)}</li>`).join("")}</ol>`;
+   }else if(type==="exam"||type==="error"||type==="key"){
+    // 考试题型/易错点/重点：用有序列表显示
+    const lines=block.lines.filter(l=>l&&l!=="_bullet_start_"&&!l.startsWith("_bullet_"));
+    bodyHtml=`<ol class="kd-ol kd-ol-${type}">${lines.map(l=>`<li class="kd-block-li">${_highlightKeyTerms(l)}</li>`).join("")}</ol>`;
+   }else{
+    // 核心概念等：段落形式，首行缩进，减少换行
+    const lines=block.lines.filter(l=>l&&l!=="_bullet_start_"&&!l.startsWith("_bullet_"));
+    // 合并成一个段落，避免过多换行
+    const fullText=lines.join("");
+    bodyHtml=`<p class="kd-block-line kd-block-core-text">${_highlightKeyTerms(fullText)}</p>`;
+   }
+   // 统一使用蓝色加粗标题，默认全部展开
+   const wrapperClass=`kd-block kd-block-${type} open`;
+   return `<div class="${wrapperClass}" data-idx="${idx}" data-type="${type}">
+     <div class="kd-block-head">
        <span class="kd-block-icon">${icon}</span>
        <h4 class="kd-block-title">${escapeHtml(block.title)}</h4>
-       <span class="kd-block-arrow">▼</span>
      </div>
-     <div class="kd-block-body">${innerHtml}</div>
+     <div class="kd-block-body">${bodyHtml}</div>
    </div>`;
   }
   return `<p class="kd-para">${_highlightKeyTerms(block.lines.join("  "))}</p>`;
@@ -4544,34 +5014,25 @@ function _keywordsBarHTML(keywords){
  if(!keywords)return "";
  const tags=keywords.split(/[,，;;\s]+/).map(s=>s.trim()).filter(Boolean);
  if(!tags.length)return "";
- return `<div class="kd-keywords-bar"><b>关键词</b>${tags.map(t=>`<span class="kd-kw-tag">${escapeHtml(t)}</span>`).join("")}</div>`;
+ // 去掉每个关键词中的引号和方括号
+ const cleanTags=tags.map(t=>t.replace(/["""'【】\[\]]/g,'').trim()).filter(Boolean);
+ return `<div class="kd-keywords-bar"><b>关键词</b>${cleanTags.map(t=>`<span class="kd-kw-tag">${escapeHtml(t)}</span>`).join("")}</div>`;
 }
 window.toggleKdAccordion=function(header){
  header.parentElement.classList.toggle("open");
 }
+
 function knowledgeBodyHTML(point){
  const raw=point.content||"";
  const parsed=_formatContentText(raw);  // {keywords, blocks}
  const blocks=parsed.blocks||[];
  const extraKeywords=parsed.keywords||"";
  // 头部关键词：抽出的 _formatContentText.keywords 优先,没有则用 point.keywords
- const headerKeywords=extraKeywords||point.keywords||point.name;
+ const headerKeywords=_cleanBrackets(extraKeywords||point.keywords||point.name);
  if(raw){
-  return `${_keywordsBarHTML(extraKeywords||point.keywords)}<div class="kd-content-body">${_renderContentBlocks(blocks)}</div>
-   <ul class="kd-concepts">
-    <li><b>核心概念</b><span>${escapeHtml(headerKeywords)}</span></li>
-    <li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li>
-    <li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li>
-    <li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li>
-   </ul>`;
+  return `${_keywordsBarHTML(extraKeywords||point.keywords)}<div class="kd-content-body">${_renderContentBlocks(blocks)}</div>`;
  }
- return `${_keywordsBarHTML(point.keywords||point.name)}<p>${escapeHtml(`${point.name} 是 ${point.chapter_name} 章节下的三级知识点。建议先理解定义、核心概念、常见考法和易错点，再进入专项训练。`)}</p>
-  <ul class="kd-concepts">
-   <li><b>核心概念</b><span>${escapeHtml(headerKeywords)}</span></li>
-   <li><b>常见考法</b><span>选择题、概念辨析、应用题和综合题。</span></li>
-   <li><b>易错点</b><span>${escapeHtml(point.common_mistakes||"注意概念边界、适用条件和典型题型。")}</span></li>
-   <li><b>408 重点</b><span>结合章节上下文理解，并通过错题复盘更新掌握状态。</span></li>
-  </ul>`;
+ return `${_keywordsBarHTML(point.keywords||point.name)}<p>${escapeHtml(`${point.name} 是 ${point.chapter_name} 章节下的三级知识点。建议先理解定义、核心概念、常见考法和易错点，再进入专项训练。`)}</p>`;
 }
 
 function videoCardHTML(video){
@@ -4601,7 +5062,7 @@ function videoCardHTML(video){
 }
 
 function noteCardHTML(note){
- return `<article class="kd-note-card"><b>${escapeHtml(note.title)}</b><small>${escapeHtml(note.update_time||"")}</small><p>${escapeHtml(note.summary||note.content||"")}</p><div><button data-note-view="${note.id}">查看</button><button data-note-edit="${note.id}">编辑</button><button data-note-delete="${note.id}">删除</button><button data-note-share="${note.id}">转发</button></div></article>`;
+ return `<article class="kd-note-card"><b>${escapeHtml(note.title)}</b><small>${escapeHtml(note.update_time||"")}</small><p>${escapeHtml(note.summary||note.content||"")}</p><div class="kd-note-actions"><button data-note-view="${note.id}">查看</button><button data-note-edit="${note.id}">编辑</button><button data-note-delete="${note.id}">删除</button><button data-note-share="${note.id}">转发</button></div></article>`;
 }
 
 function noteModalHTML(point){
@@ -4733,6 +5194,132 @@ async function deleteKnowledgeNote(noteId){
 }
 
 async function shareKnowledgeNote(noteId){
- const data=await apiRequest(`/api/notes/${noteId}/share`,{method:"POST"});
- window.open(data.share_url,"_blank");
+ // 调用后端接口获取分享链接
+ let shareData={share_url:window.location.href};
+ try{
+  const data=await apiRequest(`/api/notes/${noteId}/share`,{method:"POST"});
+  if(data&&data.share_url)shareData.share_url=data.share_url;
+ }catch(e){}
+ // 从已加载的笔记列表中获取笔记数据
+ let note=findKnowledgeNote(noteId);
+ if(!note)note={title:"笔记分享",content:"",update_time:"",subject:"",chapter:"",knowledge_point:""};
+ const title=note.title||"笔记分享";
+ const content=note.content||note.summary||"";
+ const updateTime=note.update_time||"";
+ const author=note.author||note.username||"同学";
+ // 获取标签（学科、章节、知识点）
+ const tags=[];
+ if(note.subject)tags.push({text:note.subject,color:"tag-blue",icon:"📚"});
+ if(note.chapter)tags.push({text:note.chapter,color:"tag-yellow",icon:"📖"});
+ if(note.knowledge_point)tags.push({text:note.knowledge_point,color:"tag-green",icon:"🎯"});
+ // 生成分享弹窗
+ const tagsHTML=tags.map(t=>`<span class="kd-share-tag ${t.color}">${t.icon} ${escapeHtml(t.text)}</span>`).join("");
+ const modalHTML=`
+  <div class="kd-share-mask" id="kdShareMask">
+   <div class="kd-share-card" id="kdShareCard">
+    <button class="kd-share-close" id="kdShareClose">×</button>
+    <h2>${escapeHtml(title)}</h2>
+    ${tagsHTML?`<div class="kd-share-tags">${tagsHTML}</div>`:""}
+    <div class="kd-share-content">${escapeHtml(content)}</div>
+    <hr class="kd-share-divider">
+    <div class="kd-share-footer">
+     <div class="kd-share-author">
+      <div class="name">@ ${escapeHtml(author)}</div>
+      <div class="time">${escapeHtml(updateTime)}</div>
+     </div>
+     <div class="kd-share-qr" id="kdShareQR">
+      <div style="width:75px;height:75px;background:#f8fafc;display:grid;place-items:center;color:#94a3b8;font-size:9px;border-radius:8px">扫码查看</div>
+      <span>扫码访问</span>
+     </div>
+    </div>
+   </div>
+   <div class="kd-share-actions">
+    <button class="kd-share-btn btn-green" id="kdShareSave">⬇ 保存为图片</button>
+    <button class="kd-share-btn btn-blue" id="kdShareCopy">🔗 复制链接</button>
+    <button class="kd-share-btn btn-gray" id="kdShareOpen">🌐 打开主站</button>
+   </div>
+  </div>
+ `;
+ // 移除已有的弹窗
+ const old=document.getElementById("kdShareMask");
+ if(old)old.remove();
+ document.body.insertAdjacentHTML("beforeend",modalHTML);
+ const mask=document.getElementById("kdShareMask");
+ requestAnimationFrame(()=>mask.classList.add("show"));
+ // 关闭按钮
+ document.getElementById("kdShareClose").onclick=closeShareModal;
+ // 点击遮罩关闭
+ mask.addEventListener("click",e=>{
+  if(e.target===mask)closeShareModal();
+ });
+ // 复制链接
+ document.getElementById("kdShareCopy").onclick=async ()=>{
+  const btn=document.getElementById("kdShareCopy");
+  const originalText=btn.innerHTML;
+  try{
+   await navigator.clipboard.writeText(shareData.share_url);
+   btn.innerHTML="✓ 已复制";
+  }catch(e){
+   const ta=document.createElement("textarea");
+   ta.value=shareData.share_url;
+   document.body.appendChild(ta);
+   ta.select();
+   document.execCommand("copy");
+   ta.remove();
+   btn.innerHTML="✓ 已复制";
+  }
+  setTimeout(()=>{btn.innerHTML=originalText;},1500);
+ };
+ // 打开主站
+ document.getElementById("kdShareOpen").onclick=()=>{
+  window.open(window.location.origin+"/index.html","_blank");
+ };
+  // 保存为图片
+  document.getElementById("kdShareSave").onclick=()=>{
+   const btn=document.getElementById("kdShareSave");
+   const orig=btn.innerHTML;
+   btn.disabled=true;
+   btn.innerHTML="⏳ 生成图片中...";
+   const doCapture=async()=>{
+    const card=document.getElementById("kdShareCard");
+    if(!card){btn.innerHTML=orig;btn.disabled=false;return}
+    try{
+     const dataUrl=await htmlToImage.toPng(card,{backgroundColor:"#ffffff",pixelRatio:2});
+     const blob=await (await fetch(dataUrl)).blob();
+     const url=URL.createObjectURL(blob);
+     const a=document.createElement("a");
+     const t=(title||"笔记").replace(/[\\/:*?"<>|]/g,"_");
+     a.href=url;a.download=`408笔记-${t}-${Date.now()}.png`;
+     document.body.appendChild(a);a.click();document.body.removeChild(a);
+     setTimeout(()=>URL.revokeObjectURL(url),1000);
+     btn.innerHTML="✅ 已下载";
+     setTimeout(()=>{btn.innerHTML=orig;btn.disabled=false},1500);
+    }catch(e){console.error(e);alert("下载失败："+e.message+". 请尝试使用截图工具。");btn.innerHTML=orig;btn.disabled=false}
+   };
+   if(typeof htmlToImage==="undefined"){
+    const s=document.createElement("script");
+    s.src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js";
+    s.onload=doCapture;
+    s.onerror=()=>{alert("加载截图库失败，请检查网络");btn.innerHTML=orig;btn.disabled=false};
+    document.head.appendChild(s);
+   }else{doCapture()}
+  };
+ // 生成二维码
+ const qrDiv=document.getElementById("kdShareQR");
+ const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(shareData.share_url)}`;
+ const qrImg=new Image();
+ qrImg.crossOrigin="anonymous";
+ qrImg.onload=()=>{
+  qrDiv.innerHTML="";
+  qrDiv.appendChild(qrImg);
+  const span=document.createElement("span");
+  span.textContent="扫码访问";
+  qrDiv.appendChild(span);
+ };
+ qrImg.src=qrUrl;
+
+ function closeShareModal(){
+  mask.classList.remove("show");
+  setTimeout(()=>mask.remove(),300);
+ }
 }
