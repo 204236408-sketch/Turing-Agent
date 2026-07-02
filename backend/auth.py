@@ -45,3 +45,18 @@ def user_id_from_token(token: str) -> int:
         return int(decode_token(token)["sub"])
     except Exception as exc:
         raise AppError("INVALID_TOKEN", "登录状态无效或已过期", status_code=401) from exc
+
+
+# 进程内 token 黑名单。logout 时写入,get_current_user 时校验。
+# 注意:多实例部署或重启后黑名单会丢失,需改为 Redis 共享。这里仅做单进程标记。
+_revoked_tokens: set[str] = set()
+
+
+def revoke_token(token: str) -> None:
+    """将 token 加入黑名单,后续请求将返回 401。"""
+    if token:
+        _revoked_tokens.add(token)
+
+
+def is_token_revoked(token: str) -> bool:
+    return token in _revoked_tokens

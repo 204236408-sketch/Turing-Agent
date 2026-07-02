@@ -142,6 +142,10 @@ class Question(Base):
     # 答题统计（冗余字段，避免每次 JOIN answer_record）
     answer_count = Column(Integer, default=0)
     correct_answer_count = Column(Integer, default=0)
+    # 质量反馈闭环：用户标记"题目有误"次数；超过阈值时自动降权
+    reported_count = Column(Integer, default=0)
+    reported_reason = Column(String(255), default="")
+    last_reported_at = Column(DateTime)
     create_time = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -182,6 +186,8 @@ class AnswerRecord(Base):
     feedback = Column(Text, default="")
     mastery_feedback = Column(String(32), default="")
     is_deleted = Column(Boolean, default=False)
+    # unverified 题（loose 模式 / 知识库无内容时 LLM 自由发挥）的答题结果仅作练习记录，不计入掌握度
+    practice_only = Column(Boolean, default=False)
     create_time = Column(DateTime, default=datetime.utcnow)
     update_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

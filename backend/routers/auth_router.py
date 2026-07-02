@@ -9,9 +9,9 @@
 
 状态：已完成可复用。认证逻辑完整，JWT token 签发与验证均在 auth 模块中实现。
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
-from auth import authenticate_user, change_password, register_user, token_for_user
+from auth import authenticate_user, change_password, register_user, revoke_token, token_for_user
 from database import get_db
 from dependencies import get_current_user
 from models import User
@@ -44,7 +44,13 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-def logout():
+def logout(authorization: str | None = Header(default=None)):
+    """登出:将当前 token 加入服务端黑名单,后续请求会返回 401 TOKEN_REVOKED。
+    前端应同时清空 localStorage 中的 token / user。"""
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token.strip():
+            revoke_token(token.strip())
     return success({"logged_out": True})
 
 

@@ -42,12 +42,32 @@
   }
 
   function waitForShell(){
-    const timer=setInterval(()=>{
-      if(document.querySelector(".shell .sidebar .nav")&&document.querySelector(".shell .main")){
-        clearInterval(timer);
-        installPersonalCenter();
+    // 1) 立即检查一次(可能 shell 已在更早的 app.js 中渲染完)
+    tryInstall();
+    // 2) 监听 #app 子节点变化,shell 每次出现(初始化 / 退出后重新登录)都注入
+    //    不 disconnect,让 observer 一直运行,避免"退出后重新登录看不到个人中心"问题
+    const appRoot=document.getElementById("app");
+    if(!appRoot){
+      setTimeout(waitForShell,50);
+      return;
+    }
+    if(waitForShell._observer)return;  // 已有 observer,不再重复创建
+    const observer=new MutationObserver(()=>{
+      // 仅在 shell 存在但 personalCenter 还没注入时,才需要 install
+      if(document.querySelector(".shell .sidebar .nav")&&document.querySelector(".shell .main")
+         &&!document.getElementById("personalCenter")){
+        tryInstall();
       }
-    },300);
+    });
+    observer.observe(appRoot,{childList:true,subtree:true});
+    waitForShell._observer=observer;
+  }
+
+  function tryInstall(){
+    if(document.querySelector(".shell .sidebar .nav")&&document.querySelector(".shell .main")
+       &&!document.getElementById("personalCenter")){
+      installPersonalCenter();
+    }
   }
 
   function installPersonalCenter(){
@@ -601,12 +621,6 @@
         guardedRun(el,event,"generate_questions","question_session",null);
       }else if(el.id==="ocrMock"){
         guardedRun(el,event,"ocr_import","ocr_upload",null);
-      }else if(el.id==="submitAnswer"){
-        if(!document.querySelector(".option.selected"))return;
-        guardedRun(el,event,"ai_check_answer","answer",null);
-      }else if(el.id==="openCause"){
-        if(document.getElementById("causeDetail")?.classList.contains("show"))return;
-        guardedRun(el,event,"mistake_cause_analysis","mistake",null);
       }else if(el.dataset?.drawer==="video"){
         const drawer=document.getElementById("video");
         if(drawer?.classList.contains("show"))return;
@@ -757,7 +771,8 @@
   function shareMedal(){
     const medal=state.currentMedal;
     if(!medal)return;
-    const shareURL=window.location.origin+"/medal/"+encodeURIComponent(medal.name);
+    // 主站地址:所有对外链接(二维码/复制链接/打开主站)统一指向这里
+    const SITE_URL="https://turing-agent.cloud/";
     const unlocked=normalizeMedalOwned(medal);
     const medalSVG=medal.svg||medalSvg({...medal,unlocked:true},{large:false});
     const old=document.getElementById("msShareMask");
@@ -790,11 +805,11 @@
     const copyBtn=document.getElementById("msShareCopy");
     copyBtn.onclick=async()=>{
       const orig=copyBtn.innerHTML;
-      try{await navigator.clipboard.writeText(shareURL);copyBtn.innerHTML="✓ 已复制"}
-      catch(e){const ta=document.createElement("textarea");ta.value=shareURL;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();copyBtn.innerHTML="✓ 已复制"}
+      try{await navigator.clipboard.writeText(SITE_URL);copyBtn.innerHTML="✓ 已复制"}
+      catch(e){const ta=document.createElement("textarea");ta.value=SITE_URL;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();copyBtn.innerHTML="✓ 已复制"}
       setTimeout(()=>{copyBtn.innerHTML=orig},1500);
     };
-    document.getElementById("msShareOpen").onclick=()=>window.open(window.location.origin+"/index.html","_blank");
+    document.getElementById("msShareOpen").onclick=()=>window.open(SITE_URL,"_blank");
     document.getElementById("msShareSave").onclick=()=>{
       const btn=document.getElementById("msShareSave");
       const orig=btn.innerHTML;
@@ -824,8 +839,9 @@
         document.head.appendChild(s);
       }else{doCapture()}
     };
+    // 生成二维码(指向主站)
     const qrDiv=document.getElementById("msShareQR");
-    const qrURL="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data="+encodeURIComponent(shareURL);
+    const qrURL="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data="+encodeURIComponent(SITE_URL);
     const img=new Image();
     img.crossOrigin="anonymous";
     img.onload=()=>{qrDiv.innerHTML="";qrDiv.appendChild(img);const s=document.createElement("span");s.textContent="扫码查看";qrDiv.appendChild(s)};

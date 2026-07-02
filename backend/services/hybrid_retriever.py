@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from models import KnowledgePoint
 from services.chroma_service import query_documents
@@ -85,32 +86,63 @@ def _keyword_search(
     if subject:
         db_query = db_query.filter(KnowledgePoint.subject == subject)
     if kp:
-        db_query = db_query.filter(KnowledgePoint.name == kp)
+        db_query = db_query.filter(
+            or_(
+                KnowledgePoint.name == kp,
+                KnowledgePoint.section == kp,
+                KnowledgePoint.parent_name == kp,
+            )
+        )
 
     rows = db_query.all()
+    if kp and not rows:
+        db_query = db.query(KnowledgePoint)
+        if subject:
+            db_query = db_query.filter(KnowledgePoint.subject == subject)
+        rows = db_query.all()
     scored = []
     for item in rows:
-        text = f"{item.subject} {item.name} {item.content} {item.keywords or ''}"
+        text = " ".join(
+            [
+                item.subject or "",
+                item.parent_name or "",
+                item.name or "",
+                item.section or "",
+                item.content or "",
+                item.common_mistakes or "",
+                item.keywords or "",
+            ]
+        )
+        kp_fragments = _tokenize(kp) if kp else []
+        kp_hits = sum(1 for w in kp_fragments if len(w) >= 2 and w in text)
         score = sum(1 for w in words if w in text)
+        if kp:
+            if kp in text:
+                score += 6
+            else:
+                score += sum(2 for w in kp_fragments if len(w) >= 2 and w in text)
+        if item.section and item.section in query:
+            score += 4
         if item.name and item.name in query:
             score += 3
         if item.subject and item.subject in query:
             score += 2
         if score:
-            scored.append((score, item))
+            scored.append((kp_hits, score, item))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    max_score = max((s for _, s, _ in scored), default=1)
     return [
         {
             "subject": item.subject,
-            "knowledge_point": item.name,
+            "knowledge_point": item.section or item.name,
             "section": item.section or "",
             "content": item.content,
-            "score": s / max(s for s, _ in scored) if scored else 0,
+            "score": s / max_score if scored else 0,
             "source": "mysql",
             "rerank_score": 0.0,
         }
-        for s, item in scored[:limit]
+        for _, s, item in scored[:limit]
     ]
 
 
@@ -145,4 +177,15 @@ def _fusion_rank(
 
 def _tokenize(query: str) -> list[str]:
     cleaned = re.sub(r'[，。、？；：""''！（）?:;!()]', " ", query)
-    return [w for w in cleaned.split() if w]
+    words = [w for w in cleaned.split() if w]
+    expanded: list[str] = []
+    for word in words:
+        expanded.append(word)
+        if len(word) >= 4 and any('\u4e00' <= ch <= '\u9fff' for ch in word):
+            expanded.extend(word[i:i + 2] for i in range(0, len(word) - 1, 2))
+            expanded.extend(word[i:i + 3] for i in range(0, len(word) - 2, 3))
+    out: list[str] = []
+    for word in expanded:
+        if word and word not in out:
+            out.append(word)
+    return out

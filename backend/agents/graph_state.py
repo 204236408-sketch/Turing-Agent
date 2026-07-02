@@ -50,10 +50,13 @@ class QuestionState(TypedDict, total=False):
     llm_used: bool
     llm_error: str
     mastery_text: str
+    mistake_summary: str
+    misconception_profile: dict[str, Any]
     raw_questions: list[dict]
     variant_type: str
     llm_result: Any
     questions_valid: bool
+    loose_mode: bool
 
 
 class AnswerCheckState(TypedDict, total=False):

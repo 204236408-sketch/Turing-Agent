@@ -87,5 +87,6 @@ def generate_questions(
         "questions": result.get("questions", []),
         "llm_used": result.get("llm_used", False),
         "llm_error": result.get("llm_error", ""),
+        "all_refused": bool(result.get("all_refused", False)),
         "agent_steps": steps_out,
     }

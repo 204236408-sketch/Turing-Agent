@@ -84,9 +84,8 @@ body{min-height:100vh;background:linear-gradient(135deg,#0f1f3d 0%,#1d3473 100%)
 const params=new URLSearchParams(location.search);
 const shareId=params.get("share_id");
 
-// 主站地址：二维码指向这里（而不是当前分享页）
-// 部署到线上时改成你的真实域名
-const SITE_URL = (location.origin || "https://turing-408.example.com").replace(/\/note_share\.html$/, "");
+// 主站地址：二维码 / 复制链接 / 打开主站 统一指向这里
+const SITE_URL = "https://turing-agent.cloud/";
 
 let currentNoteData = null;   // 缓存数据，给"下载图片"用
 
@@ -100,8 +99,7 @@ async function loadShare(){
   if(!res.ok||!json.data)throw new Error(json.message||"分享不存在");
   const s=json.data.share;
   const n=s.note||{};
-  const shareUrl=location.href;   // 当前分享页 URL（用于"复制链接"按钮）
-  currentNoteData = { share: s, note: n, shareUrl };
+  currentNoteData = { share: s, note: n, shareUrl: SITE_URL };
 
   // 渲染卡片：标题 + 标签在上方，笔记正文居中，二维码在右下角
   box.innerHTML=`
@@ -140,7 +138,7 @@ async function loadShare(){
 
   // 2) 绑定按钮事件
   document.getElementById("btnDownload").onclick = downloadCardAsImage;
-  document.getElementById("btnCopyLink").onclick = () => copyToClipboard(shareUrl, "分享链接已复制，去发给同学吧～");
+  document.getElementById("btnCopyLink").onclick = () => copyToClipboard(SITE_URL, "主站链接已复制，去发给同学吧～");
   document.getElementById("btnOpenSite").onclick = () => window.open(SITE_URL, "_blank");
  }catch(e){
   box.innerHTML=`<div class="share-card"><div class="share-error">笔记加载失败：${escapeHtml(e.message||"")}</div></div>`;

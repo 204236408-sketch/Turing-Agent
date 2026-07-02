@@ -275,12 +275,16 @@ def _decayed_wrong_count(records: list[AnswerRecord], now: datetime | None = Non
 
 
 def _load_records(db: Session, user_id: int, subject: str, knowledge_point: str) -> list[AnswerRecord]:
+    """加载用户在该知识点下的答题记录。
+    practice_only=True 的记录（来自宽松模式 / unverified 题）只作练习历史，不计入掌握度。
+    """
     return (
         db.query(AnswerRecord)
         .filter(
             AnswerRecord.user_id == user_id,
             AnswerRecord.subject == subject,
             AnswerRecord.knowledge_point == knowledge_point,
+            AnswerRecord.practice_only == False,
         )
         .order_by(AnswerRecord.create_time.asc(), AnswerRecord.id.asc())
         .all()

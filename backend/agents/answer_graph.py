@@ -68,6 +68,9 @@ def load_question(state: AnswerCheckState) -> dict:
             "options_json": question.options_json or [],
             "standard_answer": question.standard_answer,
             "explanation": question.explanation,
+            # 把质量标记透传给下游，让答题记录能识别"宽松模式自由发挥题"并降权
+            "quality_flag": question.quality_flag or "normal",
+            "is_verified": bool(question.is_verified),
         },
         "agent_steps": state.get("agent_steps", []) + [step],
     }
@@ -229,6 +232,9 @@ def update_answer_record(state: AnswerCheckState) -> dict:
     normalized = state.get("normalized_answer", "")
     feedback = state.get("feedback", "")
 
+    # unverified / 宽松模式自由发挥题：仅作练习记录，不计入掌握度
+    practice_only = (question.get("quality_flag") == "unverified") or (not question.get("is_verified"))
+
     record = AnswerRecord(
         user_id=user_id,
         question_id=question.get("id", 0),
@@ -238,6 +244,7 @@ def update_answer_record(state: AnswerCheckState) -> dict:
         standard_answer=question.get("standard_answer", ""),
         is_correct=is_correct,
         feedback=feedback,
+        practice_only=practice_only,
     )
     db.add(record)
     db.flush()
@@ -260,7 +267,7 @@ def update_answer_record(state: AnswerCheckState) -> dict:
             if not q.is_verified and (q.answer_count or 0) >= 3 and (q.correct_answer_count or 0) == (q.answer_count or 0):
                 q.is_verified = True
 
-    out = f"record_id={record.id}, correct={is_correct}"
+    out = f"record_id={record.id}, correct={is_correct}, practice_only={practice_only}"
     step = _make_step("update_answer_record", f"user_id={user_id}", out, "success", start)
     return {
         "answer_record_id": record.id,

@@ -22,7 +22,34 @@ from prompts.hallucination_guard_prompt import render_self_check_prompt
 logger = logging.getLogger("question_graph")
 
 _NODE_TIMEOUT = max(getattr(settings, "node_timeout_seconds", 60), 10)
-_SELF_CHECK_TIMEOUT = 15  # 单题自检超时（秒），超时按 uncertain 处理
+_SELF_CHECK_TIMEOUT = 8  # 单题自检超时（秒），超时按 uncertain 处理（速度优化：从 15 缩到 8）
+
+# 内存 LLM 出题缓存：相同 (subject, kp, difficulty, type, count) 组合在 5 分钟内复用结果。
+# 速度优化：用户在"智能出题"页面点"再来一组"或短时间内多入口同 KP 出题时避免重复打 LLM。
+_LLM_CACHE_TTL = 300  # 秒
+_LLM_CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def _llm_cache_get(key: tuple) -> dict | None:
+    import time as _t
+    hit = _LLM_CACHE.get(key)
+    if not hit:
+        return None
+    ts, data = hit
+    if _t.time() - ts > _LLM_CACHE_TTL:
+        _LLM_CACHE.pop(key, None)
+        return None
+    return data
+
+
+def _llm_cache_set(key: tuple, data: dict) -> None:
+    import time as _t
+    # 上限 200 条，避免长会话内存爆
+    if len(_LLM_CACHE) > 200:
+        # 简单清空最早的 50 条
+        for k in list(_LLM_CACHE.keys())[:50]:
+            _LLM_CACHE.pop(k, None)
+    _LLM_CACHE[key] = (_t.time(), data)
 
 _db_context: contextvars.ContextVar[Session | None] = contextvars.ContextVar("db", default=None)
 _GRAPH: StateGraph | None = None
@@ -44,12 +71,17 @@ def _load_seed_questions() -> list[dict]:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, list):
-            _SEED_QUESTIONS_CACHE = data
+            raw = data
         elif isinstance(data, dict):
             # 兼容 {"questions": [...]} 格式
-            _SEED_QUESTIONS_CACHE = data.get("questions", [])
+            raw = data.get("questions", [])
         else:
-            _SEED_QUESTIONS_CACHE = []
+            raw = []
+        # 加载时直接过滤元话术模板题，避免历史脏数据进入出题池
+        _SEED_QUESTIONS_CACHE = [it for it in raw if not _is_template_question(it)]
+        removed = len(raw) - len(_SEED_QUESTIONS_CACHE)
+        if removed:
+            logger.info("seed_questions.json 加载时过滤元话术模板题 %s 条", removed)
     except Exception as exc:
         logger.warning("加载 seed_questions.json 失败：%s", exc)
         _SEED_QUESTIONS_CACHE = []
@@ -59,11 +91,12 @@ def _load_seed_questions() -> list[dict]:
 def _pick_seed_questions(subject: str, knowledge_point: str, vt: str, count: int) -> list[dict]:
     """从种子题库按 (subject, knowledge_point, vt) 抽题。
 
-    四层匹配（按优先级）：
+    五层匹配（按优先级）：
     1) 精确匹配 (subject, kp, vt) — 首选
-    2) 模糊匹配 (subject, kp, 任意 vt) — 抽到后映射题型
-    3) 语义匹配 (subject) + 题干含 KP 关键词 — KP 命名在 seed 库中粒度不同（如"内存管理"含"页面置换"题）时兜底
-    4) 仍抽不到 → 返回空（让上层走通用模板兜底）
+    2) 模糊匹配 (subject, kp) 不限 vt
+    3) section 匹配 (subject, section == kp) — 前端常按小节名出题，seed 中 kp 存的是章节名
+    4) 语义匹配 (subject) + 题干含 KP 关键词 — KP 命名在 seed 库中粒度不同（如"内存管理"含"页面置换"题）时兜底
+    5) 仍抽不到 → 返回空（让上层走通用模板兜底）
 
     KP 在匹配前会去除括号后缀（(ISA)/(X86) 等），避免 OCR 推断出的 KP 与 seed 库不一致。
     """
@@ -97,7 +130,21 @@ def _pick_seed_questions(subject: str, knowledge_point: str, vt: str, count: int
     if fuzzy:
         return _shuffle_round_robin(fuzzy, count)
 
-    # 第 3 步：语义匹配（仅同 subject） + 题干含 KP 的关键概念词
+    # 第 3 步：按 section 字段匹配（解决 seed 中 kp=章节名、section=小节名 的场景）
+    section_match = [
+        dict(it) for it in pool
+        if it.get("subject") == subject_match
+        and _normalize_kp(it.get("section", "")) == kp_normalized
+    ]
+    if section_match:
+        # 如果要求具体 vt，优先取同 vt；否则不限 vt
+        if vt:
+            same_vt = [it for it in section_match if it.get("variant_type") == vt or it.get("question_type") == _vt_to_zh(vt)]
+            if same_vt:
+                return _shuffle_round_robin(same_vt, count)
+        return _shuffle_round_robin(section_match, count)
+
+    # 第 4 步：语义匹配（仅同 subject） + 题干含 KP 的关键概念词
     keywords = _kp_semantic_keywords(kp_normalized)
     if keywords:
         sem = [
@@ -106,7 +153,8 @@ def _pick_seed_questions(subject: str, knowledge_point: str, vt: str, count: int
             and any(kw in (it.get("question_text") or "") for kw in keywords)
         ]
         if sem:
-            return _shuffle_round_robin(sem, count)
+            same_vt = [it for it in sem if it.get("variant_type") == vt or it.get("question_type") == _vt_to_zh(vt)]
+            return _shuffle_round_robin(same_vt or sem, count)
 
     return []
 
@@ -121,62 +169,8 @@ def _normalize_kp(knowledge_point: str) -> str:
 
 
 def _choice_templates_for_kp(subject: str, kp_label: str) -> list[dict]:
-    """高质量选择题兜底模板：选项必须围绕真实考点，不使用泛化元话术。"""
-    normalized = _normalize_kp(kp_label)
-    if "浮点数表示与运算" in normalized:
-        return [
-            {
-                "stem": f"【{subject} · {kp_label}】关于浮点数阶码和尾数的表示，下列说法正确的是？",
-                "options": ["A. 阶码通常采用移码表示，尾数通常采用原码表示", "B. 阶码通常采用原码表示，尾数通常采用补码表示", "C. 阶码和尾数都必须采用补码表示", "D. 阶码和尾数都必须采用移码表示"],
-                "answer": "A",
-                "hints": ["先区分阶码和尾数的功能", "再回忆移码便于阶码大小比较"],
-                "explain": "浮点数中阶码采用移码便于比较大小，尾数采用原码表示有效数值部分。",
-                "easy": "易把定点数补码运算经验套到浮点数阶码/尾数，误认为二者都用补码。",
-            },
-            {
-                "stem": f"【{subject} · {kp_label}】浮点加减运算的一般处理顺序是？",
-                "options": ["A. 尾数加减 → 对阶 → 舍入 → 规格化", "B. 对阶 → 尾数加减 → 规格化 → 舍入", "C. 规格化 → 对阶 → 尾数加减 → 舍入", "D. 舍入 → 对阶 → 规格化 → 尾数加减"],
-                "answer": "B",
-                "hints": ["先让两个操作数阶码一致", "尾数运算后再规格化并舍入"],
-                "explain": "浮点加减先对阶，小阶向大阶看齐；随后进行尾数加减，再规格化和舍入。",
-                "easy": "易跳过对阶直接做尾数加减，或把规格化放到尾数运算之前。",
-            },
-            {
-                "stem": f"【{subject} · {kp_label}】关于 IEEE754 单精度浮点数格式，下列分段正确的是？",
-                "options": ["A. 1 位符号位、8 位阶码、23 位尾数", "B. 1 位符号位、11 位阶码、52 位尾数", "C. 8 位符号位、1 位阶码、23 位尾数", "D. 1 位符号位、5 位阶码、10 位尾数"],
-                "answer": "A",
-                "hints": ["先判断是单精度还是双精度", "单精度总长 32 位"],
-                "explain": "IEEE754 单精度 float 为 32 位：符号位 1 位、阶码 8 位、尾数 23 位。",
-                "easy": "易把单精度和双精度字段长度混淆，尤其把 11 位阶码、52 位尾数错套到 float。",
-            },
-        ]
-    if "页面置换算法" in normalized or "内存管理" in normalized:
-        return [
-            {
-                "stem": f"【{subject} · {kp_label}】下列页面置换算法中，可能出现 Belady 异常的是？",
-                "options": ["A. OPT 最优置换算法", "B. FIFO 先进先出算法", "C. LRU 最近最少使用算法", "D. 改进型 Clock 算法"],
-                "answer": "B",
-                "hints": ["先回忆 Belady 异常的典型算法", "再排除栈式算法"],
-                "explain": "FIFO 可能出现 Belady 异常；OPT 与 LRU 不会出现该异常。",
-                "easy": "易把 LRU 和 FIFO 的淘汰依据混淆。",
-            },
-            {
-                "stem": f"【{subject} · {kp_label}】LRU 页面置换算法选择淘汰的页面是？",
-                "options": ["A. 最早进入内存的页面", "B. 未来最长时间不会访问的页面", "C. 最近最长时间未被访问的页面", "D. 访问次数最少的页面"],
-                "answer": "C",
-                "hints": ["LRU 的 R 是 recent", "关注最近访问时间而不是进入时间"],
-                "explain": "LRU 淘汰最近最长时间未被访问的页面；FIFO 才关注进入内存的先后顺序。",
-                "easy": "易把 LRU 与 FIFO、LFU 混淆。",
-            },
-            {
-                "stem": f"【{subject} · {kp_label}】在页面访问序列模拟题中，判断是否缺页的关键依据是？",
-                "options": ["A. 当前访问页是否已经在页框中", "B. 当前访问页是否编号最小", "C. 当前访问页是否最早进入内存", "D. 当前访问页是否属于操作系统内核页"],
-                "answer": "A",
-                "hints": ["逐项检查页框当前内容", "命中时按算法更新状态"],
-                "explain": "访问页已经在页框中则命中，否则发生缺页，再按指定算法选择淘汰页。",
-                "easy": "易在页面命中时忘记更新 LRU 的最近访问顺序。",
-            },
-        ]
+    """选择题硬编码模板已废弃，保留空函数避免调用崩溃。
+    所有兜底路径都走 refusal 标记，由下游过滤 + 前端提示重试。"""
     return []
 
 
@@ -211,6 +205,23 @@ def _kp_semantic_keywords(knowledge_point: str) -> list[str]:
     return [knowledge_point]
 
 
+def _build_kp_keywords(knowledge_point: str) -> str:
+    """为 LLM prompt 构造 KP 关键词清单（逗号分隔）。
+    把 KP 名、归一化后的 KP 名、_KP_KEYWORDS 中的扩展关键词合并去重，
+    让 LLM 显式知道"必须围绕哪些词出题"，减少 KP 跑题率。"""
+    if not knowledge_point:
+        return ""
+    seen: list[str] = []
+    for kw in [knowledge_point, _normalize_kp(knowledge_point), *_kp_semantic_keywords(knowledge_point)]:
+        if not kw:
+            continue
+        kw_clean = str(kw).strip()
+        if not kw_clean or kw_clean in seen:
+            continue
+        seen.append(kw_clean)
+    return "、".join(seen[:12])
+
+
 def _vt_to_zh(vt: str) -> str:
     return {"choice": "选择题", "fill": "填空题", "essay": "简答题", "comprehensive": "综合题"}.get(vt, "选择题")
 
@@ -235,10 +246,116 @@ def _get_db() -> Session | None:
 
 def _to_variant_type(question_type: str) -> str:
     mapping = {
-        "选择题": "choice", "填空题": "fill", "简答题": "essay", "综合题": "comprehensive", "混合": "choice",
+        "选择题": "choice", "填空题": "fill", "简答题": "essay", "综合题": "comprehensive", "混合": "mixed",
         "choice": "choice", "fill": "fill", "essay": "essay", "comprehensive": "comprehensive",
     }
     return mapping.get(question_type, "choice")
+
+
+def _all_questions_refused(questions: list[dict]) -> bool:
+    if not questions:
+        return True
+    return all("__REFUSAL__" in str(it.get("question_text", "")) for it in questions)
+
+
+def _call_llm_for_questions(
+    *,
+    subject: str,
+    knowledge_point: str,
+    difficulty: str,
+    question_type: str,
+    count: int,
+    kp_status: str,
+    mistake_summary: str,
+    misconception_profile: dict,
+    mode: str,
+    kb_context: str,
+    reference_text: str,
+    reference_answer: str,
+    strict_kb: bool,
+    fallback_data: dict,
+    kp_keywords: str = "",
+):
+    """统一封装 LLM 出题调用，使用 ThreadPoolExecutor 限制超时。"""
+    from prompts.question_prompt import render_question_prompt
+
+    if not kp_keywords:
+        kp_keywords = _build_kp_keywords(knowledge_point)
+
+    # 速度优化：缓存命中直接返回，避免重复打 LLM。
+    # kb_context / reference_text 太长不进 key（避免哈希开销），只取前后 32 字符 + 长度作为指纹。
+    kb_fingerprint = (kb_context[:32] + "|" + str(len(kb_context))) if kb_context else ""
+    ref_fingerprint = (reference_text[:32] + "|" + str(len(reference_text))) if reference_text else ""
+    cache_key = (
+        subject, knowledge_point, difficulty, question_type, count,
+        kb_fingerprint, ref_fingerprint, kp_keywords,
+    )
+    cached = _llm_cache_get(cache_key)
+    if cached:
+        logger.info("[llm-cache hit] %s/%s/%s/%s×%d", subject, knowledge_point, question_type, difficulty, count)
+        # 命中时 copy 一份 questions 列表，避免外部修改污染缓存
+        import copy as _copy
+        return LLMResult(
+            content="cached",
+            used_llm=True,
+            error="",
+            data=_copy.deepcopy(cached),
+        )
+
+    prompt = render_question_prompt(
+        subject=subject,
+        knowledge_point=knowledge_point,
+        difficulty=difficulty,
+        question_type=question_type,
+        count=count,
+        kp_status=kp_status,
+        mistake_summary=mistake_summary,
+        misconception_profile=json.dumps(misconception_profile, ensure_ascii=False),
+        recommend_mode=mode or "自由选择",
+        kb_context=kb_context,
+        reference_text=reference_text,
+        reference_answer=reference_answer,
+        strict_kb=strict_kb,
+        kp_keywords=kp_keywords,
+    )
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            chat_json,
+            [
+                {
+                    "role": "system",
+                    "content": "你是 408 考研命题教师。所有事实必须基于用户给出的【知识库参考资料】；未引用即不合格。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            fallback_data,
+        )
+        try:
+            result = future.result(timeout=_NODE_TIMEOUT)
+            # 写入缓存（仅缓存 LLM 成功响应）
+            if result.used_llm and (result.data or {}).get("questions"):
+                _llm_cache_set(cache_key, result.data or {"questions": []})
+            return result
+        except FutureTimeout:
+            pool.shutdown(wait=False)
+            logger.error("[timeout] generate_questions: LLM timed out after %ds", _NODE_TIMEOUT)
+            return LLMResult(
+                content="",
+                used_llm=False,
+                error=f"timed out after {_NODE_TIMEOUT}s",
+                data=fallback_data,
+            )
+
+
+def _vt_for_index(vt: str, index: int) -> str:
+    if vt != "mixed":
+        return vt
+    cycle = ["choice", "fill", "essay", "choice", "comprehensive"]
+    return cycle[index % len(cycle)]
+
+
+def _qtype_for_vt(vt: str, fallback: str = "选择题") -> str:
+    return _vt_to_zh(vt) if vt != "mixed" else fallback
 
 
 def _kp_point_name(point: KnowledgePoint) -> str:
@@ -356,6 +473,36 @@ def _rank_target_points(db: Session, user_id: int, subject: str, points: list[Kn
     return picked[: max(1, min(count, len(picked)))]
 
 
+def _resolve_difficulty(db: Session | None, user_id: int, subject: str, target_points: list[str], difficulty: str) -> str:
+    requested = (difficulty or "中等").strip()
+    if requested != "自适应":
+        return requested if requested in {"简单", "中等", "较难", "困难"} else "中等"
+    if not db or not user_id or not subject or not target_points:
+        return "中等"
+    rows = (
+        db.query(KnowledgeMastery)
+        .filter(
+            KnowledgeMastery.user_id == user_id,
+            KnowledgeMastery.subject == subject,
+            KnowledgeMastery.knowledge_point.in_(target_points),
+        )
+        .all()
+    )
+    if not rows:
+        return "中等"
+    weak = max(float(row.weak_score or 0) for row in rows)
+    total_answers = sum(int(row.total_answer_count or 0) for row in rows)
+    total_correct = sum(int(row.correct_count or 0) for row in rows)
+    status_set = {row.final_status for row in rows}
+    if weak >= 6 or status_set & {"薄弱点", "不会"}:
+        return "简单"
+    if weak >= 3 or "不熟" in status_set:
+        return "中等"
+    if total_answers >= 5 and total_correct / max(total_answers, 1) >= 0.8:
+        return "较难"
+    return "中等"
+
+
 def _resolve_generation_target(state: QuestionState) -> dict:
     db = _get_db()
     user_id = state.get("user_id", 0)
@@ -411,12 +558,14 @@ def _build_target_fallback(state: QuestionState, vt: str, subject: str, count: i
         return _build_fallback(vt, subject, "", count)
     out: list[dict] = []
     per_target = max(1, (count + len(targets) - 1) // len(targets))
-    pools = {target: _build_fallback(vt, subject, target, per_target) for target in targets}
     for i in range(count):
         target = targets[i % len(targets)]
-        pool = pools.get(target) or _build_fallback(vt, subject, target, 1)
+        item_vt = _vt_for_index(vt, i)
+        pool = _build_fallback(item_vt, subject, target, per_target)
         item = dict(pool[(i // len(targets)) % len(pool)])
         item["target_knowledge_point"] = target
+        item["_variant_type"] = item_vt
+        item["_question_type"] = _qtype_for_vt(item_vt)
         out.append(item)
     return out
 
@@ -485,6 +634,16 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
     if count <= 0:
         return []
 
+    if vt == "mixed":
+        out: list[dict] = []
+        for i in range(count):
+            item_vt = _vt_for_index(vt, i)
+            item = dict(_build_fallback(item_vt, subject, knowledge_point, 1)[0])
+            item["_variant_type"] = item_vt
+            item["_question_type"] = _qtype_for_vt(item_vt)
+            out.append(item)
+        return out
+
     # KP 归一化
     kp_normalized = _normalize_kp(knowledge_point)
 
@@ -493,84 +652,27 @@ def _build_fallback(vt: str, subject: str, knowledge_point: str, count: int) -> 
     if picked and len(picked) >= count:
         return picked[:count]
 
-    # 3：题型通用模板（仅作兜底，标 quality_flag=deprecated 阻断其进入参考池）
-    #    模板中的 KP 显示为归一化后的名字（去除 (ISA) 等括号后缀），更干净
-    if vt == "fill":
-        return [
-            {
-                "question_text": f"【{subject} · {kp_normalized}】请填空：{kp_normalized} 的核心定义是什么？",
-                "standard_answer": f"{kp_normalized} 的标准定义（根据教材）",
-                "explanation": f"本题考查 {kp_normalized} 的概念理解，需完整表述。",
-                "hints": ["先回忆教材定义。", "注意关键词不能遗漏。"],
-                "quality_flag": "deprecated",
-            } for _ in range(count)
-        ]
-    if vt == "essay":
-        return [
-            {
-                "question_text": f"【{subject} · {kp_normalized}】请简要分析 {kp_normalized} 在 408 中的考查方式。",
-                "standard_answer": f"{kp_normalized} 通常考查：概念理解、过程推导、边界条件辨析。",
-                "explanation": f"408 对 {kp_normalized} 的考查兼顾定义理解和应用能力。",
-                "hints": ["从概念、过程和边界三个维度回答。", "结合一道典型题目说明。"],
-                "quality_flag": "deprecated",
-            } for _ in range(count)
-        ]
-    if vt == "comprehensive":
-        return [
-            {
-                "question_text": f"【{subject} · {kp_normalized}】综合题",
-                "sub_questions": [
-                    {"title": f"简述 {kp_normalized} 的基本概念。", "standard_answer": f"{kp_normalized} 是 {subject} 中的重要知识点。"},
-                    {"title": f"在实际题目中，{kp_normalized} 的常见考法有哪些？", "options": ["A. 概念辨析", "B. 过程计算", "C. 边界条件", "D. 以上都是"], "standard_answer": "D"},
-                ],
-                "explanation": f"综合题考查 {kp_normalized} 的多角度理解。",
-                "hints": ["先回答概念部分。", "再分析具体应用。"],
-                "quality_flag": "deprecated",
-            } for _ in range(count)
-        ]
-    # choice 的兜底：使用选择题通用模板（避免返回空列表导致前端无可用题）
-    # 注：模板必须保证 count 道题彼此不同（题干问法/选项内容/答案都要有变化），
-    #     否则会被下游 dedup 标记为重复,导致「3 道题一模一样」的现象
-    kp_label = (kp_normalized or "该知识点").strip() or "该知识点"
-    sub_label = (subject or "408 考研").strip() or "408 考研"
-    choice_templates = _choice_templates_for_kp(sub_label, kp_label) or [
-        {
-            "stem": f"【{sub_label} · {kp_label}】下列关于 {kp_label} 的核心概念，说法最准确的一项是？",
-            "options": ["A. 仅考查定义背诵", "B. 兼顾概念理解与边界条件辨析", "C. 只考计算过程", "D. 只考综合应用"],
-            "answer": "B",
-            "hints": [f"先回忆 {kp_label} 的核心定义。", "再考虑定义成立的前提条件。"],
-            "explain": f"本题考查 {kp_label} 的概念理解与适用条件，408 历年真题多从「定义+边界」角度设问。",
-        },
-        {
-            "stem": f"【{sub_label} · {kp_label}】关于 {kp_label} 的过程/步骤，下列描述中正确的是？",
-            "options": ["A. 仅有 1 个固定步骤", "B. 步骤顺序不可调整", "C. 包含多个有序子过程，且依赖关系明确", "D. 步骤之间无任何关联"],
-            "answer": "C",
-            "hints": [f"画出 {kp_label} 的执行流程图。", "标注每一步的前后依赖。"],
-            "explain": f"{kp_label} 通常由若干有序子过程构成，理解子过程之间的依赖是解题关键。",
-        },
-        {
-            "stem": f"【{sub_label} · {kp_label}】在 408 历年真题中，关于 {kp_label} 的典型命题方向是？",
-            "options": ["A. 仅以选择题形式出现", "B. 仅以大题形式出现", "C. 选择题与大题均常见，且常结合其他考点综合命题", "D. 不属于 408 考纲范围"],
-            "answer": "C",
-            "hints": ["回顾近 5 年真题。", "留意 {kp_label} 的常见组合考点。".format(kp_label=kp_label)],
-            "explain": f"408 命题对 {kp_label} 的考查兼顾选择与大题，且常与相近考点联合出题，复习时需注意知识体系。",
-        },
-    ]
+    # 3：不再使用任何模板题（选择题、填空、简答、综合的元话术模板都已弃用）。
+    # 没有真实题目时直接返回 refusal 占位题，由下游过滤掉，前端会展示
+    # “当前网络问题，请稍后重试”，避免把元话术题塞给用户。
     out: list[dict] = list(picked or [])
-    for i in range(count):
-        if len(out) >= count:
-            break
-        t = choice_templates[i % len(choice_templates)]
+    for _ in range(count):
         out.append({
-            "question_text": t["stem"],
-            "options": list(t["options"]),
-            "standard_answer": t["answer"],
-            "explanation": t["explain"],
-            "hints": list(t["hints"]),
-            "easy_mistakes": f"易把 {kp_label} 的概念理解片面化，请注意概念成立的前提与边界。",
+            "question_text": "__REFUSAL__",
+            "options": [],
+            "standard_answer": "",
+            "explanation": "当前网络问题，请稍后重试。",
+            "hints": [],
+            "easy_mistakes": "",
             "quality_flag": "deprecated",
         })
     return out
+
+
+def _structured_templates_for_kp(vt: str, subject: str, kp_label: str, count: int) -> list[dict]:
+    """填/简答/综合题硬编码模板已废弃，保留空函数避免调用崩溃。
+    所有兜底路径都走 refusal 标记，由下游过滤 + 前端提示重试。"""
+    return []
 
 
 def _with_target_prefix(text: str, subject: str, knowledge_point: str) -> str:
@@ -666,6 +768,220 @@ def _get_user_recent_mistakes(state: QuestionState, limit: int = 5) -> str:
     return "\n".join(lines)
 
 
+def _build_misconception_profile(state: QuestionState, limit: int = 5) -> dict:
+    """Build a compact error-pattern profile that can be turned into distractors."""
+    db = _get_db()
+    user_id = state.get("user_id", 0)
+    subject = state.get("subject", "")
+    knowledge_point = state.get("knowledge_point", "")
+    target_points = state.get("target_points", []) or [knowledge_point]
+    if not db or not user_id or not subject or not target_points:
+        return {"items": [], "summary": "无"}
+
+    try:
+        from models import Mistake
+        rows = (
+            db.query(Mistake)
+            .filter(
+                Mistake.user_id == user_id,
+                Mistake.subject == subject,
+                Mistake.knowledge_point.in_(target_points),
+                Mistake.status == "active",
+            )
+            .order_by(Mistake.create_time.desc())
+            .limit(limit)
+            .all()
+        )
+    except Exception:
+        return {"items": [], "summary": "无"}
+
+    items = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        error_type = (row.error_type or "未分类").strip()
+        reason = (row.error_reason or "").strip()
+        key = (error_type, reason[:40])
+        if key in seen:
+            continue
+        seen.add(key)
+        trap = _trap_option_for_error(error_type, reason, row.knowledge_point or knowledge_point)
+        items.append({
+            "error_type": error_type,
+            "error_reason": reason[:120],
+            "trap_option": trap,
+            "target_hint": _target_hint_for_error(error_type),
+        })
+
+    if not items:
+        return {"items": [], "summary": "无"}
+    summary = "；".join(f"{it['error_type']} -> {it['trap_option']}" for it in items[:3])
+    return {"items": items[:3], "summary": summary}
+
+
+def _target_hint_for_error(error_type: str) -> str:
+    if "审题" in error_type:
+        return "干扰项应故意忽略题干条件或边界。"
+    if "计算" in error_type:
+        return "干扰项应体现漏算初始状态、少一步更新或边界次数错误。"
+    if "步骤" in error_type:
+        return "干扰项应跳过关键状态更新或把步骤顺序颠倒。"
+    if "规则" in error_type or "概念" in error_type:
+        return "干扰项应混淆相近概念、规则适用条件或判定依据。"
+    if "遗忘" in error_type:
+        return "干扰项应使用看似熟悉但条件错误的记忆点。"
+    return "干扰项应贴近用户最近错因，而不是使用无关选项。"
+
+
+def _trap_option_for_error(error_type: str, reason: str, knowledge_point: str) -> str:
+    text = f"{error_type} {reason} {knowledge_point}"
+    if any(word in text for word in ("页面置换", "LRU", "FIFO", "缺页", "页框")):
+        if "FIFO" in text or "LRU" in text or "规则" in error_type or "概念" in error_type:
+            return "LRU 与 FIFO 的淘汰依据相同，都是淘汰最早进入内存的页面"
+        if "命中" in text or "步骤" in error_type:
+            return "页面命中时不需要更新 LRU 的最近访问顺序"
+        if "计算" in error_type or "缺页" in text:
+            return "只有发生页面置换时才算缺页，初始装入页面不计入缺页次数"
+        return "发生缺页时一定会执行页面置换，不需要判断是否还有空闲页框"
+    if "TCP" in text or "传输层" in text:
+        if "顺序" in text or "步骤" in error_type:
+            return "TCP 建立连接和释放连接的报文顺序可以互换，只要最终确认即可"
+        return "TIME_WAIT 只用于释放本地端口，与旧报文段消失和最后 ACK 重传无关"
+    if "二叉树" in text or "遍历" in text:
+        return "只要给出前序和后序序列，就一定能唯一确定任意二叉树"
+    if "Cache" in text or "存储" in text:
+        return "Cache 命中率计算只看 Cache 容量，不需要考虑映射方式和块内地址"
+    if "审题" in error_type:
+        return "忽略题干给出的限制条件，直接套用最常见结论即可"
+    if "计算" in error_type:
+        return "只计算发生替换的次数，不需要统计初始状态或边界步骤"
+    if "步骤" in error_type:
+        return "中间状态不必逐步更新，只要最后结论形式正确即可"
+    if "规则" in error_type or "概念" in error_type:
+        return f"{knowledge_point} 的相近概念可以直接互换使用"
+    return f"只记住 {knowledge_point} 的名称即可，不需要判断条件和边界"
+
+
+def _llm_generate_trap_options_async(
+    subject: str,
+    knowledge_point: str,
+    items: list[dict],
+):
+    """速度优化：让 LLM 生成 trap_option 的调用立即返回 future，由调用方在主 LLM 完成后 join，
+    实现 trap LLM 与主 LLM 并行。
+    返回 None 表示"错因 < 2 或无可调 LLM"，调用方应跳过 join。"""
+    if not items or len(items) < 2 or not subject or not knowledge_point:
+        return None
+    try:
+        from prompts.question_prompt import render_trap_options_prompt
+        prompt = render_trap_options_prompt(subject=subject, knowledge_point=knowledge_point, items=items)
+    except Exception as exc:
+        logger.warning("render_trap_options_prompt 不可用：%s", exc)
+        return None
+
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="trap")
+    future = pool.submit(
+        chat_json,
+        [
+            {"role": "system", "content": "你是 408 考研命题教师。只输出 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        {"traps": [{"error_type": it.get("error_type", ""), "trap_option": it.get("trap_option", "")} for it in items]},
+    )
+    # 把 pool 挂到 future 上供 join 时 shutdown
+    future._trap_pool = pool
+    return future
+
+
+def _llm_generate_trap_options(
+    subject: str,
+    knowledge_point: str,
+    items: list[dict],
+    preheated_future=None,
+) -> list[dict]:
+    """让 LLM 为每个错因生成针对该知识点的"看似合理但实际错误"干扰项文本。
+    仅当 LLM 成功时覆盖原 trap_option；失败/超时则保持硬编码默认值。
+    preheated_future: 由 _llm_generate_trap_options_async 预先提交的 future，传入时直接 join。
+    """
+    if not items:
+        return items
+    if preheated_future is None:
+        preheated_future = _llm_generate_trap_options_async(subject, knowledge_point, items)
+    if preheated_future is None:
+        return items
+
+    try:
+        result = preheated_future.result(timeout=_NODE_TIMEOUT)
+    except FutureTimeout:
+        logger.info("LLM 生成 trap_option 超时，回退硬编码")
+        return items
+    except Exception as exc:
+        logger.info("LLM 生成 trap_option 异常：%s", exc)
+        return items
+    finally:
+        pool = getattr(preheated_future, "_trap_pool", None)
+        if pool:
+            try:
+                pool.shutdown(wait=False)
+            except Exception:
+                pass
+
+    traps_raw = ((result.data or {}).get("traps") or []) if result.used_llm else []
+    if not traps_raw:
+        return items
+
+    by_type = {str(t.get("error_type", "")).strip(): str(t.get("trap_option", "")).strip() for t in traps_raw if t.get("error_type")}
+    for it in items:
+        et = str(it.get("error_type", "")).strip()
+        new_text = by_type.get(et)
+        if new_text and len(new_text) <= 200:
+            it["trap_option"] = new_text
+    return items
+
+
+def _apply_misconception_traps(
+    raw_questions: list[dict],
+    profile: dict,
+    subject: str = "",
+    knowledge_point: str = "",
+    trap_future=None,
+) -> list[dict]:
+    items = (profile or {}).get("items") or []
+    if not raw_questions or not items:
+        return raw_questions
+
+    # 优先让 LLM 为每个错因生成针对该知识点的"陷阱选项"；失败时回退到硬编码。
+    # 速度优化：trap_future 由调用方在主 LLM 之前预热，此处 join 即可。
+    items = _llm_generate_trap_options(subject, knowledge_point, items, preheated_future=trap_future)
+
+    trap_index = 0
+    for q in raw_questions:
+        options = q.get("options") or []
+        if not isinstance(options, list) or len(options) < 2:
+            continue
+        answer = str(q.get("standard_answer", "")).strip().upper()
+        if answer not in {"A", "B", "C", "D"}:
+            continue
+        trap = items[trap_index % len(items)]
+        trap_text = trap.get("trap_option") or ""
+        if not trap_text:
+            continue
+        answer_idx = ord(answer) - ord("A")
+        replace_idx = next((i for i in range(len(options)) if i != answer_idx), None)
+        if replace_idx is None:
+            continue
+        label = chr(ord("A") + replace_idx)
+        options[replace_idx] = f"{label}. {trap_text}"
+        q["options"] = options
+        existing_easy = (q.get("easy_mistakes") or "").strip()
+        addition = f"针对最近错因「{trap.get('error_type', '未分类')}」设置干扰项：{trap_text}。"
+        q["easy_mistakes"] = f"{existing_easy} {addition}".strip()[:500]
+        explanation = (q.get("explanation") or "").strip()
+        if trap_text not in explanation:
+            q["explanation"] = f"{explanation} 干扰项“{trap_text}”错在：{trap.get('target_hint', '没有满足题干条件。')}".strip()
+        trap_index += 1
+    return raw_questions
+
+
 def _cosine_sim(a: list[float], b: list[float]) -> float:
     """计算两个向量的余弦相似度。空向量返回 0。"""
     if not a or not b or len(a) != len(b):
@@ -746,6 +1062,45 @@ def _has_generic_bad_options(options: list[Any]) -> bool:
     return any(phrase in joined for phrase in bad_phrases)
 
 
+# 元话术模板题的特征：题面/解析/易错点直接描述考点类型、考查方式或复习策略，
+# 而不是具体知识点内容。这类题目直接被过滤掉，避免展示给用户。
+_TEMPLATE_BAD_PATTERNS: tuple[str, ...] = (
+    "的复习应优先围绕",
+    "的核心内容及一个常见易错点",
+    "完成下列小问",
+    "易只写概念名称，缺少条件、流程或对比说明",
+    "易把综合题答成单句定义，缺少分层说明",
+    "易只背",
+    "请注意概念成立的前提与边界",
+    "易把 .* 的概念理解片面化",
+    # 增量：seed 题库里的"X 的核心考查对象通常包括：____"模板（填空题元话术）
+    "的核心考查对象通常包括",
+    "的考点通常包括",
+    "的高频考点为",
+    "的常见考法包括",
+    "的常见考点包括",
+    "应围绕关键词",
+    "应重点关注",
+    "应掌握的核心是",
+    "出题角度通常为",
+    "的常见出题形式",
+)
+
+
+def _is_template_question(item: dict) -> bool:
+    """检测元话术模板题：题面、解析、易错点出现模板特征短语。"""
+    text = "\n".join(
+        [
+            str(item.get("question_text", "")),
+            str(item.get("standard_answer", "")),
+            str(item.get("explanation", "")),
+            str(item.get("easy_mistakes", "")),
+            "\n".join(str(h) for h in item.get("hints", []) or []),
+        ]
+    )
+    return any(pat in text for pat in _TEMPLATE_BAD_PATTERNS)
+
+
 def analyze_user_state(state: QuestionState) -> dict:
     user_id = state.get("user_id", 0)
     subject = state.get("subject", "")
@@ -755,11 +1110,13 @@ def analyze_user_state(state: QuestionState) -> dict:
 
     mastery_text = _get_mastery_text(state)
     mistake_summary = _get_user_recent_mistakes(state, limit=5)
-    out = f"user_id={user_id}, mode={mode}, {mastery_text}"
+    misconception_profile = _build_misconception_profile(state, limit=5)
+    out = f"user_id={user_id}, mode={mode}, {mastery_text}, traps={len(misconception_profile.get('items', []))}"
     step = _make_step("analyze_user_state", f"user_id={user_id}, mode={mode}", out, "success", start)
     return {
         "mastery_text": mastery_text,
         "mistake_summary": mistake_summary,
+        "misconception_profile": misconception_profile,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -773,16 +1130,25 @@ def select_target(state: QuestionState) -> dict:
     target_info = _resolve_generation_target(state)
     target_points = target_info.get("target_points", [])
     prompt_kp = target_info.get("prompt_knowledge_point") or knowledge_point
+    resolved_difficulty = _resolve_difficulty(
+        _get_db(),
+        state.get("user_id", 0),
+        subject,
+        target_points or [knowledge_point],
+        difficulty,
+    )
 
     step = _make_step(
         "select_target",
         f"subject={subject}, kp={knowledge_point}",
-        f"type={question_type}, diff={difficulty}, targets={target_points or [knowledge_point]}",
+        f"type={question_type}, diff={difficulty}->{resolved_difficulty}, targets={target_points or [knowledge_point]}",
         "success",
         start,
     )
     return {
         **target_info,
+        "difficulty": resolved_difficulty,
+        "requested_difficulty": difficulty,
         "prompt_knowledge_point": prompt_kp,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
@@ -797,7 +1163,7 @@ def retrieve_question_context(state: QuestionState) -> dict:
 
     context = []
     if db and subject and target_points:
-        # 只参考"已验证 + 质量分 ≥ 60"的题，避免 LLM 自噬 + 排除被反馈有误的题
+        # 只参考"已验证 + 质量分 ≥ 60 + 未被多用户标错"的题，避免 LLM 自噬 + 排除被反馈有误的题
         existing = (
             db.query(Question)
             .filter(
@@ -805,8 +1171,9 @@ def retrieve_question_context(state: QuestionState) -> dict:
                 Question.knowledge_point.in_(target_points),
                 Question.is_deleted == False,
                 Question.is_verified == True,
-                Question.quality_flag != "deprecated",
+                Question.quality_flag == "normal",
                 Question.quality_score >= 60,
+                (Question.reported_count == None) | (Question.reported_count < 2),
             )
             .order_by(Question.quality_score.desc(), Question.create_time.desc())
             .limit(3)
@@ -840,7 +1207,11 @@ def _build_rag_text(state: QuestionState) -> tuple[str, list[str]]:
                 subject_filter=subject,
                 kp_filter=target,
             )
-            raw_docs = (rag_result or {}).get("documents", [])[:2]
+            raw_docs = (
+                (rag_result or {}).get("documents")
+                or (rag_result or {}).get("items")
+                or []
+            )[:2]
             for d in raw_docs:
                 if isinstance(d, dict):
                     docs.append(d.get("content", "") or d.get("text", ""))
@@ -889,8 +1260,17 @@ def generate_questions_node(state: QuestionState) -> dict:
     context = state.get("context", [])
     mastery_text = state.get("mastery_text", "暂无掌握度数据")
     mistake_summary = state.get("mistake_summary", "无历史错题")
+    misconception_profile = state.get("misconception_profile", {"items": [], "summary": "无"})
     vt = _to_variant_type(question_type)
     fallback_data = {"questions": _build_target_fallback(state, vt, subject, count)}
+
+    # 速度优化：trap_option LLM 与主 LLM 并行预热。主 LLM 通常 5~10s，
+    # 提前让 trap LLM 在后台跑，等主 LLM 完成后 join 时大概率已就绪。
+    trap_future = _llm_generate_trap_options_async(
+        subject=subject,
+        knowledge_point=knowledge_point,
+        items=(misconception_profile or {}).get("items") or [],
+    )
 
     # 1. 知识库 RAG（注入 prompt 用作事实约束）
     rag_text, rag_docs = _build_rag_text(state)
@@ -898,76 +1278,224 @@ def generate_questions_node(state: QuestionState) -> dict:
     # 2. 题库参考（已 verified 的种子题）
     bank_text = _build_question_bank_text(context)
 
-    # 3. 用新 prompt 模板组装（带 hallucination 约束、kb_ref 强制、难度量化）
+    # 3. 检测知识库是否为空：为空时启用宽松模式，允许 LLM 基于通用考纲出题
+    has_kb = bool((rag_text + bank_text).strip())
+    loose_mode = not has_kb
+    kb_context = (rag_text + bank_text).strip() or "（知识库与题库均无内容）"
+
+    # 4. 用新 prompt 模板组装（带 hallucination 约束、kb_ref 强制、难度量化）
     from prompts.question_prompt import render_question_prompt
-    kb_context = (rag_text + bank_text).strip() or "（知识库与题库均无内容，请在 question_text 写 __REFUSAL__）"
+    prompt_question_type = "选择题" if question_type == "混合" else question_type
     prompt = render_question_prompt(
         subject=subject,
         knowledge_point=knowledge_point,
         difficulty=difficulty,
-        question_type=question_type,
+        question_type=prompt_question_type,
         count=count,
         kp_status=mastery_text,
         mistake_summary=mistake_summary,
+        misconception_profile=json.dumps(misconception_profile, ensure_ascii=False),
         recommend_mode=mode or "自由选择",
         kb_context=kb_context,
         reference_text=state.get("reference_text", "") or "",
         reference_answer=state.get("reference_answer", "") or "",
+        strict_kb=not loose_mode,
     )
 
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(
-            chat_json,
-            [
-                {
-                    "role": "system",
-                    "content": "你是 408 考研命题教师。所有事实必须基于用户给出的【知识库参考资料】；未引用即不合格。",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            fallback_data,
+    if vt == "mixed":
+        # 混合题型也走 LLM：把每道题的题型拆开传给 LLM，避免依赖本地种子题库
+        mixed_items: list[dict] = []
+        cycle = ["choice", "fill", "essay", "choice", "comprehensive"]
+        per_type_counts: dict[str, int] = {}
+        for i in range(count):
+            item_vt = cycle[i % len(cycle)]
+            per_type_counts[item_vt] = per_type_counts.get(item_vt, 0) + 1
+        mixed_llm = LLMResult(content="", used_llm=False, error="", data={"questions": []})
+        # 速度优化：mixed 题型的 4 个子题型 LLM 调用改为 ThreadPoolExecutor 并行
+        sub_args = []
+        for sub_vt, sub_count in per_type_counts.items():
+            sub_type = {"choice": "选择题", "fill": "填空题", "essay": "简答题", "comprehensive": "综合题"}.get(sub_vt, "选择题")
+            sub_args.append((sub_vt, sub_type, sub_count))
+        with ThreadPoolExecutor(max_workers=min(4, len(sub_args))) as pool:
+            futures = {
+                pool.submit(
+                    _call_llm_for_questions,
+                    subject=subject,
+                    knowledge_point=knowledge_point,
+                    difficulty=difficulty,
+                    question_type=sub_type,
+                    count=sub_count,
+                    kp_status=mastery_text,
+                    mistake_summary=mistake_summary,
+                    misconception_profile=misconception_profile,
+                    mode=mode,
+                    kb_context=kb_context,
+                    reference_text=state.get("reference_text", "") or "",
+                    reference_answer=state.get("reference_answer", "") or "",
+                    strict_kb=not loose_mode,
+                    fallback_data={"questions": []},
+                ): (sub_vt, sub_type)
+                for sub_vt, sub_type, sub_count in sub_args
+            }
+            for fut, (sub_vt, _sub_type) in futures.items():
+                try:
+                    sub_llm = fut.result(timeout=_NODE_TIMEOUT)
+                except Exception as exc:
+                    logger.warning("mixed 子题型 %s LLM 并行调用失败：%s", sub_vt, exc)
+                    sub_llm = LLMResult(content="", used_llm=False, error=str(exc), data={"questions": []})
+                sub_questions = (sub_llm.data or {}).get("questions") or []
+                for q in sub_questions:
+                    q["_variant_type"] = sub_vt
+                mixed_items.extend(sub_questions)
+                if sub_llm.used_llm:
+                    mixed_llm.used_llm = True
+                if sub_llm.error and not mixed_llm.error:
+                    mixed_llm.error = sub_llm.error
+        mixed_llm.data = {"questions": mixed_items}
+        llm = mixed_llm
+    else:
+        llm = _call_llm_for_questions(
+            subject=subject,
+            knowledge_point=knowledge_point,
+            difficulty=difficulty,
+            question_type=prompt_question_type,
+            count=count,
+            kp_status=mastery_text,
+            mistake_summary=mistake_summary,
+            misconception_profile=misconception_profile,
+            mode=mode,
+            kb_context=kb_context,
+            reference_text=state.get("reference_text", "") or "",
+            reference_answer=state.get("reference_answer", "") or "",
+            strict_kb=not loose_mode,
+            fallback_data=fallback_data,
         )
-        try:
-            llm = future.result(timeout=_NODE_TIMEOUT)
-        except FutureTimeout:
-            pool.shutdown(wait=False)
-            logger.error("[timeout] generate_questions: LLM timed out after %ds", _NODE_TIMEOUT)
-            llm = LLMResult(content="", used_llm=False, error=f"timed out after {_NODE_TIMEOUT}s", data=fallback_data)
 
     raw_questions = (llm.data or fallback_data).get("questions") or fallback_data["questions"]
     raw_questions = _unique_question_items(raw_questions)
 
-    # 最终兜底：如果 LLM 和 fallback 加起来都不足 count 道，用 _build_fallback 补齐（choice 类型已有通用模板）
-    if len(raw_questions) < count:
+    # LLM 保底出题：题数不足时再次调用 LLM 补齐，不使用元话术模板兜底
+    if len(raw_questions) < count and not _all_questions_refused(raw_questions):
         need = count - len(raw_questions)
-        supplemental = _build_target_fallback(state, vt, subject, count + need)
-        existing = {_question_identity(item) for item in raw_questions}
-        additions = [item for item in supplemental if _question_identity(item) not in existing]
-        if additions:
-            raw_questions = list(raw_questions) + additions[:need]
-            logger.info("LLM+seed 不足 %d 道，已用通用模板补足 %d 道", count, len(additions[:need]))
+        if vt == "mixed":
+            # mixed 题型按 cycle 拆分补题请求，速度优化：4 个子题型并行调 LLM
+            cycle = ["choice", "fill", "essay", "choice", "comprehensive"]
+            per_type_counts: dict[str, int] = {}
+            for i in range(need):
+                item_vt = cycle[(len(raw_questions) + i) % len(cycle)]
+                per_type_counts[item_vt] = per_type_counts.get(item_vt, 0) + 1
+            sub_args = []
+            for sub_vt, sub_count in per_type_counts.items():
+                sub_type = {"choice": "选择题", "fill": "填空题", "essay": "简答题", "comprehensive": "综合题"}.get(sub_vt, "选择题")
+                sub_args.append((sub_vt, sub_type, sub_count))
+            with ThreadPoolExecutor(max_workers=min(4, len(sub_args))) as pool:
+                futures = {
+                    pool.submit(
+                        _call_llm_for_questions,
+                        subject=subject,
+                        knowledge_point=knowledge_point,
+                        difficulty=difficulty,
+                        question_type=sub_type,
+                        count=sub_count,
+                        kp_status=mastery_text,
+                        mistake_summary=mistake_summary,
+                        misconception_profile=misconception_profile,
+                        mode=mode,
+                        kb_context=kb_context,
+                        reference_text=state.get("reference_text", "") or "",
+                        reference_answer=state.get("reference_answer", "") or "",
+                        strict_kb=not loose_mode,
+                        fallback_data={"questions": []},
+                    ): sub_vt
+                    for sub_vt, sub_type, sub_count in sub_args
+                }
+                for fut, sub_vt in futures.items():
+                    try:
+                        retry_llm = fut.result(timeout=_NODE_TIMEOUT)
+                    except Exception as exc:
+                        logger.warning("mixed refill 子题型 %s LLM 并行调用失败：%s", sub_vt, exc)
+                        retry_llm = LLMResult(content="", used_llm=False, error=str(exc), data={"questions": []})
+                    retry_questions = (retry_llm.data or {}).get("questions") or []
+                    for q in retry_questions:
+                        q.setdefault("_variant_type", sub_vt)
+                    raw_questions = _unique_question_items(list(raw_questions) + retry_questions)
+                    if retry_llm.used_llm:
+                        llm.used_llm = True
+            logger.info("LLM 第一次出题 %d 道，未达 %d 道，mixed 拆分并行再次调用 LLM 补 %d 道，合计 %d 道", max(0, count - need), count, need, len(raw_questions))
+        else:
+            retry_llm = _call_llm_for_questions(
+                subject=subject,
+                knowledge_point=knowledge_point,
+                difficulty=difficulty,
+                question_type=prompt_question_type,
+                count=need,
+                kp_status=mastery_text,
+                mistake_summary=mistake_summary,
+                misconception_profile=misconception_profile,
+                mode=mode,
+                kb_context=kb_context,
+                reference_text=state.get("reference_text", "") or "",
+                reference_answer=state.get("reference_answer", "") or "",
+                strict_kb=not loose_mode,
+                fallback_data={"questions": []},
+            )
+            retry_questions = (retry_llm.data or {}).get("questions") or []
+            if retry_questions:
+                raw_questions = _unique_question_items(list(raw_questions) + retry_questions)
+                if retry_llm.used_llm:
+                    llm.used_llm = True
+                    llm.error = llm.error or ""
+            logger.info("LLM 第一次出题 %d 道，未达 %d 道，再次调用 LLM 补 %d 道，合计 %d 道", max(0, count - need), count, need, len(raw_questions))
+
+    # 最终仍不足 count 时，用 __REFUSAL__ 占位到指定数量，让下游过滤 + 前端提示重试
+    if len(raw_questions) < count:
+        lack = count - len(raw_questions)
+        for _ in range(lack):
+            raw_questions.append({
+                "question_text": "__REFUSAL__",
+                "options": [],
+                "standard_answer": "",
+                "explanation": "当前网络问题，请稍后重试。",
+                "hints": [],
+                "easy_mistakes": "",
+                "quality_flag": "deprecated",
+            })
+        logger.info("LLM 多次重试仍不足 %d 道，剩余 %d 道用 refusal 占位", count, lack)
     raw_questions = _unique_question_items(raw_questions)[:count]
 
     # 检测 LLM 主动拒答（知识库无内容时按 prompt 规则应输出 __REFUSAL__）
     refused_count = sum(1 for it in raw_questions if "__REFUSAL__" in str(it.get("question_text", "")))
-    if refused_count > 0 and refused_count == len(raw_questions):
-        logger.info("LLM 全部拒答（知识库无 %s/%s），降级到 fallback 池", subject, knowledge_point)
+    all_refused = refused_count > 0 and refused_count == len(raw_questions)
+    if all_refused:
+        # 全部拒答时不再回落到元话术模板题；保持 __REFUSAL__ 让上游过滤。
+        # 知识库真正有内容的场景下，supplement 阶段会被 `_unique_question_items` 和
+        # 下游 `_has_generic_bad_options` 校验过滤掉，避免低质量题面展示给用户。
+        logger.info("LLM 全部拒答（知识库无 %s/%s），保留 refusal 标记由上游过滤", subject, knowledge_point)
         llm.used_llm = False
-        llm.error = f"知识库暂无 {knowledge_point} 资料，已使用权威题库"
-        raw_questions = fallback_data["questions"][:count]
+        llm.error = f"知识库暂无 {knowledge_point} 资料，且未生成可用题。"
     elif llm.used_llm and not _questions_match_state_targets(raw_questions, state, subject, knowledge_point):
+        # 题目与目标 KP 不匹配：宁可返回空也不要塞不相关的题。
+        logger.info("LLM 题目与 %s/%s 不匹配，清空让上游过滤", subject, knowledge_point)
         llm.used_llm = False
-        llm.error = "AI 题目与指定科目/知识点不匹配，已自动降级为本地保底题。"
-        raw_questions = fallback_data["questions"][:count]
+        llm.error = f"AI 题目与 {knowledge_point} 不匹配，已过滤。"
+        raw_questions = []
 
-    if vt in ("fill", "essay"):
-        for item in raw_questions:
+    raw_questions = _apply_misconception_traps(raw_questions, misconception_profile, subject=subject, knowledge_point=knowledge_point, trap_future=trap_future)
+
+    if vt in ("fill", "essay", "mixed"):
+        for idx, item in enumerate(raw_questions):
+            item_vt = item.get("_variant_type") or _vt_for_index(vt, idx)
+            if item_vt not in ("fill", "essay"):
+                continue
             item.pop("options", None)
             ans = item.get("standard_answer", "").strip()
             if len(ans) == 1 and 'A' <= ans <= 'Z':
                 item["standard_answer"] = item.get("explanation", ans)
-    elif vt == "comprehensive":
-        for item in raw_questions:
+    if vt in ("comprehensive", "mixed"):
+        for idx, item in enumerate(raw_questions):
+            item_vt = item.get("_variant_type") or _vt_for_index(vt, idx)
+            if item_vt != "comprehensive":
+                continue
             item.pop("options", None)
 
     # 把 RAG 原文传给下游自检节点用
@@ -982,6 +1510,8 @@ def generate_questions_node(state: QuestionState) -> dict:
         "llm_used": llm.used_llm,
         "llm_error": llm.error,
         "rag_docs": rag_docs,
+        "loose_mode": loose_mode,
+        "all_refused": all_refused,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -995,6 +1525,13 @@ def deduplicate_questions(state: QuestionState) -> dict:
     raw_questions = state.get("raw_questions", []) or []
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
+    # 优先剔除元话术模板题：这类题不是真正的考点问题，会被计入"重复"或后续被过滤。
+    if raw_questions:
+        pre_filter = [it for it in raw_questions if not _is_template_question(it)]
+        template_removed = len(raw_questions) - len(pre_filter)
+        if template_removed:
+            logger.info("deduplicate 剔除元话术模板题: %s 条", template_removed)
+        raw_questions = pre_filter
     if not raw_questions:
         return {
             "raw_questions": [],
@@ -1132,10 +1669,11 @@ def self_check_questions(state: QuestionState) -> dict:
     report: list[dict] = []
     removed = 0
 
-    for item in raw_questions:
-        # 跳过明显为 fallback 的题（带 __REFUSAL__）
-        if "__REFUSAL__" in str(item.get("question_text", "")):
-            continue
+    # 速度优化：自检原是逐题串行；改为 ThreadPoolExecutor 并行（最多 4 路）
+    # 跳过明显为 fallback 的题（带 __REFUSAL__）
+    items_to_check = [it for it in raw_questions if "__REFUSAL__" not in str(it.get("question_text", ""))]
+
+    def _check_one(item: dict) -> tuple[dict, dict]:
         prompt = render_self_check_prompt(
             question_json=json.dumps(item, ensure_ascii=False, indent=2)[:1500],
             kb_context=kb_context,
@@ -1157,19 +1695,20 @@ def self_check_questions(state: QuestionState) -> dict:
             except FutureTimeout:
                 pool.shutdown(wait=False)
                 result = LLMResult(content="", used_llm=False, error="timeout", data={"verdict": "uncertain", "issues": [], "suggestion": ""})
-
-        verdict = str((result.data or {}).get("verdict", "uncertain")).lower()
-        report.append({
+        return item, {
             "question_snippet": str(item.get("question_text", ""))[:80],
-            "verdict": verdict,
+            "verdict": str((result.data or {}).get("verdict", "uncertain")).lower(),
             "issues": (result.data or {}).get("issues", []),
-        })
-        if verdict == "pass":
-            kept.append(item)
-        else:
-            # fail / uncertain 都剔除，避免带幻觉的题入库
-            removed += 1
-            logger.info("self_check removed question: %s, verdict=%s", str(item.get("question_text", ""))[:50], verdict)
+        }
+
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(items_to_check)))) as pool:
+        for item, r in pool.map(_check_one, items_to_check, chunksize=1):
+            report.append(r)
+            if r["verdict"] == "pass":
+                kept.append(item)
+            else:
+                removed += 1
+                logger.info("self_check removed question: %s, verdict=%s", str(item.get("question_text", ""))[:50], r["verdict"])
 
     step = _make_step(
         "self_check",
@@ -1230,6 +1769,7 @@ def validate_questions(state: QuestionState) -> dict:
     valid = True
     reasons: list[str] = []
     for idx, item in enumerate(raw_questions):
+        item_vt = item.get("_variant_type") or _vt_for_index(vt, idx)
         if not item.get("question_text", "").strip():
             valid = False
             reasons.append(f"#{idx+1} 题干为空")
@@ -1239,7 +1779,7 @@ def validate_questions(state: QuestionState) -> dict:
         if not item.get("explanation", "").strip():
             reasons.append(f"#{idx+1} 解析为空")
         options = item.get("options", [])
-        if vt == "choice":
+        if item_vt == "choice":
             if not options or len(options) != 4:
                 valid = False
                 reasons.append(f"#{idx+1} 选项数量为 {len(options) if options else 0}，应为 4")
@@ -1252,10 +1792,10 @@ def validate_questions(state: QuestionState) -> dict:
                 if _has_generic_bad_options(options):
                     valid = False
                     reasons.append(f"#{idx+1} 选择题选项过于泛化,未形成真实知识点干扰项")
-        if vt in ("fill", "essay") and not item.get("standard_answer", "").strip():
+        if item_vt in ("fill", "essay") and not item.get("standard_answer", "").strip():
             valid = False
             reasons.append(f"#{idx+1} 缺少标准答案文本")
-        if vt == "comprehensive" and not item.get("sub_questions"):
+        if item_vt == "comprehensive" and not item.get("sub_questions"):
             reasons.append(f"#{idx+1} 综合题缺少子问题")
         # 难度感知（不通过仅记 reason，不直接判 valid，给下游降级机会）
         if not _assess_difficulty_match(item, difficulty):
@@ -1274,13 +1814,24 @@ def validate_questions(state: QuestionState) -> dict:
 
 
 def _refill_questions(state: QuestionState) -> dict:
-    """题量不足时（被自检/去重剔除）用 fallback 池补足，使最终入库数 = count。"""
+    """题量不足时（被自检/去重剔除）再次调用 LLM 补足，使最终入库数 = count。
+    不再使用元话术模板题兜底，LLM 拒答时填入 __REFUSAL__ 占位让前端提示重试。
+    """
     start = time.time()
     raw_questions = state.get("raw_questions", []) or []
     count = state.get("count", 3)
     subject = state.get("subject", "")
     knowledge_point = state.get("knowledge_point", "")
     vt = state.get("variant_type", "choice")
+    question_type = state.get("question_type", "选择题")
+    misconception_profile = state.get("misconception_profile", {"items": []})
+    mastery_text = state.get("mastery_text", "暂无掌握度数据")
+    mistake_summary = state.get("mistake_summary", "无历史错题")
+    mode = state.get("mode", "")
+    loose_mode = state.get("loose_mode", False)
+    rag_text, rag_docs = _build_rag_text(state)
+    bank_text = _build_question_bank_text(state.get("context", []))
+    kb_context = (rag_text + bank_text).strip() or "（知识库与题库均无内容）"
 
     if len(raw_questions) >= count:
         return {
@@ -1292,21 +1843,100 @@ def _refill_questions(state: QuestionState) -> dict:
         }
 
     need = count - len(raw_questions)
-    pool = _build_target_fallback(state, vt, subject, count + need)
-    # 题干去重：新题和已有题不能重复
-    existing_sigs = {_text_signature(str(it.get("question_text", ""))) for it in raw_questions}
     filled = 0
-    for p in pool:
-        if filled >= need:
-            break
-        if _text_signature(str(p.get("question_text", ""))) in existing_sigs:
-            continue
-        # 补一道填空/简答的 easy_mistakes
-        p.setdefault("hints", ["先定位知识点。", "再按步骤推导。"])
-        p.setdefault("easy_mistakes", "本类题易忽略关键步骤，请注意过程严谨。")
-        raw_questions.append(p)
-        existing_sigs.add(_text_signature(str(p.get("question_text", ""))))
-        filled += 1
+    existing_sigs = {_text_signature(str(it.get("question_text", ""))) for it in raw_questions}
+
+    if vt == "mixed":
+        cycle = ["choice", "fill", "essay", "choice", "comprehensive"]
+        per_type_counts: dict[str, int] = {}
+        for i in range(need):
+            item_vt = cycle[(len(raw_questions) + i) % len(cycle)]
+            per_type_counts[item_vt] = per_type_counts.get(item_vt, 0) + 1
+        for sub_vt, sub_count in per_type_counts.items():
+            sub_type = {"choice": "选择题", "fill": "填空题", "essay": "简答题", "comprehensive": "综合题"}.get(sub_vt, "选择题")
+            retry_llm = _call_llm_for_questions(
+                subject=subject,
+                knowledge_point=knowledge_point,
+                difficulty=state.get("difficulty", "中等"),
+                question_type=sub_type,
+                count=sub_count,
+                kp_status=mastery_text,
+                mistake_summary=mistake_summary,
+                misconception_profile=misconception_profile,
+                mode=mode,
+                kb_context=kb_context,
+                reference_text=state.get("reference_text", "") or "",
+                reference_answer=state.get("reference_answer", "") or "",
+                strict_kb=not loose_mode,
+                fallback_data={"questions": []},
+            )
+            retry_questions = (retry_llm.data or {}).get("questions") or []
+            for p in retry_questions:
+                p.setdefault("_variant_type", sub_vt)
+                qtext = str(p.get("question_text", ""))
+                if qtext.strip() == "__REFUSAL__":
+                    continue
+                if _text_signature(qtext) in existing_sigs:
+                    continue
+                if _is_template_question(p):
+                    continue
+                options = p.get("options") or []
+                if sub_vt == "choice" and _has_generic_bad_options(options):
+                    continue
+                p.setdefault("hints", ["先定位知识点。", "再按步骤推导。"])
+                p.setdefault("easy_mistakes", "本类题易忽略关键步骤，请注意过程严谨。")
+                raw_questions.append(p)
+                existing_sigs.add(_text_signature(qtext))
+                filled += 1
+    else:
+        retry_llm = _call_llm_for_questions(
+            subject=subject,
+            knowledge_point=knowledge_point,
+            difficulty=state.get("difficulty", "中等"),
+            question_type=question_type,
+            count=need,
+            kp_status=mastery_text,
+            mistake_summary=mistake_summary,
+            misconception_profile=misconception_profile,
+            mode=mode,
+            kb_context=kb_context,
+            reference_text=state.get("reference_text", "") or "",
+            reference_answer=state.get("reference_answer", "") or "",
+            strict_kb=not loose_mode,
+            fallback_data={"questions": []},
+        )
+        retry_questions = (retry_llm.data or {}).get("questions") or []
+        for p in retry_questions:
+            qtext = str(p.get("question_text", ""))
+            if qtext.strip() == "__REFUSAL__":
+                continue
+            if _text_signature(qtext) in existing_sigs:
+                continue
+            if _is_template_question(p):
+                continue
+            options = p.get("options") or []
+            if vt == "choice" and _has_generic_bad_options(options):
+                continue
+            p.setdefault("hints", ["先定位知识点。", "再按步骤推导。"])
+            p.setdefault("easy_mistakes", "本类题易忽略关键步骤，请注意过程严谨。")
+            raw_questions.append(p)
+            existing_sigs.add(_text_signature(qtext))
+            filled += 1
+
+    # 仍不足时填 refusal 占位
+    if filled < need:
+        lack = need - filled
+        for _ in range(lack):
+            raw_questions.append({
+                "question_text": "__REFUSAL__",
+                "options": [],
+                "standard_answer": "",
+                "explanation": "当前网络问题，请稍后重试。",
+                "hints": [],
+                "easy_mistakes": "",
+                "quality_flag": "deprecated",
+            })
+        logger.info("_refill_questions: LLM 重试仍不足 %d 道，剩余 %d 道用 refusal 占位", need, lack)
 
     step = _make_step(
         "refill",
@@ -1326,6 +1956,8 @@ def save_questions(state: QuestionState) -> dict:
     db = _get_db()
     start = time.time()
     raw_questions = _unique_question_items(state.get("raw_questions", []))[:state.get("count", 3)]
+    # 过滤掉 __REFUSAL__ 占位题：占位只是用来对齐题数，不入库、也不展示给用户
+    raw_questions = [it for it in raw_questions if "__REFUSAL__" not in str(it.get("question_text", ""))]
     vt = state.get("variant_type", "choice")
     llm = state.get("llm_result", None)
     subject = state.get("subject", "")
@@ -1337,6 +1969,7 @@ def save_questions(state: QuestionState) -> dict:
     count = state.get("count", 3)
     mode = state.get("mode", "")
     user_id = state.get("user_id", 0)
+    all_refused = bool(state.get("all_refused", False)) or (llm and not llm.used_llm and "知识库暂无" in (llm.error or ""))
 
     is_smart = mode != "自由选择"
     session = QuestionGenerationSession(
@@ -1355,8 +1988,11 @@ def save_questions(state: QuestionState) -> dict:
 
     questions = []
     fallback_data = _build_target_fallback(state, vt, subject, max(count, 1))
+    loose_mode = state.get("loose_mode", False)
     for idx, item in enumerate(raw_questions):
-        sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if vt == "comprehensive" else "[]"
+        item_vt = item.get("_variant_type") or _vt_for_index(vt, idx)
+        item_question_type = item.get("_question_type") or _qtype_for_vt(item_vt, question_type)
+        sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if item_vt == "comprehensive" else "[]"
         fallback_item = fallback_data[idx % len(fallback_data)]
         question_kp = _target_for_question(state, item, idx)
         item.setdefault("target_knowledge_point", question_kp)
@@ -1365,8 +2001,8 @@ def save_questions(state: QuestionState) -> dict:
             subject=subject,
             knowledge_point=question_kp,
             difficulty=difficulty,
-            question_type=question_type,
-            variant_type=vt,
+            question_type=item_question_type,
+            variant_type=item_vt,
             question_text=_with_target_prefix(
                 item.get("question_text") or fallback_item["question_text"],
                 subject,
@@ -1380,6 +2016,8 @@ def save_questions(state: QuestionState) -> dict:
             easy_mistakes=(item.get("easy_mistakes") or "").strip()[:500],
             recommend_reason=f"{session.reason} 本题定位：{question_kp}。",
             source="llm" if (llm and llm.used_llm) else "agent_fallback",
+            is_verified=False if loose_mode else (True if (llm and llm.used_llm) else False),
+            quality_flag="unverified" if loose_mode else "normal",
         )
         db.add(question)
         db.flush()
@@ -1392,6 +2030,7 @@ def save_questions(state: QuestionState) -> dict:
         "questions": questions,
         "config": session.reason,
         "target_points": target_points,
+        "all_refused": all_refused and not questions,
         "agent_steps": state.get("agent_steps", []) + [step],
     }
 
@@ -1408,7 +2047,20 @@ def fallback_questions(state: QuestionState) -> dict:
     mode = state.get("mode", "")
     user_id = state.get("user_id", 0)
     vt = _to_variant_type(question_type)
-    fallback_data = _unique_question_items(_build_target_fallback(state, vt, subject, count))[:count]
+    fallback_data = _unique_question_items(_build_target_fallback(state, vt, subject, count * 2))
+    fallback_data = _apply_misconception_traps(fallback_data, state.get("misconception_profile", {"items": []}), subject=subject, knowledge_point=knowledge_point)
+    # 过滤 refusal 占位题和元话术坏题
+    filtered_fallback: list[dict] = []
+    for item in fallback_data:
+        qtext = str(item.get("question_text", "")).strip()
+        if qtext == "__REFUSAL__" or not qtext:
+            continue
+        if _is_template_question(item):
+            continue
+        if vt == "choice" and _has_generic_bad_options(item.get("options") or []):
+            continue
+        filtered_fallback.append(item)
+    fallback_data = filtered_fallback[:count]
 
     is_smart = mode != "自由选择"
     session = QuestionGenerationSession(
@@ -1427,7 +2079,9 @@ def fallback_questions(state: QuestionState) -> dict:
 
     questions = []
     for idx, item in enumerate(fallback_data):
-        sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if vt == "comprehensive" else "[]"
+        item_vt = item.get("_variant_type") or _vt_for_index(vt, idx)
+        item_question_type = item.get("_question_type") or _qtype_for_vt(item_vt, question_type)
+        sub_qs = json.dumps(item.get("sub_questions") or [], ensure_ascii=False) if item_vt == "comprehensive" else "[]"
         # 识别"抽自 seed 题库的题"：seed 题天然带 source=seed 字段
         is_seed_pick = item.get("source") == "seed"
         question_kp = _target_for_question(state, item, idx)
@@ -1436,8 +2090,8 @@ def fallback_questions(state: QuestionState) -> dict:
             subject=subject,
             knowledge_point=question_kp,
             difficulty=item.get("difficulty") or difficulty,
-            question_type=question_type,
-            variant_type=vt,
+            question_type=item_question_type,
+            variant_type=item_vt,
             question_text=_with_target_prefix(
                 item.get("question_text", ""), subject, question_kp,
             ),

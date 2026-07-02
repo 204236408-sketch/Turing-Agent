@@ -36,7 +36,7 @@ DIFFICULTY_RUBRIC = {
 
 QUESTION_PROMPT_TEMPLATE = """
 # 身份
-你是一名 408 考研命题教师。所有题目必须严格对标 408 统考真题，且只能基于下方【知识库参考资料】编写。**未在知识库出现的考点、公式、协议号、器件参数，一律不得出题**。
+你是一名 408 考研命题教师。所有题目必须严格对标 408 统考真题。{kb_mode_intro}
 
 # 输入参数
 科目：{subject}
@@ -46,25 +46,26 @@ QUESTION_PROMPT_TEMPLATE = """
 题目数量：{q_count}
 用户本知识点掌握状态：{kp_status}
 用户最近错题摘要：{mistake_summary}
+用户错因-干扰项策略：{misconception_profile}
 智能推荐模式：{recommend_mode}
 
 # 【参考题目】（OCR 错题场景下携带：用户上传照片识别出的原题 + Agent 推断的标准答案）
 {reference_block}
 
-# 【知识库参考资料】（这是你出题的唯一事实来源）
+# 【必须围绕的关键词】（核心：题干/选项/答案/解析中必须出现下列关键词至少之一，否则视为 KP 偏离）
+{kp_keywords_block}
+
+# 【知识库参考资料】
 {kb_context}
 
 # 强制约束（违反任一条都视为不合格）
 
-## 约束 1：知识库溯源
-- 题干/选项/答案/解析中出现的每一个事实（定义、公式、协议号、时序、流程），必须能在【知识库参考资料】中找到对应原文
-- 解析（explanation）开头必须写 `kb_ref: [1,2]` 引用 1 个或多个知识库片段编号，未引用视为不合格
-- 知识库无相关资料时，**该题在 question_text 写 `__REFUSAL__` 并把 options/standard_answer 留空**，让系统改用备选题
+{kb_mode_constraint}
 
 ## 约束 2：不得编造
 - 不得发明任何协议号（如自造 TCP 选项号）、寄存器名、时序参数、教材未列的公式
 - 不得使用"通常""一般认为"等模糊表述作为事实依据
-- 跨小节综合题只能引用本知识库已包含的相邻小节概念
+- 跨小节综合题只能引用本知识点已包含的相邻小节概念
 
 ## 约束 3：难度量化（基于 {difficulty}）
 {difficulty_rubric}
@@ -82,6 +83,7 @@ QUESTION_PROMPT_TEMPLATE = """
 ## 约束 5：错题针对性
 - 用户的最近错题摘要（mistake_summary）非空时，至少 1 道题的 easy_mistakes 字段必须直接对应其中一类错因
 - 干扰选项必须复刻该错因的"看似合理但实际错误"的逻辑
+- 用户错因-干扰项策略非空时，选择题至少 1 个错误选项必须使用其中的 trap_option；解析中说明该干扰项错在何处
 
 ## 约束 6：去重
 - 与【题库参考】中已有题目的考点或解法不要完全重复，可以同考点换问法，但题干关键词重合度应低于 30%
@@ -196,12 +198,21 @@ def render_question_prompt(
     count: int,
     kp_status: str = "暂无掌握度数据",
     mistake_summary: str = "无历史错题",
+    misconception_profile: str = "无",
     recommend_mode: str = "自由选择",
     kb_context: str = "",
     reference_text: str = "",
     reference_answer: str = "",
+    strict_kb: bool = True,
+    kp_keywords: str = "",
 ) -> str:
-    """组装出题 prompt（注入知识库片段 + OCR 参考题）。"""
+    """组装出题 prompt（注入知识库片段 + OCR 参考题）。
+
+    Args:
+        strict_kb: True 表示强制要求知识库溯源；False 表示知识库为空时允许基于通用考纲出题。
+        kp_keywords: KP 必须包含的关键词清单（逗号分隔）。prompt 显式要求 LLM 题面/选项/答案至少出现一个，
+                     减少事后 KP 不匹配被清空的概率。
+    """
     vt_map = {"选择题": "choice", "填空题": "fill", "简答题": "essay", "综合题": "comprehensive"}
     vt = vt_map.get(question_type, "choice")
     schema_def = QTYPE_FIELD_SCHEMA[vt]
@@ -228,6 +239,33 @@ def render_question_prompt(
     else:
         reference_block = "（无 OCR 参考题）"
 
+    # KP 关键词块：显式列出必须围绕的关键词，避免 LLM 跑题
+    kp_keywords_clean = (kp_keywords or "").strip()
+    if kp_keywords_clean:
+        kp_keywords_block = (
+            f"知识点：{knowledge_point}\n"
+            f"必须围绕以下关键词（每道题的题干/选项/答案中至少出现 1 个，否则视为跑题）：\n"
+            f"{kp_keywords_clean}\n"
+        )
+    else:
+        kp_keywords_block = f"知识点：{knowledge_point}\n（无补充关键词，题目直接围绕知识点名称即可）"
+
+    if strict_kb:
+        kb_mode_intro = "所有题目必须严格基于下方【知识库参考资料】编写。**未在知识库出现的考点、公式、协议号、器件参数，一律不得出题**。"
+        kb_mode_constraint = """## 约束 1：知识库溯源
+- 题干/选项/答案/解析中出现的每一个事实（定义、公式、协议号、时序、流程），必须能在【知识库参考资料】中找到对应原文
+- 解析（explanation）开头必须写 `kb_ref: [1,2]` 引用 1 个或多个知识库片段编号，未引用视为不合格
+- 知识库无相关资料时，**该题在 question_text 写 `__REFUSAL__` 并把 options/standard_answer 留空**，让系统改用备选题"""
+        kb_context_display = kb_context or "（知识库暂无该知识点内容，请在 question_text 写 __REFUSAL__）"
+    else:
+        kb_mode_intro = "当前知识库暂无该知识点详细内容，请基于 408 统考通用考纲和输入参数出题。题目应围绕该知识点的核心概念、定义、典型流程和常见易混点设计，避免涉及未经验证的具体参数细节。"
+        kb_mode_constraint = """## 约束 1：通用考纲出题
+- 基于 408 统考通用考纲和知识点名称出题，聚焦核心概念、定义、典型流程和常见易混点
+- 不得编造具体协议号、寄存器名、时序参数、教材未列的公式
+- 解析（explanation）开头不写 `kb_ref`
+- 如果该知识点确实无法出题，该题在 question_text 写 `__REFUSAL__` 并把 options/standard_answer 留空"""
+        kb_context_display = kb_context or "（知识库暂无该知识点内容，请基于 408 通用考纲出题）"
+
     return QUESTION_PROMPT_TEMPLATE.format(
         subject=subject,
         kp_name=knowledge_point,
@@ -236,11 +274,57 @@ def render_question_prompt(
         q_count=count,
         kp_status=kp_status,
         mistake_summary=mistake_summary,
+        misconception_profile=misconception_profile,
         recommend_mode=recommend_mode,
-        kb_context=kb_context or "（知识库暂无该知识点内容，请在 question_text 写 __REFUSAL__）",
+        kb_context=kb_context_display,
         difficulty_rubric=difficulty_rubric,
         qtype_schema=schema_def["schema"],
         qtype_fields=fields_list,
         output_template=schema_def["template"],
         reference_block=reference_block,
+        kp_keywords_block=kp_keywords_block,
+        kb_mode_intro=kb_mode_intro,
+        kb_mode_constraint=kb_mode_constraint,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 错因-陷阱选项 prompt：根据用户错因生成针对 KP 的"看似合理但实际错误"干扰项
+# ──────────────────────────────────────────────────────────────────────
+TRAP_OPTIONS_TEMPLATE = """
+# 身份
+你是 408 考研命题教师。请针对用户的错因，结合「{subject} · {knowledge_point}」知识点，生成 1 个
+"看似合理但实际错误"的干扰项文本（用于选择题的某个错误选项）。
+
+# 输入：用户最近错因列表
+{items_block}
+
+# 要求
+- 每个干扰项必须紧扣对应错因的认知误区，30~80 字
+- 表述要像"标准答案"（带术语、看似专业），但其中存在与该 KP 真实定义/条件的偏差
+- 不得出现元话术（"仅考查定义背诵"等）、不得与题干无关
+- 输出严格按以下 JSON 结构，**禁止任何额外字段**
+
+{{
+  "traps": [
+    {{"error_type": "错因 1", "trap_option": "干扰项文本"}},
+    {{"error_type": "错因 2", "trap_option": "干扰项文本"}}
+  ]
+}}
+"""
+
+
+def render_trap_options_prompt(*, subject: str, knowledge_point: str, items: list[dict]) -> str:
+    """为 LLM 组装错因-干扰项生成 prompt。"""
+    lines = []
+    for i, it in enumerate(items[:5], 1):
+        et = it.get("error_type", "未分类")
+        reason = (it.get("error_reason") or "").strip()[:120]
+        old_trap = (it.get("trap_option") or "").strip()[:80]
+        lines.append(f"错因 {i}：{et}\n  用户场景：{reason or '（无描述）'}\n  默认干扰项：{old_trap or '（无）'}")
+    items_block = "\n".join(lines) or "（无错因）"
+    return TRAP_OPTIONS_TEMPLATE.format(
+        subject=subject,
+        knowledge_point=knowledge_point,
+        items_block=items_block,
     )

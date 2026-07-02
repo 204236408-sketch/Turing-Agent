@@ -14,6 +14,7 @@ from database import get_db
 from dependencies import get_current_user
 from models import AnswerRecord, User
 from schemas import AnswerCheckRequest
+from services.points_service import earn_points
 from utils.response import success
 
 
@@ -23,6 +24,12 @@ router = APIRouter(prefix="/api/answers", tags=["answers"])
 @router.post("/check")
 def check(payload: AnswerCheckRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     data = check_answer(db, user.id, payload.question_id, payload.user_answer)
+
+    # 提交答案不扣积分，仅按完成/答对情况奖励积分
+    earn_points(db, user.id, "finish_question", target_type="question", target_id=payload.question_id)
+    if data.get("is_correct"):
+        earn_points(db, user.id, "correct_question", target_type="question", target_id=payload.question_id)
+
     db.commit()
     return success(data)
 

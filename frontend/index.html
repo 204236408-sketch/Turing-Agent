@@ -23,7 +23,7 @@
         <a href="#about">关于我们</a>
       </div>
     </div>
-    <a href="version-b.html" class="nav-login">登录 / 注册</a>
+    <a href="version-b.html?login=1" class="nav-login">登录 / 注册</a>
   </nav>
 
   <!-- Hero 区域 -->
@@ -170,11 +170,11 @@
           <h3>联系我们</h3>
           <div class="contact-item">
             <span>📧</span>
-            <p>contact@turing408.ai</p>
+            <p>2942480882@qq.com</p>
           </div>
           <div class="contact-item">
             <span>🌐</span>
-            <p>github.com/turing408</p>
+            <p><a href="https://github.com/204236408-sketch/Turing-Agent" target="_blank" rel="noopener">github.com/204236408-sketch/Turing-Agent</a></p>
           </div>
           <div class="contact-item">
             <span>📖</span>
@@ -267,17 +267,38 @@
       const ctx = canvas.getContext('2d');
       const card = canvas.parentElement;
 
-      function resize() {
-        canvas.width = card.offsetWidth;
-        canvas.height = card.offsetHeight;
-      }
-      resize();
-      window.addEventListener('resize', resize);
-
       const chars = '01ABCDEF{}[]<>/=+-*&|^~!%#@$?;:\\';
       const fontSize = 13;
-      let columns = Math.floor(canvas.width / fontSize);
-      const drops = Array(columns).fill(1);
+      let columns = 0;
+      let drops = [];
+
+      function resize() {
+        // 关键:首次进入时 CSS/字体可能未应用完,card.offsetWidth 是初始值(<真实宽度)。
+        // 此函数在多种时机被调用,取最终一次的稳定值。
+        const newW = card.offsetWidth;
+        const newH = card.offsetHeight;
+        if(newW<=0||newH<=0)return;  // 容器还没布局好
+        canvas.width = newW;
+        canvas.height = newH;
+        const newColumns = Math.floor(newW / fontSize);
+        if(newColumns===columns)return;
+        columns = newColumns;
+        // 扩展或截断 drops 数组(列数变化时,新增列从 0 开始,避免空列突然从顶部出现)
+        if(newColumns > drops.length){
+          for(let i = drops.length; i < newColumns; i++) drops.push(Math.random() * (newH / fontSize));
+        } else {
+          drops.length = newColumns;
+        }
+      }
+
+      // 多时机调用,保证首次进入能拿到正确尺寸
+      resize();
+      requestAnimationFrame(resize);
+      if(document.fonts && document.fonts.ready){
+        document.fonts.ready.then(resize);
+      }
+      setTimeout(resize, 200);   // 兜底:网络字体未完成时,200ms 后再试
+      window.addEventListener('resize', resize);
 
       function draw() {
         ctx.fillStyle = 'rgba(10, 22, 40, 0.07)';

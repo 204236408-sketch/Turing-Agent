@@ -52,13 +52,25 @@ const app=document.getElementById("app");
 function applyBrandName(html){return html.replaceAll("重生之我是图灵","重生之我是图灵")}
 
 async function initApp(){
+  // 强制重新登录入口：来自首页/指南页"登录 / 注册"链接 (?login=1)
+  if(new URLSearchParams(location.search).get("login")==="1"){
+    localStorage.removeItem("turing408_token");
+    localStorage.removeItem("turing408_user");
+    // 清理 URL 上的 query，避免刷新或分享时残留
+    const cleanUrl=location.pathname+location.hash;
+    history.replaceState(null,"",cleanUrl);
+    app.innerHTML=applyBrandName(loginHTML());
+    return;
+  }
   const token=localStorage.getItem("turing408_token");
   const userStr=localStorage.getItem("turing408_user");
   if(token&&userStr){
+    let parsedUser=null;
+    try{parsedUser=JSON.parse(userStr)}catch(e){}
     try{
       // 先验证token是否有效
       const meData = await apiRequest("/api/auth/me");
-      const user = meData.user || JSON.parse(userStr);
+      const user = meData.user || parsedUser;
       app.innerHTML=applyBrandName(shellHTML());
       repairPagePlacement();
       bindAll();
@@ -71,15 +83,92 @@ async function initApp(){
       showPage("home");
       return;
     }catch(e){
-      // token无效或过期，清除并显示登录页
-      localStorage.removeItem("turing408_token");
-      localStorage.removeItem("turing408_user");
+      // 修复：仅在 401（INVALID_TOKEN / 登录态失效）时清除 localStorage。
+      // 网络错误 / 后端未起 / 5xx 等临时性错误不应让用户掉线。
+      const msg=String(e?.message||"");
+      const isAuthFail=/INVALID_TOKEN|UNAUTHORIZED|登录|401/.test(msg);
+      if(isAuthFail){
+        localStorage.removeItem("turing408_token");
+        localStorage.removeItem("turing408_user");
+      } else if(parsedUser){
+        // 临时性错误：降级到本地缓存 user 继续使用，等后端恢复后下一次 api 调用会自然重连。
+        app.innerHTML=applyBrandName(shellHTML());
+        repairPagePlacement();
+        bindAll();
+        if(parsedUser?.nickname){
+          const nameEl=document.getElementById("topUserName");
+          const avatarEl=document.getElementById("topAvatar");
+          if(nameEl)nameEl.textContent=parsedUser.nickname;
+          if(avatarEl)avatarEl.textContent=parsedUser.nickname[0];
+        }
+        showPage("home");
+        // 不再弹"后端暂不可用"toast:当后端实际可用时(后续接口成功)这条 toast 是误导;
+        // 当后端真不可用时,后续接口的"接口暂不可用"提示会自然告知用户,无需在初始化阶段多此一举。
+        return;
+      }
     }
   }
   app.innerHTML=applyBrandName(loginHTML());
 }
 initApp();
-// 登录页面Mock数据：当前固定演示账号
+/* ========= 退出登录:右上角个人账户面板触发 ========= */
+async function handleLogout(){
+ const btn=document.getElementById("logoutBtn");
+ if(btn){btn.disabled=true;btn.textContent="退出中…";}
+ // 1. 通知后端把 token 加入黑名单(忽略失败,前端清缓存同样能登出)
+ try{
+  await apiRequest("/api/auth/logout",{method:"POST"});
+ }catch(e){
+  console.warn("logout api failed:",e?.message);
+ }
+ // 2. 关闭面板 + 清理所有本地状态 + 缓存
+ try{
+  document.getElementById("accountPanel")?.classList.remove("open");
+  document.getElementById("accountMask")?.classList.remove("show");
+  document.body.classList.remove("account-open");
+ }catch(e){}
+ localStorage.removeItem("turing408_token");
+ localStorage.removeItem("turing408_user");
+ // 清理内存缓存
+ if(typeof knowledgeOverviewCache!=="undefined"){knowledgeOverviewCache=null;knowledgeOverviewCacheAt=0;}
+ if(typeof knowledgeGraphCache!=="undefined")knowledgeGraphCache=null;
+ if(typeof notebookCache!=="undefined")notebookCache=null;
+ if(typeof currentHomeOverview!=="undefined")currentHomeOverview=null;
+ if(typeof reportCache!=="undefined"){reportCache=null;reportCacheAt=0;}
+ if(btn){btn.disabled=false;btn.textContent="退出登录";}
+ toast("已退出登录","success");
+ // 3. 重新渲染登录页
+ app.innerHTML=applyBrandName(loginHTML());
+}
+
+/* ========= 手机端导航抽屉 ========= */
+function openMobileNav(){
+  const sidebar=document.getElementById("appSidebar");
+  const mask=document.getElementById("sidebarMask");
+  if(sidebar)sidebar.classList.add("open");
+  if(mask)mask.classList.add("show");
+  document.body.classList.add("nav-open");
+}
+function closeMobileNav(){
+  const sidebar=document.getElementById("appSidebar");
+  const mask=document.getElementById("sidebarMask");
+  if(sidebar)sidebar.classList.remove("open");
+  if(mask)mask.classList.remove("show");
+  document.body.classList.remove("nav-open");
+}
+function bindMobileNav(){
+  const toggle=document.getElementById("sidebarToggle");
+  const close=document.getElementById("sidebarClose");
+  const mask=document.getElementById("sidebarMask");
+  if(toggle)toggle.onclick=openMobileNav;
+  if(close)close.onclick=closeMobileNav;
+  if(mask)mask.onclick=closeMobileNav;
+  // ESC 关闭
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape")closeMobileNav();
+  });
+}
+
 function loginHTML(){
   return `<section class="login turing-login">
     <div class="login-art turing-story">
@@ -294,13 +383,17 @@ function enhanceKnowledgeGraph(){
 }
 function shellHTML(){
   return `<div class="shell">
-    <aside class="sidebar">
-      <div class="brand-lockup">
-        <div class="brand-mark">图</div>
-        <div class="logo">
-          重生之我是图灵
-          <small>TURING 408 AGENT</small>
+    <div class="sidebar-mask" id="sidebarMask"></div>
+    <aside class="sidebar" id="appSidebar">
+      <div class="sidebar-head">
+        <div class="brand-lockup">
+          <div class="brand-mark">图</div>
+          <div class="logo">
+            重生之我是图灵
+            <small>TURING 408 AGENT</small>
+          </div>
         </div>
+        <button class="sidebar-close" id="sidebarClose" aria-label="关闭导航">×</button>
       </div>
       <nav class="nav">
         ${pages.map(p=>`<button data-page="${p[0]}"><i>${p[1]}</i>${p[2]}</button>`).join("")}
@@ -312,7 +405,10 @@ function shellHTML(){
     </aside>
     <div class="main">
       <header class="topbar">
-        <div>
+        <button class="hamburger" id="sidebarToggle" aria-label="打开导航">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="topbar-title">
           <h1 id="pageTitle">学习首页</h1>
           <p id="pageSub">基于长期记忆生成的个性化学习空间</p>
         </div>
@@ -372,6 +468,9 @@ function accountSettingsHTML(){
       </div>
       <div class="account-save-row">
         <button class="primary" id="accountSaveBtn">保存修改</button>
+      </div>
+      <div class="account-logout-row">
+        <button class="ghost danger" id="logoutBtn">退出登录</button>
       </div>
     </aside>`
 }
@@ -550,11 +649,18 @@ function knowledgeHTML(){
       <div class="kn-subject-bar-title">选择科目</div>
       <div class="kn-subject-bar-list" id="knSubjectBarList"></div>
     </div>
+    <button class="kn-mobile-tree-toggle" id="knMobileTreeToggle" type="button" aria-expanded="false" aria-controls="knTreePanel">
+      <span>查看知识点目录</span>
+      <b>展开</b>
+    </button>
     <!-- 三栏：左侧树 + 右侧详情 -->
     <div class="kn-three-col">
       <aside class="kn-tree-panel" id="knTreePanel">
         <div class="kn-tree-panel-head">
-          <h3>知识点目录</h3>
+          <div class="kn-tree-panel-title-row">
+            <h3>知识点目录</h3>
+            <button class="kn-mobile-tree-close" id="knMobileTreeClose" type="button" aria-label="收起知识点目录">收起</button>
+          </div>
           <div class="kn-tree-legend" id="knTreeLegend"></div>
         </div>
         <div class="kn-tree-panel-body" id="knTreePanelBody">
@@ -575,12 +681,40 @@ function bindKnPageTabs(){}
 
 function renderKnowledgeTab(tabName){}
 
+function setKnMobileTreeOpen(open){
+ const panel=document.getElementById("knTreePanel");
+ const toggle=document.getElementById("knMobileTreeToggle");
+ if(panel)panel.classList.toggle("mobile-open",open);
+ if(toggle){
+  toggle.setAttribute("aria-expanded",open?"true":"false");
+  const label=toggle.querySelector("span");
+  const state=toggle.querySelector("b");
+  if(label)label.textContent=open?"收起知识点目录":"查看知识点目录";
+  if(state)state.textContent=open?"收起":"展开";
+ }
+}
+
+function bindKnMobileTreeToggle(){
+ const toggle=document.getElementById("knMobileTreeToggle");
+ const close=document.getElementById("knMobileTreeClose");
+ if(toggle)toggle.onclick=()=>setKnMobileTreeOpen(!document.getElementById("knTreePanel")?.classList.contains("mobile-open"));
+ if(close)close.onclick=()=>setKnMobileTreeOpen(false);
+}
+
+function closeKnMobileTreeAfterPick(){
+ if(window.matchMedia&&window.matchMedia("(max-width: 679px)").matches){
+  setKnMobileTreeOpen(false);
+ }
+}
+
 /* 知识导航页:挂起的跳转目标(供 loadKnowledgeNavPage 消费,避免被默认加载覆盖) */
 let knPendingNavTarget=null;
 
 async function loadKnowledgeNavPage(){
  const main=document.getElementById("knKnowledgeLayout");
  if(!main)return;
+ bindKnMobileTreeToggle();
+ setKnMobileTreeOpen(false);
  try{
   const overview=await apiRequest("/api/knowledge/overview");
   const subjects=overview.subjects||[];
@@ -623,7 +757,10 @@ function renderSubjectBar(subjects){
   </button>
  `).join("");
  list.querySelectorAll("[data-kn-subject-id]").forEach(btn=>{
-  btn.onclick=()=>switchKnSubject(Number(btn.dataset.knSubjectId));
+  btn.onclick=()=>{
+   setKnMobileTreeOpen(false);
+   switchKnSubject(Number(btn.dataset.knSubjectId));
+  };
  });
 }
 
@@ -719,6 +856,7 @@ function renderKnTreePanel(body,graph,opts={}){
    body.querySelectorAll("[data-kn-tree-point]").forEach(b=>b.classList.remove("active"));
    btn.classList.add("active");
    loadKnPointDetail(Number(btn.dataset.knTreePoint));
+   closeKnMobileTreeAfterPick();
   };
  });
  // 二级章节头部点击:展开/折叠 + 高亮 + 加载第一节
@@ -740,6 +878,7 @@ function renderKnTreePanel(body,graph,opts={}){
      body.querySelectorAll("[data-kn-tree-point]").forEach(b=>b.classList.remove("active"));
      firstPoint.classList.add("active");
      loadKnPointDetail(Number(firstPoint.dataset.knTreePoint));
+     closeKnMobileTreeAfterPick();
     }
    }
   };
@@ -1019,19 +1158,24 @@ async function autoStartPractice(btn){
  const subject=btn.dataset.kdPracticeSubject||"";
  const chapter=btn.dataset.kdPracticePoint||"";
  const pointId=btn.dataset.knLoadPoint||"";
- toast("正在根据"+(pointId?"知识点":"章节")+"「"+(pointId?chapter:chapter)+"」智能生成 3 道练习题，请稍候…");
+ const progressId="kn-practice-"+Date.now();
+ const prefix="正在为「"+(pointId?chapter:chapter||subject||"章节")+"」";
+ const prog=startGenerationProgress(progressId,prefix);
  try{
   const payload={mode:pointId?"知识点专项":"章节训练",scope:pointId?"point":"chapter",subject:subject,knowledge_point:chapter,chapter:pointId?"":chapter,chapter_id:pointId?null:Number(btn.dataset.kdStartPracticeChapter||btn.dataset.knLoadChapter||0)||null,count:3,difficulty:"自适应",question_type:"混合"};
   const data=await apiRequest("/api/questions/generate",{method:"POST",body:JSON.stringify(payload)});
-  if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){toast("Agent 暂未生成题目，请稍后重试","error");return}
+  prog.stop();
+  if(data.all_refused&&(!data.questions||!data.questions.length)){errorProgressBar(progressId,"知识库暂无该知识点");toast("当前网络问题，请稍后重试或换一个知识点","error");return}
+  if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){errorProgressBar(progressId,"暂无题目");toast("Agent 暂未生成题目，请稍后重试","error");return}
   showPage("question");
   hasGeneratedQuestionBatch=true;
   activeQuestions=data.questions.map((q,i)=>normalizeQuestion({...q,source:pointId?"知识点专项练习":"章节训练"},i));
   currentQuestionIndex=0;
   renderQuestion();
   const tag=data.llm_used?"（AI 智能出题）":(data.llm_error?"（使用保底题库："+data.llm_error+"）":"（使用本地题库）");
+  completeProgressBar(progressId,"已生成 "+data.questions.length+" 道题");
   toast("已生成 "+data.questions.length+" 道练习题 "+tag);
- }catch(e){toast("生成题目失败: "+e.message,"error")}
+ }catch(e){prog.stop();errorProgressBar(progressId,"生成失败");toast("生成题目失败: "+e.message,"error")}
 }
 
 async function loadKnPointDetail(pointId){
@@ -1157,9 +1301,14 @@ function knowledgePointNavDetailHTML(point,graph,related,videos,history,mistakes
 function qaHTML(){
   return `<section class="page" id="qa">
     <div class="chat-layout">
-      <aside class="card conversation-list">
+      <button class="qa-mobile-history-toggle" id="qaHistoryToggle" type="button" aria-expanded="false" aria-controls="qaHistoryPanel">
+        <span>历史记录</span>
+        <b>展开</b>
+      </button>
+      <aside class="card conversation-list" id="qaHistoryPanel">
         <div class="head">
           <h3>历史会话</h3>
+          <button class="soft qa-mobile-history-close" id="qaHistoryClose" type="button">收起</button>
           <button class="soft" id="newConversation">＋</button>
         </div>
         <div id="conversationItems">
@@ -1787,7 +1936,8 @@ async function ocrUploadFile(file){
 function bindAll(){
  updateSidebarStreak();
  enhanceKnowledgeGraph();
- document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+ document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>{showPage(b.dataset.page);closeMobileNav();});
+ bindMobileNav();
  document.querySelectorAll(".subject-tabs button").forEach(b=>b.onclick=()=>{if(b.id==="masteryLayer"||b.id==="structureLayer")return;b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");toast("已切换 Mock 数据视图")});
  const masteryLayer=document.getElementById("masteryLayer"),structureLayer=document.getElementById("structureLayer");
  masteryLayer.onclick=()=>{masteryLayer.classList.add("active");structureLayer.classList.remove("active");document.getElementById("layerNote").textContent="已叠加个人掌握状态：红色为薄弱点，绿色为已掌握";document.querySelectorAll(".graph-point").forEach((p,i)=>{p.classList.remove("weak-state","master-state");if([2,7,11,13].includes(i))p.classList.add("weak-state");else if([0,5,15].includes(i))p.classList.add("master-state")});toast("全局知识结构保持不变，仅叠加个人状态图层")};
@@ -1832,6 +1982,8 @@ function bindAll(){
  document.getElementById("openCause").onclick=()=>document.getElementById("causeDetail").classList.toggle("show");
  document.querySelectorAll("[data-cause]").forEach(b=>b.onclick=()=>b.classList.toggle("chosen"));
  document.getElementById("confirmCause").onclick=()=>{const selected=[...document.querySelectorAll("[data-cause].chosen")].map(x=>x.dataset.cause);if(!selected.length)return toast("请至少选择一种错因");const note=document.getElementById("causeNote").value.trim();document.getElementById("causeSummary").classList.add("show");document.getElementById("causeSummary").innerHTML=`<b>已形成结构化长期记忆证据</b><br>错因：${selected.join(" + ")}${note?`<br>用户说明：${escapeHtml(note)}`:""}<br>写入建议：mistake.error_types；user_memory.error_pattern；evidence_source=user_confirmed；可信度=high；对应知识点权重 +1。`;toast("错因已确认，将作为高可信长期记忆记录")};
+ bindQaHistoryToggle();
+ setQaHistoryOpen(false);
  document.getElementById("sendQa").onclick=sendQa;document.getElementById("qaInput").onkeydown=e=>{if(e.key==="Enter")sendQa()};
   document.getElementById("ocrMock").onclick=()=>{let input=document.createElement("input");input.type="file";input.accept="image/*";input.style.display="none";document.body.appendChild(input);input.onchange=e=>{ocrUploadFile(e.target.files[0]);document.body.removeChild(input);input=null};input.click()};
   const ocrDrop=document.getElementById("ocrDrop");
@@ -1926,6 +2078,7 @@ function bindAccountSettings(){
  document.getElementById("openAccount").onclick=open;
  document.getElementById("closeAccount").onclick=close;
  mask.onclick=close;
+ document.getElementById("logoutBtn").onclick=handleLogout;
  const saveName=()=>{const input=document.getElementById("accountName"),name=input.value.trim()||"林同学",avatar=name.slice(0,1);
   return apiRequest("/api/profile/update",{method:"PUT",body:JSON.stringify({nickname:name})}).then(data=>{
     const userStr=localStorage.getItem("turing408_user");
@@ -2398,7 +2551,35 @@ function closeQuestionDrawers(){
 }
 function selectedValue(group){const selected=document.querySelector(`[data-choice-group="${group}"] .selected`);return selected?selected.dataset.value:""}
 
-function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report","knowledge"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent=getTimeBasedGreeting();const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天`;startGreetingAutoUpdate()}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="knowledge"&&!window.knDetailActive)loadKnowledgeNavPage();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();renderMapping(id);window.scrollTo(0,0);if(id!=="knowledge")window.knDetailActive=false;}
+function showPage(id){document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",p.id===id));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===id));const greetingPages=["qa","question","mistake","forum","report","knowledge"],title=document.getElementById("pageTitle"),subtitle=document.getElementById("pageSub");if(greetingPages.includes(id)){title.textContent=getTimeBasedGreeting();const days=document.getElementById("countdownDays")?.textContent||"180";subtitle.textContent=`距离 408 初试还有 ${Number(days)} 天`;startGreetingAutoUpdate()}else{const p=pages.find(x=>x[0]===id);title.textContent=p[2];subtitle.textContent={home:"基于长期记忆生成的个性化学习空间"}[id]||""}if(id==="qa")loadConversations();if(id==="knowledge"&&!window.knDetailActive)loadKnowledgeNavPage();if(id==="mistake")loadMistakeNotebook();if(id==="forum")loadForum();if(id==="home")reloadHomeKnowledgeIfPending();renderMapping(id);window.scrollTo(0,0);if(id!=="knowledge")window.knDetailActive=false;}
+/* 切回 home 时,如果知识图谱 canvas 仍是"正在加载…"占位符(说明之前那次请求没填回来),
+   强制重新触发一次,避免页面卡死在 loading 状态。*/
+function reloadHomeKnowledgeIfPending(){
+ const active=document.querySelector(".page.active");
+ if(!active||active.id!=="home")return;
+ const canvas=active.querySelector("#knowledgeGraphCanvas");
+ if(!canvas)return;
+ // 已经有数据(总览卡片/旧版象限任一已渲染)就什么都不做
+ if(canvas.querySelector(".kg-overview-card")||canvas.querySelector(".kg-quadrant"))return;
+ // cache 命中(切走期间请求已完成并写入了 cache) -> 直接渲染
+ if(knowledgeOverviewCache&&knowledgeOverviewCache.subjects){
+  renderKnowledgeOverview(knowledgeOverviewCache);
+  return;
+ }
+ // inflight 进行中 -> 等待它完成(不重发)
+ if(knowledgeOverviewInflight){
+  knowledgeOverviewInflight.then(()=>{
+   const live=document.querySelector(".page.active");
+   const liveCanvas=live&&live.id==="home"?live.querySelector("#knowledgeGraphCanvas"):null;
+   if(liveCanvas&&!liveCanvas.querySelector(".kg-overview-card")&&!liveCanvas.querySelector(".kg-quadrant")&&knowledgeOverviewCache){
+    renderKnowledgeOverview(knowledgeOverviewCache);
+   }
+  });
+  return;
+ }
+ // 都没有 -> 强制重新触发
+ loadKnowledgeOverviewGraph(true);
+}
 function renderMapping(id){const panel=document.getElementById("devContent");if(!panel)return;const m=mapping[id];panel.innerHTML=`<div class="mapping"><h4>建议接口</h4><code>${m[0]}</code></div><div class="mapping"><h4>核心数据实体</h4><code>${m[1]}</code></div><div class="mapping"><h4>Agent / LangGraph 节点</h4><code>${m[2]}</code></div>`}
 function toggleDev(){document.getElementById("devPanel").classList.toggle("open")}function toast(t){const el=document.getElementById("toast");el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,2000)}function escapeHtml(s){if(s===null||s===undefined)return"";return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}function escapeAttr(s){return escapeHtml(s).replace(/`/g,"&#96;")}
 
@@ -2408,6 +2589,37 @@ function showProgressBar(label,id){const container=ensureProgressContainer();let
 function updateProgressBar(id,percent,label){const bar=document.getElementById("progress-"+id);if(!bar)return;if(label)bar.querySelector(".progress-bar-label").textContent=label;bar.querySelector(".progress-bar-pct").textContent=percent+"%";bar.querySelector(".progress-bar-fill").style.width=percent+"%"}
 function completeProgressBar(id,message){const bar=document.getElementById("progress-"+id);if(!bar)return;bar.querySelector(".progress-bar-pct").textContent="完成";bar.querySelector(".progress-bar-fill").style.width="100%";if(message)bar.querySelector(".progress-bar-label").textContent=message;bar.classList.add("done");setTimeout(()=>{bar.classList.remove("show");setTimeout(()=>bar.remove(),400)},1200)}
 function errorProgressBar(id,message){const bar=document.getElementById("progress-"+id);if(!bar)return;bar.querySelector(".progress-bar-pct").textContent="失败";if(message)bar.querySelector(".progress-bar-label").textContent=message;bar.classList.add("error");setTimeout(()=>{bar.classList.remove("show");setTimeout(()=>bar.remove(),400)},2500)}
+
+/* ========= 出题阶段化进度条 =========
+   后端一次请求会经历「出题 → 自检 → 补题」多阶段，前端单接口拿不到阶段回执，
+   因此按经验时间切阶段文案，给用户"系统在干活"的体感。
+   stages 每项：{at: 距开始毫秒, label, pct}；pct 封顶 90，把 100% 留给 completeProgressBar。*/
+function startGenerationProgress(id,prefix){
+ const stages=[
+  {at:0,label:`${prefix} · 调用出题 Agent…`,pct:18},
+  {at:2000,label:`${prefix} · AI 生成题目中…`,pct:48},
+  {at:6000,label:`${prefix} · 题目自检中…`,pct:72},
+  {at:10000,label:`${prefix} · 补全题库中…`,pct:88},
+ ];
+ showProgressBar(stages[0].label,id);
+ const timers=stages.slice(1).map(s=>setTimeout(()=>updateProgressBar(id,s.pct,s.label),s.at));
+ return {stop:()=>timers.forEach(clearTimeout)};
+}
+
+/* ========= "分析中"等待进度条 =========
+   用户视角只关心"系统在干活"，多阶段文案反而干扰。
+   进度条只显示一个固定的"分析中…"，但百分比按时间增长给出"在动"的感觉。*/
+function startAnalysisProgress(id,prefix="分析中"){
+ const stages=[
+  {at:0,label:`${prefix}…`,pct:18},
+  {at:2000,label:`${prefix}…`,pct:45},
+  {at:6000,label:`${prefix}…`,pct:68},
+  {at:10000,label:`${prefix}…`,pct:85},
+ ];
+ showProgressBar(stages[0].label,id);
+ const timers=stages.slice(1).map(s=>setTimeout(()=>updateProgressBar(id,s.pct,s.label),s.at));
+ return {stop:()=>timers.forEach(clearTimeout)};
+}
 
 /* ========= 论坛 AI 回答结构化文本渲染器（markdown-lite） =========
    输入：LLM 输出的纯文本（已遵守"严格排版规则"，不含 MD 字符）
@@ -2637,6 +2849,10 @@ function renderQualityBadges(q){
  } else if(q.quality_flag==="deprecated"){
   badges.push(`<span class="q-badge q-badge-deprecated" title="已自动下线，不再进入参考池">✕ 已下线</span>`);
  }
+ const reported=Number(q.reported_count||0);
+ if(reported>0){
+  badges.push(`<span class="q-badge q-badge-disputed" title="本题已被 ${reported} 个用户标记为有误">⚑ 反馈 ${reported}</span>`);
+ }
  el.innerHTML=badges.join(" ");
 }
 
@@ -2652,6 +2868,11 @@ async function submitQuestionFeedback(){
    method:"POST",
    body:JSON.stringify({question_id:q.id, feedback_type:fbType, content}),
   });
+  // 同步本地题目的反馈数与质量标记，避免 badge 不更新
+  const returned=Number(data?.reported_count||0);
+  q.reported_count=Math.max(Number(q.reported_count||0)+1, returned);
+  if(data?.quality_flag){q.quality_flag=data.quality_flag}
+  if(typeof renderQualityBadges==="function"){renderQualityBadges(q)}
   toast("✅ 反馈已提交，感谢你的帮助");
   closeQuestionDrawers();
   // 清空 textarea
@@ -2844,6 +3065,8 @@ function bindBackendAwareActions(){
  }
  
  // QA bindings
+ bindQaHistoryToggle();
+ setQaHistoryOpen(false);
  const newConv=document.getElementById("newConversation");
  if(newConv)newConv.onclick=createNewConversation;
  const sendBtn=document.getElementById("sendQa");
@@ -2881,12 +3104,13 @@ async function generateSmartQuestions(){
 
 async function generateQuestionsFromApi(payload,successMessage,endpoint="/api/questions/generate",requestPayload=payload){
  const progressId="question-generate-"+Date.now();
- showProgressBar("Agent 生成题目中...",progressId);
+ const prefix="Agent 出题";
+ const prog=startGenerationProgress(progressId,prefix);
  try{
   toast("Agent 正在生成题目，请稍候…");
-  updateProgressBar(progressId,25,"调用出题 Agent...");
   const data=await apiRequest(endpoint,{method:"POST",body:JSON.stringify(requestPayload)});
-  updateProgressBar(progressId,70,"处理题目数据...");
+  prog.stop();
+  if(data.all_refused&&(!data.questions||!data.questions.length)){errorProgressBar(progressId,"知识库暂无该知识点");toast("当前网络问题，请稍后重试或换一个知识点","error");return}
   if(!data.questions||!Array.isArray(data.questions)||!data.questions.length)throw new Error("后端没有返回题目列表");
   const resolved=data.recommendation||payload;
   hasGeneratedQuestionBatch=true;
@@ -2907,6 +3131,7 @@ async function generateQuestionsFromApi(payload,successMessage,endpoint="/api/qu
   toast(data.llm_used?`${successMessage}（AI 生成）`:`${successMessage}（后端规则题库）`,data.llm_used?"success":"info");
  }catch(error){
   console.error(error);
+  prog.stop();
   errorProgressBar(progressId,error.message||"出题失败");
   toast(`${error.message}。本次未生成题目，也不会使用前端 Mock 冒充结果。`,"error");
  }
@@ -2983,7 +3208,11 @@ async function submitCurrentAnswer(){
   return toast("本地演示题无法写入后端，已展示模拟批改结果","error");
  }
  try{
+  // 提交答案 → 后端 AI 批改：用"分析中"等待进度条，避免多阶段文案干扰
+  const prog=startAnalysisProgress("submit-answer","分析中");
   const data=await apiRequest("/api/answers/check",{method:"POST",body:JSON.stringify({question_id:q.id,user_answer:userAnswer})});
+  prog.stop();
+  completeProgressBar("submit-answer","分析完成");
   lastAnswerRecordId=data.answer_record_id;
   document.getElementById("answer").classList.add("show");
   document.getElementById("answer").querySelector("h4").textContent=data.is_correct?"批改结果：回答正确":"批改结果：回答错误";
@@ -2992,6 +3221,7 @@ async function submitCurrentAnswer(){
   refreshAfterAnswer().catch(console.error);
   toast(data.is_correct?"回答正确，掌握状态已更新":"回答错误，请选择真实错因",data.is_correct?"success":"error");
  }catch(error){
+  errorProgressBar("submit-answer","批改失败");
   console.error(error);
   document.getElementById("answer").classList.add("show");
   document.getElementById("wrongAction").classList.add("show");
@@ -3010,7 +3240,11 @@ async function confirmCurrentCause(){
   return toast("错因已在页面记录；启动后端后可写入数据库","error");
  }
  try{
+  // 错因确认 → 写入长期记忆：同样用"分析中"等待进度条
+  const prog=startAnalysisProgress("cause-confirm","分析中");
   const data=await apiRequest("/api/mistakes/cause-confirm",{method:"POST",body:JSON.stringify({answer_record_id:lastAnswerRecordId,error_types:selected,user_note:note,agent_suggested_types:["计算错误"],evidence_source:"user_confirmed"})});
+  prog.stop();
+  completeProgressBar("cause-confirm","分析完成");
   document.getElementById("causeSummary").innerHTML=`<b>已形成结构化长期记忆证据</b><br>错因：${selected.join(" + ")}${note?`<br>用户说明：${escapeHtml(note)}`:""}<br>${data.message}`;
   // 错因写入长期记忆 → 全局刷新(首页记忆流/报告页记忆权重)
   refreshAfterAnswer("memory").catch(console.error);
@@ -3282,10 +3516,39 @@ async function loadConversations(){
    return `<div class="conversation-item${active}" data-conversation-id="${item.id}"><b>${escapeHtml(item.title||"408 问答")}</b>${item.summary?`<small>${escapeHtml(item.summary.slice(0,40))}</small>`:""}</div>`;
   }).join("");
   container.querySelectorAll(".conversation-item").forEach(el=>{
-   el.onclick=()=>switchConversation(Number(el.dataset.conversationId));
+   el.onclick=()=>{
+    switchConversation(Number(el.dataset.conversationId));
+    closeQaHistoryAfterPick();
+   };
   });
  }catch(error){
   console.error(error);
+ }
+}
+
+function setQaHistoryOpen(open){
+ const panel=document.getElementById("qaHistoryPanel");
+ const toggle=document.getElementById("qaHistoryToggle");
+ if(panel)panel.classList.toggle("mobile-open",open);
+ if(toggle){
+  toggle.setAttribute("aria-expanded",open?"true":"false");
+  const label=toggle.querySelector("span");
+  const state=toggle.querySelector("b");
+  if(label)label.textContent=open?"收起历史记录":"历史记录";
+  if(state)state.textContent=open?"收起":"展开";
+ }
+}
+
+function bindQaHistoryToggle(){
+ const toggle=document.getElementById("qaHistoryToggle");
+ const close=document.getElementById("qaHistoryClose");
+ if(toggle)toggle.onclick=()=>setQaHistoryOpen(!document.getElementById("qaHistoryPanel")?.classList.contains("mobile-open"));
+ if(close)close.onclick=()=>setQaHistoryOpen(false);
+}
+
+function closeQaHistoryAfterPick(){
+ if(window.matchMedia&&window.matchMedia("(max-width: 950px)").matches){
+  setQaHistoryOpen(false);
  }
 }
 
@@ -3314,6 +3577,7 @@ async function switchConversation(id){
 
 function createNewConversation(){
  currentConversationId=null;
+ closeQaHistoryAfterPick();
  const messages=document.getElementById("messages");
  messages.innerHTML=`<div class="chat-empty-state"><p>点击「＋」开始新的知识问答会话</p><p>输入 408 相关问题，AI Agent 将结合知识库和你的学习记忆回答</p></div>`;
  document.getElementById("currentChatTitle").textContent="知识问答";
@@ -4196,23 +4460,46 @@ showPage=function(id){
 
 /* ========= 408 知识图谱：总览二级环形结构 + 单科三层结构 ========= */
 let knowledgeOverviewCache=null;
+let knowledgeOverviewCacheAt=0;   // 缓存时间戳(ms)
+let knowledgeOverviewInflight=null; // 进行中的请求 Promise(去重)
+const KNOWLEDGE_OVERVIEW_TTL=5*60*1000; // 5 分钟内存缓存
 let activeSubjectGraph=null;
 
 renderHomeGraph=function(){
+ // 旧版 home overview 内的 knowledge_graph 是 dict 格式,新版 overview 接口返回 array 格式,
+ // 两种数据结构不同,不能直接复用。这里统一走独立接口(命中 5 分钟内存缓存)。
  loadKnowledgeOverviewGraph();
 };
 
-async function loadKnowledgeOverviewGraph(){
+async function loadKnowledgeOverviewGraph(force=false){
+ // 1. 命中缓存且未过期 -> 直接渲染
+ if(!force&&knowledgeOverviewCache&&Date.now()-knowledgeOverviewCacheAt<KNOWLEDGE_OVERVIEW_TTL){
+  renderKnowledgeOverview(knowledgeOverviewCache);
+  return knowledgeOverviewCache;
+ }
+ // 2. 正在请求中 -> 复用 in-flight Promise,避免重复触发
+ if(knowledgeOverviewInflight){
+  return knowledgeOverviewInflight;
+ }
  const canvas=document.getElementById("knowledgeGraphCanvas");
  if(canvas)canvas.innerHTML=`<div class="home-empty-state">正在加载 408 知识图谱...</div>`;
- try{
-  const data=await apiRequest("/api/knowledge/overview");
-  knowledgeOverviewCache=data;
-  renderKnowledgeOverview(data);
- }catch(error){
-  console.error(error);
-  if(canvas)canvas.innerHTML=`<div class="home-empty-state">知识图谱加载失败：${escapeHtml(error.message)}</div>`;
- }
+ knowledgeOverviewInflight=(async()=>{
+  try{
+   const data=await apiRequest("/api/knowledge/overview");
+   knowledgeOverviewCache=data;
+   knowledgeOverviewCacheAt=Date.now();
+   renderKnowledgeOverview(data);
+   return data;
+  }catch(error){
+   console.error(error);
+   const liveCanvas=document.getElementById("knowledgeGraphCanvas");
+   if(liveCanvas)liveCanvas.innerHTML=`<div class="home-empty-state">知识图谱加载失败：${escapeHtml(error.message)}</div>`;
+   return null;
+  }finally{
+   knowledgeOverviewInflight=null;
+  }
+ })();
+ return knowledgeOverviewInflight;
 }
 
 function statusPalette(status){
@@ -5204,10 +5491,21 @@ function bindKnowledgeDetailInteractions(){
  document.querySelectorAll("[data-chapter-notes]").forEach(button=>button.onclick=()=>toast("章节页只展示概况；请进入具体知识点后添加或查看笔记","info"));
  document.querySelector("[data-close-note]")?.addEventListener("click",()=>document.getElementById("kdNoteModal")?.classList.remove("show"));
  document.querySelector("[data-save-note]")?.addEventListener("click",saveKnowledgeNote);
- document.querySelectorAll("[data-note-view]").forEach(button=>button.onclick=()=>viewKnowledgeNote(button.dataset.noteView));
- document.querySelectorAll("[data-note-edit]").forEach(button=>button.onclick=()=>editKnowledgeNote(button.dataset.noteEdit));
- document.querySelectorAll("[data-note-delete]").forEach(button=>button.onclick=()=>deleteKnowledgeNote(button.dataset.noteDelete));
- document.querySelectorAll("[data-note-share]").forEach(button=>button.onclick=()=>shareKnowledgeNote(button.dataset.noteShare));
+ const handleNoteAction=(event)=>{
+  const button=event.target.closest("[data-note-view],[data-note-edit],[data-note-delete],[data-note-share]");
+  if(!button)return;
+  event.preventDefault();
+  event.stopPropagation();
+  if(button.dataset.noteView)return viewKnowledgeNote(button.dataset.noteView);
+  if(button.dataset.noteEdit)return editKnowledgeNote(button.dataset.noteEdit);
+  if(button.dataset.noteDelete)return deleteKnowledgeNote(button.dataset.noteDelete);
+  if(button.dataset.noteShare)return shareKnowledgeNote(button.dataset.noteShare);
+ };
+ document.querySelectorAll(".kd-note-actions").forEach(actions=>{
+  actions.onclick=handleNoteAction;
+  actions.ontouchend=handleNoteAction;
+ });
+ document.querySelectorAll("[data-note-view],[data-note-edit],[data-note-delete],[data-note-share]").forEach(button=>button.onclick=handleNoteAction);
  document.querySelectorAll("[data-kd-tab]").forEach(button=>button.onclick=()=>{
   const tabName=button.dataset.kdTab;
   const tabSection=button.closest(".kd-tabs-section");
@@ -5230,38 +5528,48 @@ function bindKnowledgeDetailInteractions(){
   btn.onclick=async()=>{
    const subject=btn.dataset.kdPracticeSubject||"";
    const point=btn.dataset.kdPracticePoint||"";
-   toast("正在根据知识点「"+(point||subject||"408")+"」智能生成 3 道练习题，请稍候…");
+   const progressId="kn-practice-point-"+Date.now();
+   const prefix="正在为「"+(point||subject||"知识点")+"」";
+   const prog=startGenerationProgress(progressId,prefix);
    try{
     const payload={mode:"知识点专项",subject:subject,knowledge_point:point,count:3,difficulty:"自适应",question_type:"混合"};
     const data=await apiRequest("/api/questions/generate",{method:"POST",body:JSON.stringify(payload)});
-    if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){toast("Agent 暂未生成题目，请稍后重试或更换知识点","error");return}
+    prog.stop();
+    if(data.all_refused&&(!data.questions||!data.questions.length)){errorProgressBar(progressId,"知识库暂无该知识点");toast("当前网络问题，请稍后重试或更换知识点","error");return}
+    if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){errorProgressBar(progressId,"暂无题目");toast("Agent 暂未生成题目，请稍后重试或更换知识点","error");return}
     showPage("question");
     hasGeneratedQuestionBatch=true;
     activeQuestions=data.questions.map((q,i)=>normalizeQuestion({...q,source:"知识点专项练习"},i));
     currentQuestionIndex=0;
     renderQuestion();
     const tag=data.llm_used?"（AI 智能出题）":(data.llm_error?"（使用保底题库："+data.llm_error+"）":"（使用本地题库）");
+    completeProgressBar(progressId,"已生成 "+data.questions.length+" 道题");
     toast("已为「"+point+"」生成 "+data.questions.length+" 道练习题 "+tag);
-   }catch(e){toast("生成题目失败: "+e.message,"error")}
+   }catch(e){prog.stop();errorProgressBar(progressId,"生成失败");toast("生成题目失败: "+e.message,"error")}
   };
  });
  document.querySelectorAll("[data-kd-start-practice-chapter]").forEach(btn=>{
   btn.onclick=async()=>{
    const subject=btn.dataset.kdPracticeSubject||"";
    const chapter=btn.dataset.kdPracticePoint||"";
-   toast("正在根据章节「"+(chapter||subject||"408")+"」智能生成 3 道练习题，请稍候…");
+   const progressId="kn-practice-chapter-"+Date.now();
+   const prefix="正在为「"+(chapter||subject||"章节")+"」";
+   const prog=startGenerationProgress(progressId,prefix);
    try{
     const payload={mode:"章节训练",scope:"chapter",subject:subject,knowledge_point:chapter,chapter:chapter,chapter_id:Number(btn.dataset.kdStartPracticeChapter||0)||null,count:3,difficulty:"自适应",question_type:"混合"};
     const data=await apiRequest("/api/questions/generate",{method:"POST",body:JSON.stringify(payload)});
-    if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){toast("Agent 暂未生成题目，请稍后重试或更换章节","error");return}
+    prog.stop();
+    if(data.all_refused&&(!data.questions||!data.questions.length)){errorProgressBar(progressId,"知识库暂无该章节");toast("当前网络问题，请稍后重试或更换章节","error");return}
+    if(!data.questions||!Array.isArray(data.questions)||!data.questions.length){errorProgressBar(progressId,"暂无题目");toast("Agent 暂未生成题目，请稍后重试或更换章节","error");return}
     showPage("question");
     hasGeneratedQuestionBatch=true;
     activeQuestions=data.questions.map((q,i)=>normalizeQuestion({...q,source:"章节训练"},i));
     currentQuestionIndex=0;
     renderQuestion();
     const tag=data.llm_used?"（AI 智能出题）":(data.llm_error?"（使用保底题库："+data.llm_error+"）":"（使用本地题库）");
+    completeProgressBar(progressId,"已生成 "+data.questions.length+" 道题");
     toast("已为「"+chapter+"」生成 "+data.questions.length+" 道练习题 "+tag);
-   }catch(e){toast("生成题目失败: "+e.message,"error")}
+   }catch(e){prog.stop();errorProgressBar(progressId,"生成失败");toast("生成题目失败: "+e.message,"error")}
   };
  });
 }
@@ -5313,8 +5621,10 @@ async function deleteKnowledgeNote(noteId){
 }
 
 async function shareKnowledgeNote(noteId){
- // 调用后端接口获取分享链接
- let shareData={share_url:window.location.href};
+ // 主站地址:所有对外链接(二维码/复制链接/打开主站)统一指向这里
+ const SITE_URL="https://turing-agent.cloud/";
+ // 调用后端接口获取分享链接(仅用于展示/调试,前端不再把分享页 URL 暴露给用户)
+ let shareData={share_url:SITE_URL};
  try{
   const data=await apiRequest(`/api/notes/${noteId}/share`,{method:"POST"});
   if(data&&data.share_url)shareData.share_url=data.share_url;
@@ -5371,16 +5681,16 @@ async function shareKnowledgeNote(noteId){
  mask.addEventListener("click",e=>{
   if(e.target===mask)closeShareModal();
  });
- // 复制链接
+ // 复制链接(主站地址,用于推广)
  document.getElementById("kdShareCopy").onclick=async ()=>{
   const btn=document.getElementById("kdShareCopy");
   const originalText=btn.innerHTML;
   try{
-   await navigator.clipboard.writeText(shareData.share_url);
+   await navigator.clipboard.writeText(SITE_URL);
    btn.innerHTML="✓ 已复制";
   }catch(e){
    const ta=document.createElement("textarea");
-   ta.value=shareData.share_url;
+   ta.value=SITE_URL;
    document.body.appendChild(ta);
    ta.select();
    document.execCommand("copy");
@@ -5391,7 +5701,7 @@ async function shareKnowledgeNote(noteId){
  };
  // 打开主站
  document.getElementById("kdShareOpen").onclick=()=>{
-  window.open(window.location.origin+"/index.html","_blank");
+  window.open(SITE_URL,"_blank");
  };
   // 保存为图片
   document.getElementById("kdShareSave").onclick=()=>{
@@ -5423,9 +5733,9 @@ async function shareKnowledgeNote(noteId){
     document.head.appendChild(s);
    }else{doCapture()}
   };
- // 生成二维码
+ // 生成二维码(指向主站)
  const qrDiv=document.getElementById("kdShareQR");
- const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(shareData.share_url)}`;
+ const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(SITE_URL)}`;
  const qrImg=new Image();
  qrImg.crossOrigin="anonymous";
  qrImg.onload=()=>{

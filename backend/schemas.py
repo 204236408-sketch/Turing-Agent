@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -40,6 +40,58 @@ class QuestionGenerateRequest(BaseModel):
     reference_text: str = ""
     reference_answer: str = ""
     source: str = "manual"  # manual / ocr / smart / weak_kp
+
+    @field_validator("subject")
+    @classmethod
+    def normalize_subject(cls, value: str) -> str:
+        mapping = {
+            "计组": "计算机组成原理",
+            "组成原理": "计算机组成原理",
+            "操作系统原理": "操作系统",
+            "网络": "计算机网络",
+            "数据结构与算法": "数据结构",
+        }
+        text = (value or "").strip()
+        return mapping.get(text, text or "操作系统")
+
+    @field_validator("difficulty")
+    @classmethod
+    def normalize_difficulty(cls, value: str) -> str:
+        mapping = {
+            "容易": "简单",
+            "基础": "简单",
+            "普通": "中等",
+            "一般": "中等",
+            "偏难": "较难",
+            "真题难度": "较难",
+            "困难": "困难",
+            "混合": "自适应",
+            "自适应": "自适应",
+        }
+        text = (value or "").strip()
+        return mapping.get(text, text if text in {"简单", "中等", "较难", "困难", "自适应"} else "中等")
+
+    @field_validator("question_type")
+    @classmethod
+    def normalize_question_type(cls, value: str) -> str:
+        mapping = {
+            "单选题": "选择题",
+            "选择": "选择题",
+            "choice": "选择题",
+            "填空": "填空题",
+            "fill": "填空题",
+            "简答": "简答题",
+            "问答题": "简答题",
+            "essay": "简答题",
+            "大题": "综合题",
+            "综合": "综合题",
+            "comprehensive": "综合题",
+            "mixed": "混合",
+            "随机": "混合",
+        }
+        text = (value or "").strip()
+        normalized = mapping.get(text, text)
+        return normalized if normalized in {"选择题", "填空题", "简答题", "综合题", "混合"} else "选择题"
 
 
 class SmartQuestionGenerateRequest(BaseModel):

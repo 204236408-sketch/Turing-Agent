@@ -226,11 +226,16 @@ def submit_feedback(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """用户对题目质量反馈；累 3 次 wrong_answer 自动降级（is_verified=False、quality_flag=deprecated）。"""
+    """用户对题目质量反馈；累 3 次 wrong_answer 自动降级（is_verified=False、quality_flag=deprecated）。
+
+    同时维护 Question.reported_count / reported_reason / last_reported_at，
+    供后续出题/题库参考环节做"被多个用户标错的题降权"使用。
+    """
     q = db.query(Question).filter(Question.id == payload.question_id, Question.is_deleted == False).first()
     if not q:
         raise AppError(404, "题目不存在")
 
+    from datetime import datetime as _dt
     db.add(QuestionFeedback(
         question_id=q.id,
         user_id=user.id,
@@ -239,6 +244,7 @@ def submit_feedback(
     ))
 
     # 累计 3 次"答案有误"反馈：自动降级
+    wrong_count = 0
     if payload.feedback_type == "wrong_answer":
         wrong_count = (
             db.query(QuestionFeedback)
@@ -252,5 +258,15 @@ def submit_feedback(
         elif wrong_count >= 1:
             q.quality_flag = "disputed"
 
+    # 维护 Question 表上的累计反馈数（供出题参考池过滤用）
+    q.reported_count = (q.reported_count or 0) + 1
+    q.reported_reason = (payload.content or q.reported_reason or "")[:255]
+    q.last_reported_at = _dt.utcnow()
+
     db.commit()
-    return success({"question_id": q.id, "received": True})
+    return success({
+        "question_id": q.id,
+        "received": True,
+        "reported_count": q.reported_count,
+        "quality_flag": q.quality_flag,
+    })
