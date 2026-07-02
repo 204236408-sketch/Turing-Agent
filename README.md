@@ -2,27 +2,13 @@
 
 面向考研 408 的 Web 智能辅导 Agent 系统。前端保留当前 `version-b.html + styles.css + app.js` 轻量工作台方案；后端使用 FastAPI，默认 SQLite 开箱即用，后续可按 `.env` 切换 MySQL、ChromaDB、PaddleOCR 和硅基流动大模型。
 
-## 快速启动
-
-```powershell
-cd C:\Users\Sophia\Desktop\turing
-python -m pip install -r backend\requirements.txt
-cd backend
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
-```
 
 打开：
 
 ```text
-http://127.0.0.1:8000/version-b.html
+http://127.0.0.1:8000
 ```
 
-演示账号：
-
-```text
-demo@turing408.ai
-123456
-```
 
 ## 已落地能力
 
